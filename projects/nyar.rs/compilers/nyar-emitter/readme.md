@@ -40,6 +40,11 @@ Production still carries transitional duplication: `TargetExecutionPlan` is gene
 layers may still supply `AssembledFragment` / `FragmentSubmission` summaries consumed by backends. Treating the private
 plan type as wired **does not** mean the single-owner contract is finished.
 
+The frontend entrance is `assembly::AssembledFragment`, whose `input` declares one of two capabilities:
+`SharedSemanticSubset` (opt-in reuse of the canonical chain, the current Valkyrie path) or `Adapted` (a language→platform
+adapter prepares the target input itself). The driver only checks partition identity and never interprets language
+semantics for the adapted path.
+
 - Do not merge `ArtifactPartitionPlan` with `RepresentationPlan` by name alone; remove fields that duplicate canonical
   facts used as semantic authority during lowering.
 - Wasm lowering lives under `lowering/backends/wasm/mir/`; deleted unreachable copies are cleanup only, not proof of

@@ -2,7 +2,6 @@
 #![deny(missing_docs)]
 
 pub mod abstractions;
-pub mod assembled_fragment;
 pub mod backends;
 pub mod lanes;
 pub mod packaging;
@@ -16,7 +15,6 @@ pub use self::{
         ArtifactFormat, ArtifactKind, BackendInputKind, BinaryArch, BinaryFlavor, BinaryTarget, ByteOrder, CanonicalAbi, CanonicalArch,
         CanonicalSpecification, CanonicalTarget, CanonicalTargetParseError, CanonicalVendor, ObjectKind, TargetFamily,
     },
-    assembled_fragment::AssembledFragment,
     backends::{
         BackendCapability, BackendDescriptor, BackendInterpreterRegistration, BackendInterpreterSelection, BackendRegistry, CompilationOptions,
         TargetCodeGenBackend,

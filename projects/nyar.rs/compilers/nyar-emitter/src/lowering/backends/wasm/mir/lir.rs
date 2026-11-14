@@ -71,6 +71,8 @@ pub(crate) enum WasmBodyInstruction {
     ArraySet(u32),
     /// `array.len`。
     ArrayLen,
+    /// GC 前缀操作码 + 单个类型/字段立即数（`struct.new <type_index>` 等）。
+    GcTypeIndex { opcode: acorn_wasm::WasmGcOpcode, operand: u32 },
 }
 
 /// 把函数体 LIR 编码为 Wasm 字节码。
@@ -123,6 +125,10 @@ pub(crate) fn encode_wasm_body(instructions: &[WasmBodyInstruction]) -> Vec<u8> 
             WasmBodyInstruction::ArrayGet(type_index) => encode_array_get(*type_index, &mut out),
             WasmBodyInstruction::ArraySet(type_index) => encode_array_set(*type_index, &mut out),
             WasmBodyInstruction::ArrayLen => encode_array_len(&mut out),
+            WasmBodyInstruction::GcTypeIndex { opcode, operand } => {
+                opcode.encode(&mut out);
+                encode_uleb128(*operand, &mut out);
+            }
         }
     }
     out

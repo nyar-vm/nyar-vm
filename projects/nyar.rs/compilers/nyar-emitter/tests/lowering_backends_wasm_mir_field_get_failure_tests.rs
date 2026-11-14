@@ -86,9 +86,7 @@ fn wasm_field_get_gc_struct_with_scalar_object_slot_fails_structured() {
         namespace: String::new(),
         key: None,
         storage: StorageKind::Reference,
-        size: 4,
-        align: 4,
-        fields: vec![FieldLayout { name: "payload".to_string(), ty: I32, offset: 0, size: 4, align: 4 }],
+        fields: vec![FieldLayout { name: "payload".to_string(), ty: I32 }],
     };
     let error = lower(field_get_main(field), Some(AggregateLayoutPlan { layouts: vec![layout], ..Default::default() }), field, layout_id)
         .expect_err("gc struct 与对象槽表示冲突必须返回 Err，不得 panic");

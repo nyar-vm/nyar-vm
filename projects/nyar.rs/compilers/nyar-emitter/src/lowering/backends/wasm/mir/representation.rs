@@ -10,7 +10,6 @@
 use super::{ExecutableLoweringContext, LayoutId, MirFunction, MirStorageKind, NyarType, StorageKind, WASM_GC_ANYREF};
 use crate::lowering::backends::wasm::gc::{VALTYPE_F32, wasm_gc_field_type_byte, wasm_js_glue_value_carrier_valtype};
 use acorn_wasm::{VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64};
-use nyar_types::AggregateLayout;
 use std::collections::BTreeMap;
 
 /// 闭包对象（合同 §5.3）的物理槽位：0 = funcref table 槽位（i32），1 = 捕获环境（anyref / null）。
@@ -258,7 +257,10 @@ pub(super) fn wasm_return_value_type(
     }
 }
 
-pub(super) fn layout_needs_gc_struct(ctx: &ExecutableLoweringContext, layout: &AggregateLayout) -> bool {
+pub(super) fn layout_needs_gc_struct(
+    ctx: &ExecutableLoweringContext,
+    layout: &crate::lowering::shared::physical_layout::ResolvedAggregateLayout,
+) -> bool {
     let has_ref_fields = layout.fields.iter().any(|field| ctx.storage_for_type(&field.ty) == StorageKind::Reference);
     layout.storage == StorageKind::Reference || has_ref_fields
 }

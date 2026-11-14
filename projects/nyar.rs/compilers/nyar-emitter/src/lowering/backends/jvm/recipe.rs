@@ -6,32 +6,32 @@
 //! 从 operator 名字符串推断 arity 或操作数改写。
 //!
 //! 本表只接受下列出的 operator 名，未知名字返回 `None`，计划据此冻结为
-//! `TargetOperatorBinding::Unfrozen`，由 emit 结构化失败，禁止猜默认指令。
+//! `对应 lane 的 `Unfrozen` 绑定`，由 emit 结构化失败，禁止猜默认指令。
 //!
 //! JVM 没有 `dneg`（`double` 取负需要 `dconst_0` + `dsub` 序列，而当前配方层的
 //! 常量步骤只支持整数载体），因此 `double.negate` 不在本表；补齐常量配方前不得
 //! 声明该 provider，避免静默错误语义。
 
 use super::JvmOperatorCode;
-use crate::target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe};
+use crate::target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe};
 
-const fn binary(operand_type: TargetOperandType, result_type: TargetOperandType, code: JvmOperatorCode) -> TargetOperatorPlan {
+const fn binary(operand_type: TargetOperandType, result_type: TargetOperandType, code: JvmOperatorCode) -> TargetOperatorPlan<JvmOperatorCode> {
     TargetOperatorPlan {
         arity: 2,
         operand_type,
         result_type,
         recipe: TargetOperatorRecipe::Operands,
-        encoding: TargetOperatorEncoding::Jvm(code),
+        encoding: code,
     }
 }
 
-const fn unary(operand_type: TargetOperandType, code: JvmOperatorCode) -> TargetOperatorPlan {
+const fn unary(operand_type: TargetOperandType, code: JvmOperatorCode) -> TargetOperatorPlan<JvmOperatorCode> {
     TargetOperatorPlan {
         arity: 1,
         operand_type,
         result_type: operand_type,
         recipe: TargetOperatorRecipe::Operands,
-        encoding: TargetOperatorEncoding::Jvm(code),
+        encoding: code,
     }
 }
 
@@ -39,18 +39,18 @@ const fn unary(operand_type: TargetOperandType, code: JvmOperatorCode) -> Target
 /// 位移量，截窄（`l2i`）由冻结配方显式给出，emit 只机械执行。
 const LONG_SHIFT_STEPS: &[TargetOperandStep] = &[TargetOperandStep::Arguments, TargetOperandStep::NarrowTopI64ToI32];
 
-const fn long_shift(steps: &'static [TargetOperandStep], code: JvmOperatorCode) -> TargetOperatorPlan {
+const fn long_shift(steps: &'static [TargetOperandStep], code: JvmOperatorCode) -> TargetOperatorPlan<JvmOperatorCode> {
     TargetOperatorPlan {
         arity: 2,
         operand_type: TargetOperandType::I64,
         result_type: TargetOperandType::I64,
         recipe: TargetOperatorRecipe::Steps(steps),
-        encoding: TargetOperatorEncoding::Jvm(code),
+        encoding: code,
     }
 }
 
 /// 唯一 operator 配方表。未知名字返回 `None`。
-pub(crate) fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetOperatorPlan> {
+pub(crate) fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetOperatorPlan<JvmOperatorCode>> {
     Some(match operator_name {
         // integer 算术：JVM 单指令（`iadd`/`isub`/`imul`/`idiv`/`irem`/`ineg`）。
         "integer.add" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerAdd),
@@ -120,4 +120,36 @@ pub(crate) fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetO
         "long.compare_greater_or_equal" => binary(TargetOperandType::I64, TargetOperandType::I32, JvmOperatorCode::LongCompareGreaterOrEqual),
         _ => return None,
     })
+}
+
+/// JVM 平台私有的 operator 绑定。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum JvmOperatorBinding {
+    /// 已冻结的 JVM 配方。
+    Frozen(TargetOperatorPlan<JvmOperatorCode>),
+    /// 声明了 `[jvm_operator]`，但没有 JVM 可编码配方；emit 必须结构化失败。
+    Unfrozen,
+}
+
+/// 按声明的导入签名冻结 JVM operator 绑定。
+///
+/// `None` 表示该导入不是 JVM operator；`Some(Unfrozen)` 表示绑定了 JVM operator
+/// 但名字不在本 lane 的配方表内。两者都必须保留，禁止回落为宿主导入或默认成功。
+pub(crate) fn freeze_jvm_operator(
+    link: &nyar::ExternalImportLink,
+    instance: nyar_types::ItemInstanceId,
+    symbol: &str,
+    parameter_types: &[nyar_types::NyarType],
+    return_type: &nyar_types::NyarType,
+) -> crate::Result<Option<JvmOperatorBinding>> {
+    let Some(mnemonic) = crate::lowering::shared::interop::jvm_operator_target(link)
+    else {
+        return Ok(None);
+    };
+    let Some(plan) = freeze_jvm_operator_binding(mnemonic)
+    else {
+        return Ok(Some(JvmOperatorBinding::Unfrozen));
+    };
+    crate::target_operator::validate_frozen_operator(mnemonic, instance, symbol, parameter_types, return_type, &plan)?;
+    Ok(Some(JvmOperatorBinding::Frozen(plan)))
 }

@@ -41,9 +41,7 @@ fn utf8_text_layout_plan() -> AggregateLayoutPlan {
             namespace: String::new(),
             key: None,
             storage: StorageKind::Reference,
-            size: 4,
-            align: 4,
-            fields: vec![FieldLayout { name: "_repr".to_string(), ty: byte_array(), offset: 0, size: 4, align: 4 }],
+            fields: vec![FieldLayout { name: "_repr".to_string(), ty: byte_array() }],
         }],
         ..Default::default()
     }
@@ -172,8 +170,6 @@ fn empty_value_layout() -> AggregateLayout {
         namespace: std::string::String::new(),
         key: None,
         storage: StorageKind::Value,
-        size: 4,
-        align: 4,
         fields: Vec::new(),
     }
 }
@@ -308,11 +304,9 @@ fn wasm_scalar_field_store_uses_typed_store_not_aggregate_copy() {
                 namespace: std::string::String::new(),
                 key: None,
                 storage: StorageKind::Value,
-                size: 16,
-                align: 8,
                 fields: vec![
-                    FieldLayout { name: "left".to_string(), ty: NyarType::Integer64 { signed: true }, offset: 0, size: 8, align: 8 },
-                    FieldLayout { name: "right".to_string(), ty: NyarType::Integer64 { signed: true }, offset: 8, size: 8, align: 8 },
+                    FieldLayout { name: "left".to_string(), ty: NyarType::Integer64 { signed: true } },
+                    FieldLayout { name: "right".to_string(), ty: NyarType::Integer64 { signed: true } },
                 ],
             }],
             ..Default::default()
@@ -359,11 +353,9 @@ fn wasm_field_bearing_aggregate_assignment_still_uses_memory_copy() {
                 namespace: std::string::String::new(),
                 key: None,
                 storage: StorageKind::Value,
-                size: 16,
-                align: 8,
                 fields: vec![
-                    FieldLayout { name: "left".to_string(), ty: NyarType::Integer64 { signed: true }, offset: 0, size: 8, align: 8 },
-                    FieldLayout { name: "right".to_string(), ty: NyarType::Integer64 { signed: true }, offset: 8, size: 8, align: 8 },
+                    FieldLayout { name: "left".to_string(), ty: NyarType::Integer64 { signed: true } },
+                    FieldLayout { name: "right".to_string(), ty: NyarType::Integer64 { signed: true } },
                 ],
             }],
             ..Default::default()
@@ -386,11 +378,9 @@ fn point_layout() -> AggregateLayout {
         namespace: std::string::String::new(),
         key: None,
         storage: StorageKind::Value,
-        size: 8,
-        align: 4,
         fields: vec![
-            FieldLayout { name: "x".to_string(), ty: I32, offset: 0, size: 4, align: 4 },
-            FieldLayout { name: "y".to_string(), ty: I32, offset: 4, size: 4, align: 4 },
+            FieldLayout { name: "x".to_string(), ty: I32 },
+            FieldLayout { name: "y".to_string(), ty: I32 },
         ],
     }
 }
@@ -584,11 +574,9 @@ fn inner_value_layout() -> AggregateLayout {
         namespace: std::string::String::new(),
         key: None,
         storage: StorageKind::Value,
-        size: 8,
-        align: 4,
         fields: vec![
-            FieldLayout { name: "x".to_string(), ty: I32, offset: 0, size: 4, align: 4 },
-            FieldLayout { name: "y".to_string(), ty: I32, offset: 4, size: 4, align: 4 },
+            FieldLayout { name: "x".to_string(), ty: I32 },
+            FieldLayout { name: "y".to_string(), ty: I32 },
         ],
     }
 }
@@ -601,14 +589,9 @@ fn outer_value_layout() -> AggregateLayout {
         namespace: std::string::String::new(),
         key: None,
         storage: StorageKind::Value,
-        size: 8,
-        align: 4,
         fields: vec![FieldLayout {
             name: "nested".to_string(),
             ty: named_layout_type(INNER_VALUE_LAYOUT_ID, "Inner"),
-            offset: 0,
-            size: 8,
-            align: 4,
         }],
     }
 }

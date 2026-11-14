@@ -6,7 +6,7 @@
 //! 从助记符字符串推断 arity 或操作数改写。
 //!
 //! 本模块只接受下表列出的助记符，未知助记符返回 `None`，计划据此冻结为
-//! `TargetOperatorBinding::Unfrozen`，由 emit 结构化失败，禁止猜默认指令。
+//! `对应 lane 的 `Unfrozen` 绑定`，由 emit 结构化失败，禁止猜默认指令。
 //!
 //! 冻结编码使用 `acorn-wasm` 的 [`WasmOpcode`] 变体，不再在 emitter 内保存裸字节
 //! 数值表：opcode 身份归格式 crate 所有。
@@ -24,7 +24,7 @@
 
 use acorn_wasm::WasmOpcode;
 
-use crate::target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe};
+use crate::target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe};
 
 /// 整数取负没有原生指令：计划显式冻结 `0 - x` 的发射配方。
 const I32_NEGATE_STEPS: &[TargetOperandStep] =
@@ -32,49 +32,49 @@ const I32_NEGATE_STEPS: &[TargetOperandStep] =
 const I64_NEGATE_STEPS: &[TargetOperandStep] =
     &[TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I64, value: 0 }, TargetOperandStep::Arguments];
 
-const fn binary(operand_type: TargetOperandType, result_type: TargetOperandType, opcode: WasmOpcode) -> TargetOperatorPlan {
+const fn binary(operand_type: TargetOperandType, result_type: TargetOperandType, opcode: WasmOpcode) -> TargetOperatorPlan<WasmOpcode> {
     TargetOperatorPlan {
         arity: 2,
         operand_type,
         result_type,
         recipe: TargetOperatorRecipe::Operands,
-        encoding: TargetOperatorEncoding::Wasm(opcode),
+        encoding: opcode,
     }
 }
 
-const fn unary(operand_type: TargetOperandType, opcode: WasmOpcode) -> TargetOperatorPlan {
+const fn unary(operand_type: TargetOperandType, opcode: WasmOpcode) -> TargetOperatorPlan<WasmOpcode> {
     TargetOperatorPlan {
         arity: 1,
         operand_type,
         result_type: operand_type,
         recipe: TargetOperatorRecipe::Operands,
-        encoding: TargetOperatorEncoding::Wasm(opcode),
+        encoding: opcode,
     }
 }
 
 /// 单实参、结果载体与实参载体不同的目标指令（如位模式重解释）。
-const fn unary_to(operand_type: TargetOperandType, result_type: TargetOperandType, opcode: WasmOpcode) -> TargetOperatorPlan {
+const fn unary_to(operand_type: TargetOperandType, result_type: TargetOperandType, opcode: WasmOpcode) -> TargetOperatorPlan<WasmOpcode> {
     TargetOperatorPlan {
         arity: 1,
         operand_type,
         result_type,
         recipe: TargetOperatorRecipe::Operands,
-        encoding: TargetOperatorEncoding::Wasm(opcode),
+        encoding: opcode,
     }
 }
 
-const fn integer_negate(operand_type: TargetOperandType, steps: &'static [TargetOperandStep], sub_opcode: WasmOpcode) -> TargetOperatorPlan {
+const fn integer_negate(operand_type: TargetOperandType, steps: &'static [TargetOperandStep], sub_opcode: WasmOpcode) -> TargetOperatorPlan<WasmOpcode> {
     TargetOperatorPlan {
         arity: 1,
         operand_type,
         result_type: operand_type,
         recipe: TargetOperatorRecipe::Steps(steps),
-        encoding: TargetOperatorEncoding::Wasm(sub_opcode),
+        encoding: sub_opcode,
     }
 }
 
 /// 唯一助记符表。未知助记符返回 `None`。
-pub(crate) fn freeze_wasm_numeric_binding(mnemonic: &str) -> Option<TargetOperatorPlan> {
+pub(crate) fn freeze_wasm_numeric_binding(mnemonic: &str) -> Option<TargetOperatorPlan<WasmOpcode>> {
     Some(match mnemonic {
         // i32 算术 / 位运算：结果与实参同型。
         "i32.add" => binary(TargetOperandType::I32, TargetOperandType::I32, WasmOpcode::I32Add),
@@ -188,14 +188,14 @@ mod tests {
         assert_eq!(to_bits.operand_type, TargetOperandType::F64, "`f64.to_bits` 的实参必须是 f64 载体");
         assert_eq!(to_bits.result_type, TargetOperandType::I64, "`f64.to_bits` 必须产生 64 位整数载体");
         assert_eq!(to_bits.recipe, TargetOperatorRecipe::Operands, "bitcast 不得套用数值转换配方");
-        assert_eq!(to_bits.encoding, TargetOperatorEncoding::Wasm(WasmOpcode::I64ReinterpretF64));
+        assert_eq!(to_bits.encoding, WasmOpcode::I64ReinterpretF64);
 
         let from_bits = freeze_wasm_numeric_binding("f64.reinterpret_i64").expect("`f64.reinterpret_i64` 必须在助记符表内");
         assert_eq!(from_bits.arity, 1, "bitcast 只接受一个实参");
         assert_eq!(from_bits.operand_type, TargetOperandType::I64, "`f64.from_bits` 的实参必须是 64 位整数载体");
         assert_eq!(from_bits.result_type, TargetOperandType::F64, "`f64.from_bits` 必须产生 f64 载体");
         assert_eq!(from_bits.recipe, TargetOperatorRecipe::Operands, "bitcast 不得套用数值转换配方");
-        assert_eq!(from_bits.encoding, TargetOperatorEncoding::Wasm(WasmOpcode::F64ReinterpretI64));
+        assert_eq!(from_bits.encoding, WasmOpcode::F64ReinterpretI64);
     }
 
     /// f32 的算术与位重解释必须冻结在**独立 F32 载体**上，不能复用 F64/I32 槽。
@@ -208,29 +208,29 @@ mod tests {
             assert_eq!(plan.arity, 2);
             assert_eq!(plan.operand_type, TargetOperandType::F32, "`{mnemonic}` 实参必须是 f32 载体");
             assert_eq!(plan.result_type, TargetOperandType::F32, "`{mnemonic}` 结果必须是 f32 载体");
-            assert_eq!(plan.encoding, TargetOperatorEncoding::Wasm(opcode));
+            assert_eq!(plan.encoding, opcode);
         }
         let neg = freeze_wasm_numeric_binding("f32.neg").expect("`f32.neg` 必须在助记符表内");
         assert_eq!(neg.arity, 1);
         assert_eq!(neg.operand_type, TargetOperandType::F32);
         assert_eq!(neg.result_type, TargetOperandType::F32);
-        assert_eq!(neg.encoding, TargetOperatorEncoding::Wasm(WasmOpcode::F32Neg), "`f32.neg` 必须走原生 neg 以保留 -0.0");
+        assert_eq!(neg.encoding, WasmOpcode::F32Neg, "`f32.neg` 必须走原生 neg 以保留 -0.0");
 
         let eq = freeze_wasm_numeric_binding("f32.eq").expect("`f32.eq` 必须在助记符表内");
         assert_eq!(eq.operand_type, TargetOperandType::F32, "比较操作数仍是 f32 载体");
         assert_eq!(eq.result_type, TargetOperandType::I32, "比较结果固定 i32 布尔");
-        assert_eq!(eq.encoding, TargetOperatorEncoding::Wasm(WasmOpcode::F32Eq));
+        assert_eq!(eq.encoding, WasmOpcode::F32Eq);
 
         let to_bits = freeze_wasm_numeric_binding("i32.reinterpret_f32").expect("`i32.reinterpret_f32` 必须在助记符表内");
         assert_eq!(to_bits.arity, 1);
         assert_eq!(to_bits.operand_type, TargetOperandType::F32);
         assert_eq!(to_bits.result_type, TargetOperandType::I32, "f32 位模式是 32 位 i32 载体");
-        assert_eq!(to_bits.encoding, TargetOperatorEncoding::Wasm(WasmOpcode::I32ReinterpretF32));
+        assert_eq!(to_bits.encoding, WasmOpcode::I32ReinterpretF32);
 
         let from_bits = freeze_wasm_numeric_binding("f32.reinterpret_i32").expect("`f32.reinterpret_i32` 必须在助记符表内");
         assert_eq!(from_bits.operand_type, TargetOperandType::I32);
         assert_eq!(from_bits.result_type, TargetOperandType::F32);
-        assert_eq!(from_bits.encoding, TargetOperatorEncoding::Wasm(WasmOpcode::F32ReinterpretI32));
+        assert_eq!(from_bits.encoding, WasmOpcode::F32ReinterpretI32);
 
         // 反例：f32 不得静默走 64 位位重解释（那是把 32 位类型当 64 位载荷）。
         assert!(freeze_wasm_numeric_binding("i64.reinterpret_f32").is_none());

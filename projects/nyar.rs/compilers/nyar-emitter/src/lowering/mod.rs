@@ -87,8 +87,8 @@ pub(crate) fn testing_lower_fragment_to_wasm_module(
     wasm::lower_fragment_to_wasm_module(submission, host_boundary)
 }
 
-pub(crate) fn testing_mir_lowering_context(submission: &FragmentSubmission) -> shared::executable::ExecutableLoweringContext<'_> {
-    shared::executable::ExecutableLoweringContext::new(submission)
+pub(crate) fn testing_mir_lowering_context(submission: &FragmentSubmission) -> Result<shared::executable::ExecutableLoweringContext<'_>> {
+    shared::executable::ExecutableLoweringContext::new(submission, shared::physical_layout::LayoutPolicy::WASM32)
 }
 
 pub(crate) const TESTING_WASM_GC_ANYREF: u8 = wasm::WASM_GC_ANYREF;

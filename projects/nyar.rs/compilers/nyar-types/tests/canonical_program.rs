@@ -92,9 +92,7 @@ fn aggregate_layout_with_field(ty: NyarType) -> AggregateLayout {
         namespace: String::new(),
         key: None,
         storage: StorageKind::Value,
-        size: 4,
-        align: 4,
-        fields: vec![FieldLayout { name: "host".into(), ty, offset: 0, size: 4, align: 4 }],
+        fields: vec![FieldLayout { name: "host".into(), ty }],
     }
 }
 

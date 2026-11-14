@@ -14,10 +14,6 @@ use nyar_types::{
 use crate::{
     backend_plan_views::{ExecutableFunction, FunctionView, SuspendMetadataView},
     contracts::{Block, BlockRef, ValueRef},
-    target_operator::{
-        TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorPlan, TargetOperatorRecipe, WasmGcArrayOperation,
-        WasmGcArrayOperatorPlan,
-    },
 };
 
 /// 已完成 callable、类型、CFG 和表示合同绑定的目标私有计划。
@@ -58,7 +54,6 @@ pub struct TargetExecutionPlan {
     flags_types: Vec<nyar_types::FlagsLayout>,
     singleton_instances: Vec<nyar_types::SingletonInstancePlan>,
     functions: BTreeMap<ItemInstanceId, ExecutableFunction>,
-    library_export_abis: BTreeMap<ItemInstanceId, LibraryExportAbi>,
     abi_names: BTreeMap<ItemInstanceId, QualifiedName>,
     imports: BTreeMap<ItemInstanceId, BackendImport>,
     sum_reps: BTreeMap<nyar_types::NominalInstanceId, nyar_types::layout_choice::SumRepresentation>,
@@ -78,51 +73,6 @@ pub struct BackendImport {
     pub parameter_types: Vec<NyarType>,
     /// 返回类型。
     pub return_type: NyarType,
-    /// 计划冻结的目标 operator 绑定；`None` 表示该导入不是目标 operator 绑定。
-    pub target_operator: Option<TargetOperatorBinding>,
-}
-
-/// 库导出参数或返回值的 Wasm 物理载体。
-///
-/// 载体是目标执行计划的冻结事实；backend 只能序列化这里的值，不得再从
-/// `WasmAbiType` schema 现场推导载体。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum AbiCarrier {
-    /// `i32` 槽位。
-    I32,
-    /// `i64` 槽位。
-    I64,
-    /// `f32` 槽位。
-    F32,
-    /// `f64` 槽位。
-    F64,
-    /// 宿主句柄（数组 / Option / Tuple / 具名聚合）。
-    Handle,
-    /// 无返回值。
-    Void,
-}
-
-impl AbiCarrier {
-    /// 返回载体名称（lowercase）。
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::I32 => "i32",
-            Self::I64 => "i64",
-            Self::F32 => "f32",
-            Self::F64 => "f64",
-            Self::Handle => "handle",
-            Self::Void => "void",
-        }
-    }
-}
-
-/// 一个库导出实例的冻结 ABI 载体合同。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LibraryExportAbi {
-    /// 按声明顺序排列的参数载体。
-    pub params: Vec<AbiCarrier>,
-    /// 返回值载体；无返回值时为 [`AbiCarrier::Void`]。
-    pub returns: AbiCarrier,
 }
 
 /// 程序级文本载体表示模式：表示计划的正式事实。
@@ -142,11 +92,9 @@ impl TargetExecutionPlan {
     pub(crate) fn from_entry_function(function: ExecutableFunction) -> Result<Self> {
         let entry = ItemInstanceId::from_index(0).expect("测试入口身份");
         let name = QualifiedName::new(vec![nyar::Identifier::new("main")]);
-        let abi = freeze_library_export_abi(&function)?;
         Ok(Self {
             entry_operation: Some(entry),
             functions: BTreeMap::from([(entry, function)]),
-            library_export_abis: BTreeMap::from([(entry, abi)]),
             abi_names: BTreeMap::from([(entry, name)]),
             ..Self::default()
         })
@@ -154,9 +102,8 @@ impl TargetExecutionPlan {
 
     /// 从 ABI 名称表构造测试用目标私有计划。
     ///
-    /// 导出名尚未登记，因此库导出 ABI 载体合同也尚未冻结；测试在
-    /// [`Self::testing_export_names_mut`] 登记导出名后必须调用
-    /// [`Self::testing_freeze_library_export_abis`] 补齐冻结，不能依赖后端猜测载体。
+    /// 计划只携带逻辑导出身份与签名；各 lane 在自己的边界按签名冻结物理载体，
+    /// 不把任何平台的载体缓存写回共享计划。
     #[doc(hidden)]
     pub fn from_functions(functions: BTreeMap<QualifiedName, ExecutableFunction>) -> Self {
         let mut plan = Self::default();
@@ -261,11 +208,7 @@ impl TargetExecutionPlan {
 
     /// 登记 unite 的冻结 sum 布局索引（集成测试专用）。
     #[doc(hidden)]
-    pub fn testing_register_sum_layout(
-        &mut self,
-        ty: NyarType,
-        sum: nyar_types::SumTypeLayout,
-    ) -> &mut Self {
+    pub fn testing_register_sum_layout(&mut self, ty: NyarType, sum: nyar_types::SumTypeLayout) -> &mut Self {
         self.sum_layout_by_nyar_type.insert(ty, sum);
         self
     }
@@ -345,22 +288,9 @@ impl TargetExecutionPlan {
             if let Some((index, import)) = declared_imports.get(&instance) {
                 let parameter_types = import.parameter_types.iter().map(|ty| lower_type(canonical, *ty)).collect::<Result<Vec<_>>>()?;
                 let return_type = lower_type(canonical, import.return_type)?;
-                let target_operator = freeze_target_operator(&import.link);
-                if let Some(binding) = target_operator {
-                    let symbol = canonical.linked.callable_names.get(&instance).map(|name| name.to_string());
-                    match binding {
-                        TargetOperatorBinding::Frozen(plan) => {
-                            validate_frozen_operator(instance, symbol.as_deref(), &import.link, &parameter_types, &return_type, &plan)?;
-                        }
-                        TargetOperatorBinding::FrozenWasmGcArray(plan) => {
-                            validate_frozen_array_operator(instance, symbol.as_deref(), &import.link, &parameter_types, &return_type, &plan)?;
-                        }
-                        TargetOperatorBinding::Unfrozen => {}
-                    }
-                }
                 imports.insert(
                     instance,
-                    BackendImport { index: *index, link: import.link.clone(), parameter_types, return_type, target_operator },
+                    BackendImport { index: *index, link: import.link.clone(), parameter_types, return_type },
                 );
                 continue;
             }
@@ -457,7 +387,6 @@ impl TargetExecutionPlan {
             flags_types: canonical.linked.flags_types.clone(),
             singleton_instances: canonical.linked.singleton_instances.clone(),
             functions,
-            library_export_abis: BTreeMap::new(),
             abi_names,
             imports,
             sum_reps: program.representation().sum_reps.clone(),
@@ -470,36 +399,6 @@ impl TargetExecutionPlan {
             }),
         };
         Ok(plan)
-    }
-
-    /// 按实例查询已冻结的库导出 ABI 载体合同。
-    pub fn library_export_abi(&self, instance: &ItemInstanceId) -> Option<&LibraryExportAbi> {
-        self.library_export_abis.get(instance)
-    }
-
-    /// 在测试登记导出名后补齐库导出 ABI 载体冻结（集成测试专用）。
-    #[doc(hidden)]
-    pub fn testing_freeze_library_export_abis(&mut self) -> Result<()> {
-        self.freeze_library_export_abis()
-    }
-
-    /// 为所有已声明导出名的实例冻结参数/返回载体。
-    ///
-    /// 聚合 helper 的 producer 也在 `export_names` 中，因此同样被冻结；缺少
-    /// 函数体或类型没有稳定载体时结构化失败。
-    fn freeze_library_export_abis(&mut self) -> Result<()> {
-        let mut abis = BTreeMap::new();
-        for (instance, export_name) in &self.export_names {
-            let function = self
-                .functions
-                .get(instance)
-                .ok_or_else(|| format!("库导出 `{instance}`（export_name={export_name}）缺少 Compiler 函数体，无法冻结 ABI 载体合同"))?;
-            let abi = freeze_library_export_abi(function)
-                .map_err(|reason| format!("库导出 `{instance}`（export_name={export_name}）冻结 ABI 载体合同失败: {reason}"))?;
-            abis.insert(*instance, abi);
-        }
-        self.library_export_abis = abis;
-        Ok(())
     }
 
     /// 返回模块名。
@@ -659,309 +558,6 @@ impl TargetExecutionPlan {
     /// 返回 sum 类型表示合同映射。
     pub fn sum_representations(&self) -> &BTreeMap<nyar_types::NominalInstanceId, nyar_types::layout_choice::SumRepresentation> {
         &self.sum_reps
-    }
-}
-
-/// 冻结一个库导出函数的参数与返回载体。
-///
-/// 参数按 `param_types` 声明顺序逐个映射；返回值按 `return_type` 映射。这里的
-/// 载体是 **Wasm 物理投影**，必须与 `nyar.library_invoke` section 消费的
-/// `WasmAbiType` 载体保持一一对应；它不是跨目标中立的“标量/句柄”分类，其它
-/// 目标不得把本表直接当作自己的边界载体。
-///
-/// `utf8` 的 `I32` 尤其只是 wasm JS glue 的 intern 句柄槽（宿主字符串表），
-/// 不是“文本是 i32 标量”。OVM 的文本边界由**逐槽**冻结事实决定（入口形参取
-/// `value_layouts` / 折叠槽类型回查，返回取 `return_layout`），并在
-/// [`crate::ovm_abi::OvmTextRepresentation`] 里显式记录托管文本对象或 raw 宿主串；
-/// 宿主按合同取，不得复用本表的 `I32`，也不得运行时探测值类型。
-///
-/// 没有稳定 Wasm 载体的类型（`Integer128` / `Utf16` / `Bottom` / `Function` /
-/// `TraitObject` / `Union`）在此结构化失败，不得回落为默认载体。
-///
-/// 这是载体冻结的**唯一派生点**。`library_export_abis` 只是 wasm 导出面的预冻结
-/// 缓存；OVM 的导出面（`exported_operations` / 程序入口）不在该缓存里时，必须调用
-/// 本函数现场冻结，不能把“未登记”当成“不可携带”：零参数 / `Void` 边界应产出
-/// `params: []` 加 `Void` 的空合同，只有真正没有载体的类型才失败。
-pub(crate) fn freeze_library_export_abi(function: &ExecutableFunction) -> Result<LibraryExportAbi> {
-    let mut params = Vec::with_capacity(function.param_types.len());
-    for (index, ty) in function.param_types.iter().enumerate() {
-        let carrier = freeze_abi_carrier(ty)
-            .map_err(|reason| format!("函数 `{}` 参数 {index} 类型 `{ty}` 没有库导出 ABI 载体: {reason}", function.symbol))?;
-        if carrier == AbiCarrier::Void {
-            return Err(format!("函数 `{}` 参数 {index} 类型 `{ty}` 映射为 Void 载体，Void 只允许出现在返回位", function.symbol));
-        }
-        params.push(carrier);
-    }
-    let returns = freeze_abi_carrier(&function.return_type)
-        .map_err(|reason| format!("函数 `{}` 返回类型 `{}` 没有库导出 ABI 载体: {reason}", function.symbol, function.return_type))?;
-    Ok(LibraryExportAbi { params, returns })
-}
-
-/// 把单个 `NyarType` 映射为 Wasm 物理载体。
-///
-/// 语义与 `abi_schema_for_type` + `abi_carrier_name` 的组合结果一致：标量按 Wasm
-/// 原生槽位，容器与具名聚合统一为宿主句柄。
-///
-/// `Utf8 → I32` 只表示 wasm 边界的 JS intern 句柄，不表示文本是标量：OVM 的
-/// 文本载体由 [`crate::ovm_abi::OvmAbiType::Text`] 的冻结表示声明（托管文本
-/// 对象布局或 raw 宿主串），不复用这里的 `I32`。
-fn freeze_abi_carrier(ty: &NyarType) -> Result<AbiCarrier> {
-    Ok(match ty {
-        NyarType::Unit => AbiCarrier::Void,
-        NyarType::Boolean | NyarType::Character => AbiCarrier::I32,
-        NyarType::Integer8 { .. } | NyarType::Integer16 { .. } | NyarType::Integer32 { .. } => AbiCarrier::I32,
-        NyarType::Integer64 { .. } => AbiCarrier::I64,
-        NyarType::Float32 => AbiCarrier::F32,
-        NyarType::Float64 => AbiCarrier::F64,
-        NyarType::Utf8 => AbiCarrier::I32,
-        NyarType::Array(_) | NyarType::FixedArray { .. } | NyarType::Nullable(_) | NyarType::Tuple(_) => AbiCarrier::Handle,
-        NyarType::Named(_) | NyarType::Nominal { .. } | NyarType::Apply(_, _) => AbiCarrier::Handle,
-        NyarType::Integer128 { .. } => return Err("Integer128 没有原生 Wasm 载体，需要显式拆分合同".to_string()),
-        NyarType::Utf16 => {
-            return Err(crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI.to_string());
-        }
-        NyarType::Bottom => return Err("`void` / bottom 类型不能出现在库导出 ABI 位置".to_string()),
-        NyarType::Function(_) => return Err("函数类型不能出现在库导出 ABI 位置".to_string()),
-        NyarType::TraitObject(_) => return Err("TraitObject（dynamic dispatch）没有稳定的 Wasm 载体".to_string()),
-        NyarType::Union(_) => return Err("匿名 union 的 Wasm ABI 合同尚未定义".to_string()),
-    })
-}
-
-/// 计划构造时冻结 `[wasm_operator]` / `[ovm_operator]` / `[jvm_operator]` /
-/// `[clr_operator]` 的完整 operator 计划。
-///
-/// 助记符只在此处解析一次；backend 之后只消费 [`TargetOperatorBinding`]，不得再从
-/// 助记符字符串推断 arity、操作数改写或结果类型。未解析的绑定保留为
-/// [`TargetOperatorBinding::Unfrozen`]，由 emit 侧结构化失败。
-fn freeze_target_operator(link: &ExternalImportLink) -> Option<TargetOperatorBinding> {
-    if let Some(mnemonic) = crate::lowering::shared::interop::wasm_operator_target(link) {
-        if let Some(plan) = crate::lowering::backends::wasm::mir::numeric::freeze_wasm_numeric_binding(mnemonic) {
-            return Some(TargetOperatorBinding::Frozen(plan));
-        }
-        // 数值表未命中时进入数组助记符表：两者都是 wasm backend 私有的冻结配方表，
-        // 未知助记符统一落 `Unfrozen`，由 emit 结构化失败。
-        if let Some(plan) = crate::lowering::backends::wasm::mir::array::freeze_wasm_array_binding(mnemonic) {
-            return Some(TargetOperatorBinding::FrozenWasmGcArray(plan));
-        }
-        return Some(TargetOperatorBinding::Unfrozen);
-    }
-    let vm_mnemonic = crate::lowering::shared::interop::ovm_operator_target(link);
-    #[cfg(feature = "ovm-lane")]
-    if let Some(mnemonic) = vm_mnemonic {
-        let resolved = crate::lowering::backends::ovm_mir::freeze_ovm_operator_binding(mnemonic);
-        return Some(frozen_operator_binding(resolved));
-    }
-    #[cfg(not(feature = "ovm-lane"))]
-    if vm_mnemonic.is_some() {
-        return Some(TargetOperatorBinding::Unfrozen);
-    }
-    if let Some(mnemonic) = crate::lowering::shared::interop::jvm_operator_target(link) {
-        // JVM 配方表是纯静态后端私有表，无需 feature 门。
-        let resolved = crate::lowering::backends::jvm::recipe::freeze_jvm_operator_binding(mnemonic);
-        return Some(frozen_operator_binding(resolved));
-    }
-    if let Some(mnemonic) = crate::lowering::shared::interop::clr_operator_target(link) {
-        // CLR 配方表同形：纯静态后端私有表。
-        let resolved = crate::lowering::backends::clr::mir::freeze_clr_operator_binding(mnemonic);
-        return Some(frozen_operator_binding(resolved));
-    }
-    if let Some(mnemonic) = crate::lowering::shared::interop::x86_64_operator_target(link) {
-        // x86-64 配方表按 ISA 冻结编码；声明「native」而不声明 ISA 的绑定不在此列，
-        // 保持 `Unfrozen`，由 emit 结构化失败，禁止按宿主架构猜编码。
-        let resolved = crate::lowering::backends::native::x86_64::freeze_x86_64_operator_binding(mnemonic);
-        return Some(frozen_operator_binding(resolved));
-    }
-    None
-}
-
-fn frozen_operator_binding(resolved: Option<TargetOperatorPlan>) -> TargetOperatorBinding {
-    match resolved {
-        Some(plan) => TargetOperatorBinding::Frozen(plan),
-        None => TargetOperatorBinding::Unfrozen,
-    }
-}
-
-/// 校验冻结计划与导入声明在 arity、操作数载体和结果槽载体上一致。
-///
-/// 导入声明是 Compiler 已绑定的调用合同，冻结计划是目标 operator 的物理形状；二者不一致
-/// 时计划不成立，必须在此结构化失败，不得让后端按声明槽位发射后再改写或补默认值。
-fn validate_frozen_operator(
-    instance: ItemInstanceId,
-    symbol: Option<&str>,
-    link: &ExternalImportLink,
-    parameter_types: &[NyarType],
-    return_type: &NyarType,
-    plan: &TargetOperatorPlan,
-) -> Result<()> {
-    let mnemonic = crate::lowering::shared::interop::wasm_operator_target(link)
-        .or_else(|| crate::lowering::shared::interop::ovm_operator_target(link))
-        .or_else(|| crate::lowering::shared::interop::jvm_operator_target(link))
-        .or_else(|| crate::lowering::shared::interop::clr_operator_target(link))
-        .or_else(|| crate::lowering::shared::interop::x86_64_operator_target(link))
-        .unwrap_or("<unknown>");
-    let function = symbol.unwrap_or("<unknown>");
-    if parameter_types.len() != plan.arity {
-        return Err(format!(
-            "目标 operator 绑定 `{mnemonic}` 的声明 arity 与冻结计划不符: function={function} expected={} actual={} instance={instance:?} link={link}",
-            plan.arity,
-            parameter_types.len()
-        ));
-    }
-    for (index, ty) in parameter_types.iter().enumerate() {
-        let Some(carrier) = operand_carrier(ty)
-        else {
-            return Err(format!(
-                "目标 operator 绑定 `{mnemonic}` 的参数 {index} 类型没有目标载体: function={function} type={ty:?} instance={instance:?} link={link}"
-            ));
-        };
-        if carrier != plan.operand_type {
-            return Err(format!(
-                "目标 operator 绑定 `{mnemonic}` 的参数 {index} 操作数载体与冻结计划不符: function={function} expected={:?} actual={:?} instance={instance:?} link={link}",
-                plan.operand_type, carrier
-            ));
-        }
-    }
-    let Some(result_carrier) = result_carrier(return_type)
-    else {
-        return Err(format!(
-            "目标 operator 绑定 `{mnemonic}` 的返回类型没有结果槽载体: function={function} type={return_type:?} instance={instance:?} link={link}"
-        ));
-    };
-    if result_carrier != plan.result_type {
-        return Err(format!(
-            "目标 operator 绑定 `{mnemonic}` 的结果槽载体与冻结计划不符: function={function} expected={:?} actual={:?} instance={instance:?} link={link}",
-            plan.result_type, result_carrier
-        ));
-    }
-    if let TargetOperatorRecipe::Steps(steps) = plan.recipe {
-        for step in steps {
-            if let TargetOperandStep::IntegerConstant { operand_type: constant_type, .. } = step {
-                if *constant_type != plan.operand_type {
-                    return Err(format!(
-                        "目标 operator 绑定 `{mnemonic}` 的常量配方载体与冻结操作数载体不符: function={function} expected={:?} actual={:?} instance={instance:?} link={link}",
-                        plan.operand_type, constant_type
-                    ));
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-/// 校验冻结的 wasm GC 数组计划与导入声明的实例化签名一致。
-///
-/// 数组 operator 的物理编码是多步的（`ref.cast` + `array.*`），arraytype 索引属于
-/// 模块装配期 RepresentationPlan 注册表事实，不在计划层冻结；此处校验的是声明签名
-/// 与冻结 arity/操作身份的语义形状：聚合参数必须是堆数组 `[T]`，长度/索引参数必须
-/// 携带 i32 载体，`get`/`set` 的元素槽必须与数组元素类型逐点一致。形状不符即计划
-/// 不成立，结构化失败，不得让后端发射后再改写。
-fn validate_frozen_array_operator(
-    instance: ItemInstanceId,
-    symbol: Option<&str>,
-    link: &ExternalImportLink,
-    parameter_types: &[NyarType],
-    return_type: &NyarType,
-    plan: &WasmGcArrayOperatorPlan,
-) -> Result<()> {
-    use WasmGcArrayOperation::{Get, Length, New, Set};
-    let mnemonic = crate::lowering::shared::interop::wasm_operator_target(link).unwrap_or("<unknown>");
-    let function = symbol.unwrap_or("<unknown>");
-    let fail = |reason: String| -> Result<()> {
-        Err(format!(
-            "目标数组 operator 绑定 `{mnemonic}` 的声明签名与冻结计划不符: function={function} {reason} instance={instance:?} link={link}"
-        ))
-    };
-    if parameter_types.len() != plan.arity {
-        return fail(format!("expected arity={} actual={}", plan.arity, parameter_types.len()));
-    }
-    fn array_element(ty: &NyarType) -> Option<&NyarType> {
-        match ty {
-            NyarType::Array(element) => Some(element.as_ref()),
-            _ => None,
-        }
-    }
-    let index_carrier = |ty: &NyarType| operand_carrier(ty) == Some(TargetOperandType::I32);
-    match plan.operation {
-        New => {
-            let Some(length) = parameter_types.first()
-            else {
-                return fail("arity 事实缺失".to_owned());
-            };
-            if !index_carrier(length) {
-                return fail(format!("`array.new` 的长度参数必须携带 i32 载体: actual={length:?}"));
-            }
-            if array_element(return_type).is_none() {
-                return fail(format!("`array.new` 的返回类型必须是堆数组 `[T]`: actual={return_type:?}"));
-            }
-        }
-        Length => {
-            let Some(array) = parameter_types.first()
-            else {
-                return fail("arity 事实缺失".to_owned());
-            };
-            if array_element(array).is_none() {
-                return fail(format!("`array.length` 的聚合参数必须是堆数组 `[T]`: actual={array:?}"));
-            }
-            if !index_carrier(return_type) {
-                return fail(format!("`array.length` 的返回类型必须携带 i32 载体: actual={return_type:?}"));
-            }
-        }
-        Get => {
-            let (Some(array), Some(index)) = (parameter_types.first(), parameter_types.get(1))
-            else {
-                return fail("arity 事实缺失".to_owned());
-            };
-            let Some(element) = array_element(array)
-            else {
-                return fail(format!("`array.get` 的聚合参数必须是堆数组 `[T]`: actual={array:?}"));
-            };
-            if !index_carrier(index) {
-                return fail(format!("`array.get` 的索引参数必须携带 i32 载体: actual={index:?}"));
-            }
-            if return_type != element {
-                return fail(format!("`array.get` 的返回类型必须与数组元素类型一致: element={element:?} actual={return_type:?}"));
-            }
-        }
-        Set => {
-            let (Some(array), Some(index), Some(value)) = (parameter_types.first(), parameter_types.get(1), parameter_types.get(2))
-            else {
-                return fail("arity 事实缺失".to_owned());
-            };
-            let Some(element) = array_element(array)
-            else {
-                return fail(format!("`array.set` 的聚合参数必须是堆数组 `[T]`: actual={array:?}"));
-            };
-            if !index_carrier(index) {
-                return fail(format!("`array.set` 的索引参数必须携带 i32 载体: actual={index:?}"));
-            }
-            if value != element {
-                return fail(format!("`array.set` 的值参数必须与数组元素类型一致: element={element:?} actual={value:?}"));
-            }
-            if *return_type != NyarType::Unit {
-                return fail(format!("`array.set` 的返回类型必须是 unit: actual={return_type:?}"));
-            }
-        }
-    }
-    Ok(())
-}
-
-fn operand_carrier(ty: &NyarType) -> Option<TargetOperandType> {
-    match ty {
-        NyarType::Integer32 { .. } => Some(TargetOperandType::I32),
-        // `char`（u16 code unit）在这些 lane 的物理载体是 i32（ABI 层 `AbiCarrier::I32` 同构）；
-        // 等值/比较配方按零扩展后的码位判定，不引入截断语义。
-        NyarType::Character => Some(TargetOperandType::I32),
-        NyarType::Integer64 { .. } => Some(TargetOperandType::I64),
-        NyarType::Float32 => Some(TargetOperandType::F32),
-        NyarType::Float64 => Some(TargetOperandType::F64),
-        _ => None,
-    }
-}
-
-fn result_carrier(ty: &NyarType) -> Option<TargetOperandType> {
-    match ty {
-        NyarType::Boolean => Some(TargetOperandType::I32),
-        _ => operand_carrier(ty),
     }
 }
 
@@ -1244,17 +840,11 @@ fn lower_operation(
             },
         },
         CanonicalOperation::ArrayFromElements { array_type, elements } => {
-            // 只有 FixedArray 才需要 aggregate layout；普通 Array 由 Wasm GC array.new_fixed 处理。
-            let need_layout = matches!(
-                program.linked.types.get(array_type).map(|row| &row.kind),
-                Some(nyar_types::CanonicalTypeKind::Array { length: Some(_), .. })
-            );
-            let layout_id = if need_layout {
-                layout_for_type(*array_type, "ArrayFromElements")?
-            }
-            else {
-                // 普通 Array 不需要 aggregate layout；用 dummy 0 占位，wasm backend 会跳过。
-                0u32
+            // 只有 FixedArray 才有聚合布局；动态数组没有对象 body 布局，
+            // 不得用 dummy 身份污染共享计划。
+            let layout_id = match program.linked.types.get(array_type).map(|row| &row.kind) {
+                Some(nyar_types::CanonicalTypeKind::Array { length: Some(_), .. }) => Some(layout_for_type(*array_type, "ArrayFromElements")?),
+                _ => None,
             };
             InstructionKind::ArrayFromElements {
                 layout_id,
@@ -1356,9 +946,7 @@ fn type_contains_generic_deep(program: &CanonicalProgram, id: nyar_types::TypeId
         nyar_types::CanonicalTypeKind::Tuple(items)
         | nyar_types::CanonicalTypeKind::Union(items)
         | nyar_types::CanonicalTypeKind::Intersection(items) => items.iter().any(|a| type_contains_generic_deep(program, *a)),
-        nyar_types::CanonicalTypeKind::LabeledTuple { fields } => {
-            fields.iter().any(|(_, ty)| type_contains_generic_deep(program, *ty))
-        }
+        nyar_types::CanonicalTypeKind::LabeledTuple { fields } => fields.iter().any(|(_, ty)| type_contains_generic_deep(program, *ty)),
         nyar_types::CanonicalTypeKind::Array { element, .. } => type_contains_generic_deep(program, *element),
         nyar_types::CanonicalTypeKind::Nullable(element) => type_contains_generic_deep(program, *element),
         nyar_types::CanonicalTypeKind::Function { parameters, return_type } => {
@@ -1483,9 +1071,9 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
         CanonicalTypeKind::Tuple(items) => Ok(NyarType::Tuple(items.iter().map(|id| lower_type(program, *id)).collect::<Result<_>>()?)),
         // 唯一标签擦除点：标签只属于 canonical 身份，目标层按位置布局，`NyarType`
         // 与 `LayoutKey` 保持无标签。类型身份不等但布局相同的元组在 ABI 上允许。
-        CanonicalTypeKind::LabeledTuple { fields } => Ok(NyarType::Tuple(
-            fields.iter().map(|(_, ty)| lower_type(program, *ty)).collect::<Result<_>>()?,
-        )),
+        CanonicalTypeKind::LabeledTuple { fields } => {
+            Ok(NyarType::Tuple(fields.iter().map(|(_, ty)| lower_type(program, *ty)).collect::<Result<_>>()?))
+        }
         CanonicalTypeKind::Array { element, length: None } => Ok(NyarType::Array(Box::new(lower_type(program, *element)?))),
         CanonicalTypeKind::Array { element, length: Some(length) } => Ok(NyarType::FixedArray {
             element: Box::new(lower_type(program, *element)?),
@@ -1529,12 +1117,8 @@ fn lower_type(program: &CanonicalProgram, id: nyar_types::TypeId) -> Result<Nyar
                 .or_else(|| program.linked.type_surface_spellings.get(&id));
             // 零实参 nominal 的布局可能登记在声明 `TypeId` 上（`Self` 别名与声明
             // 使用不同 `TypeId`），只能按声明身份回退，禁止按短名回查。
-            let layout = program
-                .linked
-                .aggregate_layout_by_type
-                .get(&id)
-                .or_else(|| program.linked.aggregate_layout_by_type.get(declaration))
-                .copied();
+            let layout =
+                program.linked.aggregate_layout_by_type.get(&id).or_else(|| program.linked.aggregate_layout_by_type.get(declaration)).copied();
             if let Some(name) = spelling {
                 if let Some(primitive) = canonical_primitive_carrier(name.as_str()) {
                     return Ok(primitive);
@@ -1686,7 +1270,7 @@ fn nominal_contract_context(program: &CanonicalProgram, id: nyar_types::TypeId, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::target_operator::TargetOperatorEncoding;
+    use crate::target_operator::{TargetOperandType, operand_carrier};
     use nyar_types::{CanonicalBlockId, CanonicalFunction, CanonicalPrimitiveType, ItemId, TypeRecord};
 
     fn type_id(index: u32) -> nyar_types::TypeId {
@@ -1763,15 +1347,7 @@ mod tests {
             namespace: String::new(),
             key: None,
             storage: nyar_types::StorageKind::Value,
-            size: 8,
-            align: 8,
-            fields: vec![nyar_types::FieldLayout {
-                name: "code".into(),
-                ty: NyarType::Integer64 { signed: true },
-                offset: 0,
-                size: 8,
-                align: 8,
-            }],
+            fields: vec![nyar_types::FieldLayout { name: "code".into(), ty: NyarType::Integer64 { signed: true } }],
         });
         program.linked.nominal_instances.insert(
             nyar_types::NominalInstanceId::from_index(0).expect("测试名义实例身份"),
@@ -1834,7 +1410,7 @@ mod tests {
     }
 
     /// 浮点宽度与目标载体一一对应：`Float{bits:32}` 必须登记为独立的 `NyarType::Float32`
-    /// 与 `AbiCarrier::F32` / `TargetOperandType::F32`，不得静默并入 64 位载体。
+    /// 与 `TargetOperandType::F32`，不得静默并入 64 位载体。
     #[test]
     fn float_primitive_registers_width_matched_target_contract() {
         let program = program_with_types(vec![
@@ -1844,7 +1420,6 @@ mod tests {
         assert_eq!(lower_type(&program, type_id(0)).expect("f64 必须有目标合同"), NyarType::Float64);
         let float32 = lower_type(&program, type_id(1)).expect("f32 必须有目标合同");
         assert_eq!(float32, NyarType::Float32);
-        assert_eq!(freeze_abi_carrier(&float32).expect("f32 有独立 ABI 载体"), AbiCarrier::F32);
         assert_eq!(operand_carrier(&float32), Some(TargetOperandType::F32));
         assert_ne!(operand_carrier(&float32), operand_carrier(&NyarType::Float64), "f32 不得复用 f64 载体");
     }
@@ -1940,74 +1515,44 @@ mod tests {
     /// 翻转展开码；操作数载体 `I64`、结果槽 `I32`，与 `__u64_lt` 的声明签名一致。
     #[test]
     fn unsigned_u64_less_than_freezes_managed_operator_plans() {
-        let clr_link = nyar::ExternalImportLink::host(Some(nyar::Identifier::new("clr-operator")), vec!["i64.lt.un".to_string()]);
-        let Some(TargetOperatorBinding::Frozen(clr_plan)) = freeze_target_operator(&clr_link)
-        else {
-            panic!("`i64.lt.un` 必须冻结")
-        };
+        let clr_plan = crate::lowering::backends::clr::mir::freeze_clr_operator_binding("i64.lt.un").expect("`i64.lt.un` 必须冻结");
         assert_eq!(clr_plan.arity, 2);
         assert_eq!(clr_plan.operand_type, TargetOperandType::I64);
         assert_eq!(clr_plan.result_type, TargetOperandType::I32);
-        assert_eq!(clr_plan.encoding, TargetOperatorEncoding::Clr(crate::transitional::msil::MsilOpcode::CltUn));
+        assert_eq!(clr_plan.encoding, crate::transitional::msil::MsilOpcode::CltUn);
 
-        let jvm_link =
-            nyar::ExternalImportLink::host(Some(nyar::Identifier::new("jvm-operator")), vec!["long.compare_less_than_unsigned".to_string()]);
-        let Some(TargetOperatorBinding::Frozen(jvm_plan)) = freeze_target_operator(&jvm_link)
-        else {
-            panic!("`long.compare_less_than_unsigned` 必须冻结")
-        };
+        let jvm_plan = crate::lowering::backends::jvm::recipe::freeze_jvm_operator_binding("long.compare_less_than_unsigned")
+            .expect("`long.compare_less_than_unsigned` 必须冻结");
         assert_eq!(jvm_plan.arity, 2);
         assert_eq!(jvm_plan.operand_type, TargetOperandType::I64);
         assert_eq!(jvm_plan.result_type, TargetOperandType::I32);
-        assert!(matches!(
-            jvm_plan.encoding,
-            TargetOperatorEncoding::Jvm(crate::lowering::backends::jvm::JvmOperatorCode::LongCompareLessThanUnsigned)
-        ));
+        assert_eq!(jvm_plan.encoding, crate::lowering::backends::jvm::JvmOperatorCode::LongCompareLessThanUnsigned);
     }
 
     /// `x86_64_operator(...)` 按 ISA 冻结编码：`long.*` 冻结为 x86-64 码，
     /// 未实现的 `integer.*` 与未声明 ISA 的标签不得被猜成任何指令集。
     #[test]
     fn x86_64_operator_links_freeze_isa_encodings() {
-        use crate::lowering::backends::native::x86_64::X86_64OperatorCode;
+        use crate::lowering::backends::native::x86_64::{X86_64OperatorCode, freeze_x86_64_operator_binding};
 
-        let add = nyar::ExternalImportLink::host(Some(nyar::Identifier::new("x86_64-operator")), vec!["long.add".to_string()]);
-        let Some(TargetOperatorBinding::Frozen(plan)) = freeze_target_operator(&add)
-        else {
-            panic!("`long.add` 必须冻结")
-        };
+        let plan = freeze_x86_64_operator_binding("long.add").expect("`long.add` 必须冻结");
         assert_eq!(plan.arity, 2);
         assert_eq!(plan.operand_type, TargetOperandType::I64);
         assert_eq!(plan.result_type, TargetOperandType::I64);
-        assert_eq!(plan.encoding, TargetOperatorEncoding::X86_64(X86_64OperatorCode::I64Add));
+        assert_eq!(plan.encoding, X86_64OperatorCode::I64Add);
 
-        let compare =
-            nyar::ExternalImportLink::host(Some(nyar::Identifier::new("x86_64-operator")), vec!["long.compare_less_than".to_string()]);
-        let Some(TargetOperatorBinding::Frozen(plan)) = freeze_target_operator(&compare)
-        else {
-            panic!("`long.compare_less_than` 必须冻结")
-        };
+        let plan = freeze_x86_64_operator_binding("long.compare_less_than").expect("`long.compare_less_than` 必须冻结");
         assert_eq!(plan.result_type, TargetOperandType::I32);
-        assert_eq!(plan.encoding, TargetOperatorEncoding::X86_64(X86_64OperatorCode::I64CompareLessThan));
+        assert_eq!(plan.encoding, X86_64OperatorCode::I64CompareLessThan);
 
         // 32 位整数算术：载体 `I32` → `I32`。
-        let integer = nyar::ExternalImportLink::host(Some(nyar::Identifier::new("x86_64-operator")), vec!["integer.add".to_string()]);
-        let Some(TargetOperatorBinding::Frozen(plan)) = freeze_target_operator(&integer)
-        else {
-            panic!("`integer.add` 必须冻结")
-        };
+        let plan = freeze_x86_64_operator_binding("integer.add").expect("`integer.add` 必须冻结");
         assert_eq!(plan.operand_type, TargetOperandType::I32);
         assert_eq!(plan.result_type, TargetOperandType::I32);
-        assert_eq!(plan.encoding, TargetOperatorEncoding::X86_64(X86_64OperatorCode::I32Add));
+        assert_eq!(plan.encoding, X86_64OperatorCode::I32Add);
 
-        // 未实现的 provider（无符号除）：保持 `Unfrozen`，由 emit 结构化失败。
-        let unsupported =
-            nyar::ExternalImportLink::host(Some(nyar::Identifier::new("x86_64-operator")), vec!["integer.divide_unsigned".to_string()]);
-        assert_eq!(freeze_target_operator(&unsupported), Some(TargetOperatorBinding::Unfrozen));
-
-        // 只声明「native」不声明 ISA：不得冻结编码。
-        let native = nyar::ExternalImportLink::host(Some(nyar::Identifier::new("native-operator")), vec!["long.add".to_string()]);
-        assert_eq!(freeze_target_operator(&native), None);
+        // 未实现的 provider（无符号除）：表内无配方，emit 结构化失败。
+        assert!(freeze_x86_64_operator_binding("integer.divide_unsigned").is_none(), "未实现 provider 不得冻结");
     }
 
     /// `u64`/`u32` 无符号除、余、逻辑右移的托管目标配方：
@@ -2015,8 +1560,7 @@ mod tests {
     /// `Integer/Long.divideUnsigned/remainderUnsigned` 静态调用。
     #[test]
     fn unsigned_div_rem_shift_freeze_managed_operator_plans() {
-        use crate::lowering::backends::jvm::JvmOperatorCode;
-        use crate::transitional::msil::MsilOpcode;
+        use crate::{lowering::backends::jvm::JvmOperatorCode, transitional::msil::MsilOpcode};
 
         for (mnemonic, operand, result, opcode) in [
             ("i32.div.un", TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::DivUn),
@@ -2026,15 +1570,11 @@ mod tests {
             ("i64.rem.un", TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::RemUn),
             ("i64.shr.un", TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::ShrUn),
         ] {
-            let link = nyar::ExternalImportLink::host(Some(nyar::Identifier::new("clr-operator")), vec![mnemonic.to_string()]);
-            let Some(TargetOperatorBinding::Frozen(plan)) = freeze_target_operator(&link)
-            else {
-                panic!("`{mnemonic}` 必须冻结")
-            };
+            let plan = crate::lowering::backends::clr::mir::freeze_clr_operator_binding(mnemonic).unwrap_or_else(|| panic!("`{mnemonic}` 必须冻结"));
             assert_eq!(plan.arity, 2);
             assert_eq!(plan.operand_type, operand);
             assert_eq!(plan.result_type, result);
-            assert_eq!(plan.encoding, TargetOperatorEncoding::Clr(opcode), "`{mnemonic}` 编码");
+            assert_eq!(plan.encoding, opcode, "`{mnemonic}` 编码");
         }
 
         for (mnemonic, operand, result, code) in [
@@ -2044,15 +1584,12 @@ mod tests {
             ("long.remainder_unsigned", TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongRemainderUnsigned),
             ("long.shift_right_unsigned", TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongShiftRightUnsigned),
         ] {
-            let link = nyar::ExternalImportLink::host(Some(nyar::Identifier::new("jvm-operator")), vec![mnemonic.to_string()]);
-            let Some(TargetOperatorBinding::Frozen(plan)) = freeze_target_operator(&link)
-            else {
-                panic!("`{mnemonic}` 必须冻结")
-            };
+            let plan = crate::lowering::backends::jvm::recipe::freeze_jvm_operator_binding(mnemonic)
+                .unwrap_or_else(|| panic!("`{mnemonic}` 必须冻结"));
             assert_eq!(plan.arity, 2);
             assert_eq!(plan.operand_type, operand);
             assert_eq!(plan.result_type, result);
-            assert_eq!(plan.encoding, TargetOperatorEncoding::Jvm(code), "`{mnemonic}` 编码");
+            assert_eq!(plan.encoding, code, "`{mnemonic}` 编码");
         }
     }
 
@@ -2060,14 +1597,17 @@ mod tests {
     /// 不得按名字前缀猜默认指令。
     #[test]
     fn near_miss_unsigned_mnemonics_stay_unfrozen() {
-        for (lane, mnemonic) in [
-            ("clr-operator", "i64.div_unsigned"),
-            ("clr-operator", "i64.shr.un.extra"),
-            ("jvm-operator", "long.div.un"),
-            ("jvm-operator", "long.shift_right_unsigned.extra"),
-        ] {
-            let link = nyar::ExternalImportLink::host(Some(nyar::Identifier::new(lane)), vec![mnemonic.to_string()]);
-            assert_eq!(freeze_target_operator(&link), Some(TargetOperatorBinding::Unfrozen), "`{mnemonic}` 不得冻结");
+        for mnemonic in ["i64.div_unsigned", "i64.shr.un.extra"] {
+            assert!(
+                crate::lowering::backends::clr::mir::freeze_clr_operator_binding(mnemonic).is_none(),
+                "`{mnemonic}` 不得冻结"
+            );
+        }
+        for mnemonic in ["long.div.un", "long.shift_right_unsigned.extra"] {
+            assert!(
+                crate::lowering::backends::jvm::recipe::freeze_jvm_operator_binding(mnemonic).is_none(),
+                "`{mnemonic}` 不得冻结"
+            );
         }
     }
 }

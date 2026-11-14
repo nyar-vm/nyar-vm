@@ -1,7 +1,8 @@
-//! 后端私有可执行降低所用的聚合布局合同。
+//! 语言语义聚合形状与目标物理布局身份。
 //!
-//! 这些类型描述值/引用存储与字段偏移。它们不是
-//! 语言级 IR，也不是跨前端的语义总线。
+//! 本模块只描述**语义形状**：布局身份、字段身份与顺序、完整类型、值/引用存储类。
+//! 字节偏移、字段宽度与对齐是目标事实，由各平台在自己的布局解析器中产生，
+//! 不得写入语言成功载荷，也不得用占位值冒充。
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -35,19 +36,16 @@ impl StorageKind {
     }
 }
 
-/// One field slot inside an aggregate layout.
+/// 聚合中的一个语义字段槽。
+///
+/// 只携带语言事实：字段身份、完整类型与声明顺序。物理偏移/宽度/对齐由目标
+/// 布局解析器产出，此类型没有对应字段，也不接受占位值。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldLayout {
     /// Field name.
     pub name: String,
     /// Platform field type.
     pub ty: NyarType,
-    /// Byte offset within the aggregate.
-    pub offset: u32,
-    /// Field size in bytes.
-    pub size: u32,
-    /// Field alignment in bytes.
-    pub align: u32,
 }
 
 /// 匿名聚合（tuple / 定长数组）的结构化布局键。
@@ -67,7 +65,9 @@ pub enum LayoutKey {
     },
 }
 
-/// Memory layout for one aggregate type (structure, tuple, or fixed array).
+/// 一个聚合类型的**语义**布局（结构、tuple 或定长数组）。
+///
+/// 没有 `size/align`：整体物理尺寸属于目标表示，由目标布局解析器产出。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AggregateLayout {
     /// Layout identifier.
@@ -80,10 +80,6 @@ pub struct AggregateLayout {
     pub key: Option<LayoutKey>,
     /// Value vs reference storage class.
     pub storage: StorageKind,
-    /// Total size in bytes.
-    pub size: u32,
-    /// Aggregate alignment in bytes.
-    pub align: u32,
     /// Field slots in declaration order.
     pub fields: Vec<FieldLayout>,
 }

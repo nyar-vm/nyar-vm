@@ -316,8 +316,11 @@ pub enum InstructionKind {
     },
     /// Construct language array from a complete element sequence (replaces FixedArrayNew/ArrayLiteral).
     ArrayFromElements {
-        /// 编译器已验证的完整固定数组布局身份。
-        layout_id: crate::LayoutId,
+        /// 定长值聚合的布局身份；动态数组没有聚合布局，必须为 `None`。
+        ///
+        /// 平台若需要定长数组的物理 body，必须显式处理缺失事实，不得用
+        /// dummy 身份占位。
+        layout_id: Option<crate::LayoutId>,
         /// Full array type; fixed length lives in the type, not a parallel `usize`.
         array_type: NyarType,
         /// Element values in evaluation order already sequenced by SSA/CFG.

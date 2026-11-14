@@ -1,6 +1,6 @@
 //! Split from `lowerer.rs`.
 use super::*;
-use nyar_types::AggregateLayout;
+use crate::lowering::shared::physical_layout::ResolvedAggregateLayout;
 
 impl<'a> WasmMirLowerer<'a> {
     pub(super) fn emit_instruction(&mut self, instruction: &MirInstruction) -> crate::Result<()> {
@@ -294,7 +294,7 @@ impl<'a> WasmMirLowerer<'a> {
                 };
                 if matches!(array_type, NyarType::FixedArray { .. }) {
                     // Fixed value aggregate: linear layout when available.
-                    if let Some(layout) = self.ctx.layout_by_id(*layout_id).cloned() {
+                    if let Some(layout) = layout_id.and_then(|layout_id| self.ctx.layout_by_id(layout_id)).cloned() {
                         // 缺值槽是缺事实，发射前拒绝。
                         let Some(&local) = self.value_locals.get(&output)
                         else {
@@ -488,15 +488,15 @@ impl<'a> WasmMirLowerer<'a> {
                             self.assign_output_local(output);
                         }
                         else {
-                            self.emit_load_at_field(&field_layout)?;
-                            let stack_type = self.gc_struct_field_stack_type(&field_layout)?;
+                            self.emit_load_at_field(field_layout)?;
+                            let stack_type = self.gc_struct_field_stack_type(field_layout)?;
                             self.validate_output_slot_type(output, stack_type)?;
                             self.assign_output_local(output);
                         }
                     }
                     else {
                         if !field_is_inline_aggregate {
-                            self.emit_load_at_field(&field_layout)?;
+                            self.emit_load_at_field(field_layout)?;
                         }
                         self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Drop));
                     }
@@ -560,7 +560,7 @@ impl<'a> WasmMirLowerer<'a> {
                     let type_index = self.resolve_gc_struct_type_index(layout.id, &layout.name);
                     self.emit_local_get(object_local);
                     self.emit_ref_cast_struct(type_index);
-                    self.emit_operand_coerced(value, self.gc_struct_field_stack_type(&field_layout)?)?;
+                    self.emit_operand_coerced(value, self.gc_struct_field_stack_type(field_layout)?)?;
                     self.emit_struct_set(type_index, field_index as u32);
                 }
                 else if let Some(object_local) = self.operand_address_local(object) {
@@ -574,9 +574,9 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_local_get(object_local);
                     self.emit_i32_const(field_layout.offset as i32);
                     self.emit_i32_add();
-                    let expected = self.field_store_stack_type(&field_layout)?;
+                    let expected = self.field_store_stack_type(field_layout)?;
                     self.emit_operand_coerced(value, expected)?;
-                    self.emit_store_at_field(&field_layout)?;
+                    self.emit_store_at_field(field_layout)?;
                 }
                 else {
                     return Err(format!("WASM FieldSet 找不到对象槽 in `{}`: layout=`{}` field=`{field}`", self.mir_fn.symbol, layout.name));
@@ -732,7 +732,7 @@ impl<'a> WasmMirLowerer<'a> {
     /// （数组、闭包、联合、`class` 等）。禁止按类型名/字段名特判。
     fn emit_gc_struct_value_copy(
         &mut self,
-        layout: &AggregateLayout,
+        layout: &ResolvedAggregateLayout,
         type_index: u32,
         source_local: u32,
         dest_local: u32,

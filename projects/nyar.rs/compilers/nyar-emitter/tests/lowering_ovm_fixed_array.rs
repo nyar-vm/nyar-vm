@@ -46,7 +46,7 @@ fn array_function(length: usize, elements: usize) -> ExecutableFunction {
             instructions: vec![Instruction {
                 results: vec![ValueRef(0)],
                 // 0 是未登记进 `AggregateLayoutPlan` 的合成身份；后端不得据此 panic。
-                ..Instruction::from_kind(InstructionKind::ArrayFromElements { layout_id: 0, array_type: fixed_array(length), elements: operands })
+                ..Instruction::from_kind(InstructionKind::ArrayFromElements { layout_id: Some(0), array_type: fixed_array(length), elements: operands })
             }],
             terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
         }],

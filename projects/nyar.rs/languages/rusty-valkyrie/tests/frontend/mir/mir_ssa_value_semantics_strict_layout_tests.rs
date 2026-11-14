@@ -16,7 +16,6 @@ fn unite_layout_registers_identity_without_physical_payload() {
     // 语言层不得发明 tag/payload 载体或目标字节尺寸；只登记身份。
     assert_eq!(layout.storage, MirStorageKind::Reference);
     assert!(layout.fields.is_empty(), "sum 物理字段属于目标表示，不得由语言层合成");
-    assert_eq!((layout.size, layout.align), (0, 1), "身份记录不携带目标物理尺寸");
 }
 
 #[test]
@@ -39,7 +38,6 @@ enums Ordering {
     let layout = mir.aggregate_layouts.layouts.iter().find(|layout| layout.id == layout_id).expect("layout record");
     assert_eq!(layout.storage, MirStorageKind::Reference);
     assert!(layout.fields.is_empty(), "语言层不得为 sum 合成 tag/payload 物理字段");
-    assert_eq!((layout.size, layout.align), (0, 1));
 }
 
 #[test]

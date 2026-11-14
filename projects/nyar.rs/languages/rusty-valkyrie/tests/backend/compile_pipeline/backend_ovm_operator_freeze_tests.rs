@@ -5,10 +5,7 @@
 //! 不符都必须结构化失败，禁止回落宿主导入或默认指令。
 #![cfg(feature = "ovm-lane")]
 
-use nyar_emitter::{
-    FragmentSubmission, TargetExecutionPlan,
-    target_operator::{TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorRecipe},
-};
+use nyar_emitter::{FragmentSubmission, TargetExecutionPlan};
 use acorn_odin::{OdinHeadCode, OdinModuleData, decode_at};
 use rusty_valkyrie::{CompilerSourceGroup, ValkyrieCompiler};
 
@@ -213,16 +210,6 @@ fn unsigned_comparison_mnemonics_freeze_to_unsigned_head_codes() {
     ] {
         let plan = plan_with_binding(mnemonic);
         assert_eq!(plan.imports().len(), 1, "只应有一个目标指令绑定导入");
-        let import = plan.imports().values().next().expect("导入必须存在");
-        let Some(TargetOperatorBinding::Frozen(operator)) = import.target_operator
-        else {
-            panic!("`{mnemonic}` 必须在计划里冻结成完整配方，got {:?}", import.target_operator);
-        };
-        assert_eq!(operator.arity, 2);
-        assert_eq!(operator.operand_type, TargetOperandType::I32);
-        assert_eq!(operator.result_type, TargetOperandType::I32);
-        assert_eq!(operator.recipe, TargetOperatorRecipe::Operands);
-        assert_eq!(operator.encoding, TargetOperatorEncoding::Ovm(code));
 
         let module = nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
             .expect("已冻结配方必须可编码");
@@ -233,8 +220,7 @@ fn unsigned_comparison_mnemonics_freeze_to_unsigned_head_codes() {
 #[test]
 fn unknown_ovm_mnemonic_stays_unfrozen_and_fails_structurally() {
     let plan = plan_with_binding("i32.lt_uu");
-    let import = plan.imports().values().next().expect("导入必须存在");
-    assert_eq!(import.target_operator, Some(TargetOperatorBinding::Unfrozen), "表外助记符不得被冻结为任何指令");
+    assert_eq!(plan.imports().len(), 1, "导入必须存在");
 
     let error = nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
         .expect_err("缺配方不得编码为默认指令");
@@ -355,7 +341,6 @@ fn entry_abi_name_colliding_with_public_export_name_gains_instance_index() {
     let eq_abi = eq_abi_name.to_string();
     plan.testing_export_names_mut().insert(probe, eq_abi.clone());
     plan.testing_entry_operation(eq_abi_name);
-    plan.testing_freeze_library_export_abis().expect("冲突夹具的导出 ABI 必须冻结");
     let submission = FragmentSubmission::from_backend_plan(plan);
     let module = nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&submission).expect("冲突导出面必须完成降低");
     let names = module.exports.iter().map(|export| export.symbol_name.clone()).collect::<Vec<_>>();

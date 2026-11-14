@@ -55,9 +55,7 @@ fn layout_plan(id: LayoutId, name: &str, bytes_field: NyarType) -> AggregateLayo
             namespace: String::new(),
             key: None,
             storage: StorageKind::Reference,
-            size: 4,
-            align: 4,
-            fields: vec![FieldLayout { name: "_repr".to_string(), ty: bytes_field, offset: 0, size: 4, align: 4 }],
+            fields: vec![FieldLayout { name: "_repr".to_string(), ty: bytes_field }],
         }],
         ..Default::default()
     }
@@ -75,7 +73,6 @@ fn utf8_length_import() -> BackendImport {
         link: nyar::ExternalImportLink::host(Some(Identifier::new("wasm")), vec!["env".into(), "utf8_length".into()]),
         parameter_types: vec![UTF8],
         return_type: I32,
-        target_operator: None,
     }
 }
 
@@ -159,7 +156,6 @@ fn utf16_length_import() -> BackendImport {
         link: nyar::ExternalImportLink::host(Some(Identifier::new("wasm")), vec!["env".into(), "utf16_length".into()]),
         parameter_types: vec![UTF16],
         return_type: I32,
-        target_operator: None,
     }
 }
 
@@ -250,7 +246,7 @@ fn wasm_js_glue_utf16_host_import_uses_i32_handle_signature() {
 }
 
 fn reference_layout(id: LayoutId, name: &str, fields: Vec<FieldLayout>) -> AggregateLayout {
-    AggregateLayout { id, name: name.to_string(), namespace: String::new(), key: None, storage: StorageKind::Reference, size: 4, align: 4, fields }
+    AggregateLayout { id, name: name.to_string(), namespace: String::new(), key: None, storage: StorageKind::Reference, fields }
 }
 
 fn holder_and_text_layouts() -> AggregateLayoutPlan {
@@ -259,12 +255,12 @@ fn holder_and_text_layouts() -> AggregateLayoutPlan {
             reference_layout(
                 UTF8_TEXT_LAYOUT_ID,
                 "Utf8Text",
-                vec![FieldLayout { name: "_repr".to_string(), ty: byte_array(), offset: 0, size: 4, align: 4 }],
+                vec![FieldLayout { name: "_repr".to_string(), ty: byte_array() }],
             ),
             reference_layout(
                 HOLDER_LAYOUT_ID,
                 "Holder",
-                vec![FieldLayout { name: "key".to_string(), ty: UTF8, offset: 0, size: 4, align: 4 }],
+                vec![FieldLayout { name: "key".to_string(), ty: UTF8 }],
             ),
         ],
         ..Default::default()
@@ -351,8 +347,8 @@ fn wasm_utf8_field_get_layout_without_byte_array_fails_structured() {
 
 /// 库导出场景：`main(text: Utf8)` 登记公开导出名 `romanToInt`（崩溃现场形状——形参 SSA
 /// 值绑定 `Utf8Text` layout 使物理槽为 anyref，而宿主按冻结库 ABI 传 i32 句柄）。
-/// `freeze_abis` 控制是否补齐库导出 ABI 载体冻结，模拟合同缺失路径。
-fn lower_library(function: ExecutableFunction, layouts: AggregateLayoutPlan, freeze_abis: bool) -> nyar_emitter::Result<WasmBinaryModule> {
+/// Wasm lane 在 lowering 时按签名现场冻结 ABI，不再依赖共享计划里的预冻结缓存。
+fn lower_library(function: ExecutableFunction, layouts: AggregateLayoutPlan) -> nyar_emitter::Result<WasmBinaryModule> {
     let main_name = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), function)]));
     plan.testing_module_name("host_string_boundary").testing_entry_operation(main_name);
@@ -360,9 +356,6 @@ fn lower_library(function: ExecutableFunction, layouts: AggregateLayoutPlan, fre
     plan.testing_register_import(utf8_length_callee(), utf8_length_import());
     let instance = *plan.instances().first().expect("测试库导出实例");
     plan.testing_export_names_mut().insert(instance, "romanToInt".to_string());
-    if freeze_abis {
-        plan.testing_freeze_library_export_abis()?;
-    }
     let submission = FragmentSubmission::from_backend_plan(plan);
     lower_fragment_to_wasm_mir_module(&submission, "main")
 }
@@ -408,7 +401,7 @@ fn func_type(module: &WasmBinaryModule, type_index: u32) -> (Vec<WasmValueType>,
 #[test]
 fn wasm_library_export_host_handle_materializes_managed_utf8_through_synthesized_wrapper() {
     let module =
-        lower_library(utf8_length_call_main(Some(UTF8_TEXT_LAYOUT_ID)), layout_plan(UTF8_TEXT_LAYOUT_ID, "Utf8Text", byte_array()), true)
+        lower_library(utf8_length_call_main(Some(UTF8_TEXT_LAYOUT_ID)), layout_plan(UTF8_TEXT_LAYOUT_ID, "Utf8Text", byte_array()))
             .expect("库导出宿主句柄形参必须按冻结配方物化为 managed 字符串");
     let imports = import_keys(&module);
     assert!(
@@ -434,7 +427,7 @@ fn wasm_library_export_host_handle_materializes_managed_utf8_through_synthesized
 /// 不得合成 `env::host_utf8_extract` 导入，也不得多生成 wrapper 函数体。
 #[test]
 fn wasm_library_export_handle_parameter_without_layout_does_not_synthesize_wrapper() {
-    let module = lower_library(utf8_length_call_main(None), layout_plan(UTF8_TEXT_LAYOUT_ID, "Utf8Text", byte_array()), true)
+    let module = lower_library(utf8_length_call_main(None), layout_plan(UTF8_TEXT_LAYOUT_ID, "Utf8Text", byte_array()))
         .expect("未绑定 layout 的库导出句柄形参必须直通");
     let imports = import_keys(&module);
     assert!(!imports.contains(&("env".to_string(), "host_utf8_extract".to_string())), "无物化需求时不得合成 extract 导入: {imports:?}");
@@ -447,7 +440,7 @@ fn wasm_library_export_handle_parameter_without_layout_does_not_synthesize_wrapp
 /// 导出 ABI 时按冻结签名现场派生；未预冻结本身不是错误，物化配方仍须交叉核对。
 #[test]
 fn wasm_library_export_derives_abi_carrier_without_prefreeze() {
-    let module = lower_library(utf8_length_call_main(Some(UTF8_TEXT_LAYOUT_ID)), layout_plan(UTF8_TEXT_LAYOUT_ID, "Utf8Text", byte_array()), false)
+    let module = lower_library(utf8_length_call_main(Some(UTF8_TEXT_LAYOUT_ID)), layout_plan(UTF8_TEXT_LAYOUT_ID, "Utf8Text", byte_array()))
         .expect("Wasm lane 必须按需派生自己的导出 ABI 载体");
     let imports = import_keys(&module);
     assert!(
@@ -470,7 +463,6 @@ fn utf8_concat_import() -> BackendImport {
         link: nyar::ExternalImportLink::host(Some(Identifier::new("wasm")), vec!["env".into(), "utf8_concat".into()]),
         parameter_types: vec![UTF8, UTF8],
         return_type: UTF8,
-        target_operator: None,
     }
 }
 
@@ -565,11 +557,7 @@ fn wasm_host_import_utf8_return_without_byte_array_field_fails_structured() {
 
 /// 返回值侧测试的库导出装配：注册 `utf8_concat` 宿主导入（形参与返回都是 `Utf8`），
 /// 其余冻结步骤与 [`lower_library`] 相同。
-fn lower_library_concat(
-    function: ExecutableFunction,
-    layouts: AggregateLayoutPlan,
-    freeze_abis: bool,
-) -> nyar_emitter::Result<WasmBinaryModule> {
+fn lower_library_concat(function: ExecutableFunction, layouts: AggregateLayoutPlan) -> nyar_emitter::Result<WasmBinaryModule> {
     let main_name = QualifiedName::new(vec![Identifier::new("host_concat")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), function)]));
     plan.testing_module_name("host_string_boundary").testing_entry_operation(main_name);
@@ -577,9 +565,6 @@ fn lower_library_concat(
     plan.testing_register_import(utf8_concat_callee(), utf8_concat_import());
     let instance = *plan.instances().first().expect("测试库导出实例");
     plan.testing_export_names_mut().insert(instance, "romanToInt".to_string());
-    if freeze_abis {
-        plan.testing_freeze_library_export_abis()?;
-    }
     let submission = FragmentSubmission::from_backend_plan(plan);
     lower_fragment_to_wasm_mir_module(&submission, "host_concat")
 }
@@ -591,7 +576,7 @@ fn lower_library_concat(
 #[test]
 fn wasm_library_export_utf8_return_materializes_host_handle_through_synthesized_wrapper() {
     let module =
-        lower_library_concat(utf8_concat_call_main(Some(UTF8_TEXT_LAYOUT_ID)), layout_plan(UTF8_TEXT_LAYOUT_ID, "Utf8Text", byte_array()), true)
+        lower_library_concat(utf8_concat_call_main(Some(UTF8_TEXT_LAYOUT_ID)), layout_plan(UTF8_TEXT_LAYOUT_ID, "Utf8Text", byte_array()))
             .expect("库导出 `returns: Utf8` 返回值必须按冻结配方物化为宿主 i32 句柄");
     let imports = import_keys(&module);
     assert!(
@@ -616,7 +601,7 @@ fn wasm_library_export_utf8_return_materializes_host_handle_through_synthesized_
 /// 不得合成 wrapper，也不得追加 `env::host_intern_utf8`。
 #[test]
 fn wasm_library_export_utf8_return_without_layout_keeps_i32_handle() {
-    let module = lower_library_concat(utf8_concat_call_main(None), layout_plan(UTF8_TEXT_LAYOUT_ID, "Utf8Text", byte_array()), true)
+    let module = lower_library_concat(utf8_concat_call_main(None), layout_plan(UTF8_TEXT_LAYOUT_ID, "Utf8Text", byte_array()))
         .expect("未绑定 layout 的库导出返回值必须继续走 i32 ABI");
     let imports = import_keys(&module);
     assert!(!imports.contains(&("env".to_string(), "host_intern_utf8".to_string())), "无返回物化需求时不得合成 intern 导入: {imports:?}");
@@ -632,7 +617,7 @@ fn wasm_library_export_utf8_return_without_layout_keeps_i32_handle() {
 #[test]
 fn wasm_library_export_utf8_return_without_byte_array_field_fails_structured() {
     let error =
-        lower_library_concat(utf8_concat_call_main(Some(NO_BYTES_LAYOUT_ID)), layout_plan(NO_BYTES_LAYOUT_ID, "HostHandleText", long_array()), true)
+        lower_library_concat(utf8_concat_call_main(Some(NO_BYTES_LAYOUT_ID)), layout_plan(NO_BYTES_LAYOUT_ID, "HostHandleText", long_array()))
             .expect_err("缺少整数字节数组字段的库导出返回值必须在冻结期结构化失败");
     assert!(error.contains("缺少整数字节数组字段"), "错误必须指明冻结失败的缺失事实: {error}");
 }

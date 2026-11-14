@@ -14,6 +14,7 @@ use nyar::{
     packaging::{ArtifactDescriptor, ArtifactSet, TargetLane},
 };
 
+pub use crate::lowering::backends::native::{NativeTextFunction, NativeTextInstruction, encode_native_text_function};
 pub use executable::{NativeExecutableError, NativeExecutableKind, NativeImageFacts, classify_native_executable, classify_native_image};
 
 /// `Native` 后端输入。
@@ -106,8 +107,7 @@ impl TargetCodeGenBackend for NativeBinaryBackend {
     }
 
     fn compile(&self, input: Self::Input, options: &CompilationOptions) -> nyar::backends::BackendResult<ArtifactSet> {
-        self.compile_artifact(input, options)
-            .map_err(|error| nyar::backends::BackendError::for_backend(&self.descriptor.name, error))
+        self.compile_artifact(input, options).map_err(|error| nyar::backends::BackendError::for_backend(&self.descriptor.name, error))
     }
 }
 
@@ -126,24 +126,23 @@ fn validate_target_image(facts: NativeImageFacts, target: &BinaryTarget) -> Resu
             CanonicalSpecification::Unknown | CanonicalSpecification::Browser | CanonicalSpecification::Wasi => false,
         };
         if !compatible {
-            return Err(format!(
-                "Native 后端镜像容器 {:?} 与目标规格 {:?} 不一致：不得把镜像写成其他平台的产物",
-                facts.kind, specification
-            ));
+            return Err(format!("Native 后端镜像容器 {:?} 与目标规格 {:?} 不一致：不得把镜像写成其他平台的产物", facts.kind, specification));
         }
     }
     if let Some(abi) = target.abi {
         let compatible = match abi {
             CanonicalAbi::Msvc => is_pe,
             CanonicalAbi::Gnu | CanonicalAbi::SystemV => is_elf,
-            CanonicalAbi::Aapcs64 | CanonicalAbi::Managed | CanonicalAbi::Clr | CanonicalAbi::Jvm | CanonicalAbi::WebAssembly
-            | CanonicalAbi::Wasi | CanonicalAbi::WasiP3 => false,
+            CanonicalAbi::Aapcs64
+            | CanonicalAbi::Managed
+            | CanonicalAbi::Clr
+            | CanonicalAbi::Jvm
+            | CanonicalAbi::WebAssembly
+            | CanonicalAbi::Wasi
+            | CanonicalAbi::WasiP3 => false,
         };
         if !compatible {
-            return Err(format!(
-                "Native 后端镜像容器 {:?} 与目标 ABI {:?} 不一致：不得把镜像写成其他 ABI 的产物",
-                facts.kind, abi
-            ));
+            return Err(format!("Native 后端镜像容器 {:?} 与目标 ABI {:?} 不一致：不得把镜像写成其他 ABI 的产物", facts.kind, abi));
         }
     }
     Ok(())

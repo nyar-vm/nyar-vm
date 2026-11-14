@@ -30,9 +30,10 @@
 use nyar_types::combined_content_hash;
 
 use crate::{
-    FragmentSubmission, LibraryExportAbi, Result,
+    FragmentSubmission, Result,
     abi_structure::canonical_parameter_identities,
     backend_plan_views::ExecutableFunction,
+    lowering::backends::wasm::abi::WasmLibraryExportAbi,
     nyar_backend_wasi::{WasmBinaryModule, WasmPackageKind, WasmSection},
 };
 
@@ -87,7 +88,7 @@ fn abi_carrier_name(schema: &super::abi_schema::WasmAbiType) -> Result<&'static 
 fn schematize_function_abi(
     instance_label: &str,
     function: &ExecutableFunction,
-    abi: &LibraryExportAbi,
+    abi: &WasmLibraryExportAbi,
     layouts: &nyar_types::AggregateLayoutPlan,
     layout_by_type: &std::collections::BTreeMap<nyar_types::NyarType, nyar_types::LayoutId>,
     sums: &std::collections::BTreeMap<nyar_types::NyarType, nyar_types::SumTypeLayout>,
@@ -150,7 +151,7 @@ pub(super) fn append_library_invoke_section(
         return Ok(());
     }
     let plan = &submission.backend_plan;
-    let ctx = crate::lowering::shared::executable::ExecutableLoweringContext::new_resolved(
+    let ctx = crate::lowering::shared::executable::ExecutableLoweringContext::new(
         submission,
         crate::lowering::shared::physical_layout::LayoutPolicy::WASM32,
     )?;
@@ -167,7 +168,7 @@ pub(super) fn append_library_invoke_section(
             &instance_label,
             &function,
             &abi,
-            ctx.layouts.as_ref(),
+            plan.aggregate_layouts(),
             plan.aggregate_layout_by_nyar_type(),
             plan.sum_layout_by_nyar_type(),
         )?;
@@ -240,7 +241,10 @@ fn abi_contract_digest(version: u64, exports: &serde_json::Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AbiCarrier, LibraryExportAbi, TargetExecutionPlan};
+    use crate::{
+        TargetExecutionPlan,
+        lowering::backends::wasm::abi::{WasmAbiCarrier, WasmLibraryExportAbi},
+    };
     use nyar_types::{NyarType, ValueOrigin};
 
     fn nyar(s: &str) -> NyarType {
@@ -322,15 +326,15 @@ mod tests {
         NyarType::Apply(Box::new(NyarType::Named(nyar_types::Identifier::new("std::collections::ArrayList"))), vec![nyar("i64")])
     }
 
-    fn frozen_abi(params: Vec<AbiCarrier>, returns: AbiCarrier) -> LibraryExportAbi {
-        LibraryExportAbi { params, returns }
+    fn frozen_abi(params: Vec<WasmAbiCarrier>, returns: WasmAbiCarrier) -> WasmLibraryExportAbi {
+        WasmLibraryExportAbi { params, returns }
     }
 
     #[test]
     fn schematize_renders_parameter_identity_carrier_and_type() {
         let list = arraylist_i64();
         let function = abi_function(&[(0, "nums", list.clone()), (1, "target", nyar("i64"))], list.clone());
-        let abi = frozen_abi(vec![AbiCarrier::Handle, AbiCarrier::I64], AbiCarrier::Handle);
+        let abi = frozen_abi(vec![WasmAbiCarrier::Handle, WasmAbiCarrier::I64], WasmAbiCarrier::Handle);
         let (params_json, returns) = schematize_function_abi(
             "twoSum",
             &function,
@@ -358,7 +362,7 @@ mod tests {
     #[test]
     fn schematize_rejects_duplicate_parameter_names() {
         let function = abi_function(&[(0, "value", nyar("i64")), (1, "value", nyar("i64"))], nyar("i64"));
-        let abi = frozen_abi(vec![AbiCarrier::I64, AbiCarrier::I64], AbiCarrier::I64);
+        let abi = frozen_abi(vec![WasmAbiCarrier::I64, WasmAbiCarrier::I64], WasmAbiCarrier::I64);
         let error = schematize_function_abi(
             "identity",
             &function,
@@ -376,7 +380,7 @@ mod tests {
     #[test]
     fn schematize_rejects_missing_parameter_name() {
         let function = abi_function(&[(0, "", nyar("i64"))], nyar("i64"));
-        let abi = frozen_abi(vec![AbiCarrier::I64], AbiCarrier::I64);
+        let abi = frozen_abi(vec![WasmAbiCarrier::I64], WasmAbiCarrier::I64);
         let error = schematize_function_abi(
             "identity",
             &function,
@@ -394,7 +398,7 @@ mod tests {
     fn schematize_rejects_identity_count_mismatch() {
         let mut function = abi_function(&[(0, "value", nyar("i64"))], nyar("i64"));
         function.param_types.push(nyar("i32"));
-        let abi = frozen_abi(vec![AbiCarrier::I64, AbiCarrier::I32], AbiCarrier::I64);
+        let abi = frozen_abi(vec![WasmAbiCarrier::I64, WasmAbiCarrier::I32], WasmAbiCarrier::I64);
         let error = schematize_function_abi(
             "identity",
             &function,
@@ -412,7 +416,7 @@ mod tests {
         // plan 冻结参数为 Handle，但实际类型是标量 i32：交叉核对必须失败，
         // backend 不得以 schema 推导结果覆盖 plan 事实。
         let function = abi_function(&[(0, "value", nyar("i32"))], nyar("i32"));
-        let abi = frozen_abi(vec![AbiCarrier::Handle], AbiCarrier::I32);
+        let abi = frozen_abi(vec![WasmAbiCarrier::Handle], WasmAbiCarrier::I32);
         let error = schematize_function_abi(
             "identity",
             &function,
@@ -429,17 +433,15 @@ mod tests {
     }
 
     #[test]
-    fn plan_freezes_library_export_abi_carriers() {
+    fn wasm_freezes_library_export_abi_carriers() {
         let list = arraylist_i64();
         let function = abi_function(&[(0, "nums", list.clone()), (1, "target", nyar("i64"))], list);
         let name = nyar::QualifiedName::new(vec![nyar::Identifier::new("twoSum")]);
-        let mut plan = TargetExecutionPlan::from_functions(std::collections::BTreeMap::from([(name, function)]));
+        let plan = TargetExecutionPlan::from_functions(std::collections::BTreeMap::from([(name, function)]));
         let instance = *plan.instances().first().expect("测试函数实例");
-        plan.testing_export_names_mut().insert(instance, "twoSum".to_string());
-        plan.testing_freeze_library_export_abis().expect("冻结 ABI 必须成功");
-        let abi = plan.library_export_abi(&instance).expect("导出实例必须有冻结 ABI");
-        assert_eq!(abi.params, vec![AbiCarrier::Handle, AbiCarrier::I64]);
-        assert_eq!(abi.returns, AbiCarrier::Handle);
+        let abi = super::super::wasm_library_export_abi(&plan, &instance).expect("Wasm 必须按签名现场冻结 ABI");
+        assert_eq!(abi.params, vec![WasmAbiCarrier::Handle, WasmAbiCarrier::I64]);
+        assert_eq!(abi.returns, WasmAbiCarrier::Handle);
     }
 
     #[test]

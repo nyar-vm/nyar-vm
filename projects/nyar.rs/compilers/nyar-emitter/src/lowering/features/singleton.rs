@@ -1,7 +1,11 @@
 //! Wasm singleton 元数据与访问器编码。
 
-use crate::nyar_backend_wasi::WasmBinaryModule;
-use nyar_types::{AggregateLayout, SingletonInstancePlan};
+use crate::{
+    lowering::backends::wasm::mir::{WasmBodyInstruction, encode_wasm_body},
+    nyar_backend_wasi::WasmBinaryModule,
+};
+use acorn_wasm::WasmOpcode;
+use nyar_types::SingletonInstancePlan;
 
 use super::semantic_mir_contract::SemanticMirContractError;
 use crate::{FragmentSubmission, lowering::backends::wasm};
@@ -27,7 +31,10 @@ pub(crate) fn nyar_singleton_accessor_export_name(plan: &SingletonInstancePlan) 
     nyar_singleton_export_name(plan)
 }
 
-fn singleton_layout<'a>(layouts: &'a nyar_types::AggregateLayoutPlan, plan: &SingletonInstancePlan) -> Option<&'a AggregateLayout> {
+fn singleton_layout<'a>(
+    layouts: &'a crate::lowering::shared::physical_layout::ResolvedLayoutPlan,
+    plan: &SingletonInstancePlan,
+) -> Option<&'a crate::lowering::shared::physical_layout::ResolvedAggregateLayout> {
     layouts.layouts.iter().find(|layout| layout.name == plan.name && layout.namespace == plan.namespace)
 }
 
@@ -169,33 +176,22 @@ fn find_wasm_export_func(module: &WasmBinaryModule, name: &str) -> Option<u32> {
 /// eager：`global.get N; end`
 /// lazy：判空后 `cabi_realloc(0,0,align,size)` 分配并写回。
 fn wasm_singleton_accessor_body(global_index: u32, is_lazy: bool, realloc_index: u32, size: u32, align: u32) -> Vec<u8> {
-    let mut body = vec![0x00];
+    let mut lir = Vec::new();
     if is_lazy {
-        body.push(0x23);
-        wasm::encode_uleb128(global_index, &mut body);
-        body.push(0x45);
-        body.push(0x04);
-        body.push(0x40);
-        body.push(0x41);
-        body.push(0x00);
-        body.push(0x41);
-        body.push(0x00);
-        body.push(0x41);
-        wasm::encode_sleb128_i32(align.max(1) as i32, &mut body);
-        body.push(0x41);
-        wasm::encode_sleb128_i32(size.max(8) as i32, &mut body);
-        body.push(0x10);
-        wasm::encode_uleb128(realloc_index, &mut body);
-        body.push(0x24);
-        wasm::encode_uleb128(global_index, &mut body);
-        body.push(0x0B);
-        body.push(0x23);
-        wasm::encode_uleb128(global_index, &mut body);
+        lir.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::GlobalGet, operand: global_index });
+        lir.push(WasmBodyInstruction::Opcode(WasmOpcode::I32Eqz));
+        lir.push(WasmBodyInstruction::BlockType { opcode: WasmOpcode::If, block_type: 0x40 });
+        lir.push(WasmBodyInstruction::I32Const(0));
+        lir.push(WasmBodyInstruction::I32Const(0));
+        lir.push(WasmBodyInstruction::I32Const(align.max(1) as i32));
+        lir.push(WasmBodyInstruction::I32Const(size.max(8) as i32));
+        lir.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::Call, operand: realloc_index });
+        lir.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::GlobalSet, operand: global_index });
+        lir.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
     }
-    else {
-        body.push(0x23);
-        wasm::encode_uleb128(global_index, &mut body);
-    }
-    body.push(0x0B);
+    lir.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::GlobalGet, operand: global_index });
+    lir.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
+    let mut body = vec![0x00];
+    body.extend(encode_wasm_body(&lir));
     body
 }

@@ -9,13 +9,14 @@ use super::{
         },
         gc::{WASM_GC_ANYREF, wasm_gc_array_type, wasm_gc_struct_type},
         sections::{
-            code_section_bytes, data_section_bytes, decode_uleb128, elem_section_bytes, encode_sleb128_i32, encode_sleb128_i64, encode_uleb128,
+            code_section_bytes, data_section_bytes, decode_uleb128, elem_section_bytes, encode_sleb128_i32, encode_uleb128,
             export_section_bytes, function_section_bytes, import_section_bytes, memory_section_bytes, table_section_bytes, type_section_bytes,
             wasm_function_body, wasm_function_type,
         },
     },
-    HostHandleToManagedUtf8Plan, ManagedUtf8ToHostHandlePlan, MirInstructionKind, MirOperand, StorageKind, TargetOperatorBinding,
-    Utf8HostHandleMaterializePlan, VALTYPE_F32, WASM_GC_EXTERNREF, WasmGcArrayOperation, encode_f32_const, encode_f32_load,
+    HostHandleToManagedUtf8Plan, ManagedUtf8ToHostHandlePlan, MirInstructionKind, MirOperand, StorageKind, WasmOperatorBinding,
+    Utf8HostHandleMaterializePlan, VALTYPE_F32, WASM_GC_EXTERNREF, WasmBodyInstruction, WasmGcArrayOperation, encode_f32_const,
+    encode_wasm_body,
     imports::{
         build_callee_import_index, build_callee_wasm_operator_index, build_string_literal_index, build_wasi_callee_import_index,
         collect_mir_string_literals, collect_wasi_host_imports, collect_wasm_host_imports, const_utf8_import_index,
@@ -38,22 +39,19 @@ use crate::{
     FragmentSubmission,
     backend_plan_views::NyarType,
     contracts::instruction_primary_result,
-    nyar_backend_wasi::{WasiPreview, WasmBinaryModule, WasmPackageKind, WasmSection},
+    nyar_backend_wasi::{WasmBinaryModule, WasmPackageKind, WasmSection},
 };
 use acorn_wasm::{
     BLOCKTYPE_EMPTY, VALTYPE_ANYREF, VALTYPE_EXTERNREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, VALTYPE_REF_NULL, WasmExternalKind, WasmOpcode,
-    encode_array_copy, encode_array_get, encode_array_len, encode_array_new_default, encode_array_new_fixed, encode_array_set,
-    encode_block_empty, encode_br, encode_br_if, encode_call, encode_drop, encode_f64_const, encode_f64_load, encode_f64_store,
-    encode_global_get, encode_global_set, encode_i32_add, encode_i32_and, encode_i32_const, encode_i32_load, encode_i32_store,
-    encode_i64_const, encode_i64_load, encode_i64_store, encode_local_get, encode_local_set, encode_local_tee, encode_loop_empty,
-    encode_memarg, encode_memory_copy, encode_memory_fill, encode_memory_grow, encode_memory_size, encode_ref_cast_array,
-    encode_ref_cast_type_index, encode_ref_null_anyref, encode_ref_null_externref, encode_struct_get, encode_struct_new_default,
-    encode_struct_set, encode_unreachable,
+    encode_array_get, encode_array_len, encode_array_new_default, encode_array_set, encode_block_empty, encode_br, encode_br_if, encode_call,
+    encode_drop, encode_f64_const, encode_global_get, encode_global_set, encode_i32_add, encode_i32_const, encode_i32_load, encode_i32_store,
+    encode_i64_const, encode_local_get, encode_local_set, encode_local_tee, encode_loop_empty, encode_memarg, encode_memory_copy,
+    encode_memory_grow, encode_memory_size, encode_ref_cast_type_index, encode_ref_null_anyref, encode_ref_null_externref, encode_struct_get,
+    encode_struct_new_default, encode_struct_set, encode_unreachable,
 };
 
 use nyar::HostProjectionBoundary;
-use nyar_types::{AggregateLayout, FieldLayout, ItemInstanceId, LayoutId};
-use serde_json::json;
+use nyar_types::{ItemInstanceId, LayoutId};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn build_param_types_by_instance(
@@ -140,13 +138,13 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     else {
         build_callee_import_index(submission, &host_imports)
     };
-    let callee_wasm_operator = build_callee_wasm_operator_index(submission);
+    let callee_wasm_operator = build_callee_wasm_operator_index(submission)?;
     // Node JS-glue：宿主导入与 `.mjs` 启动壳统一使用 i32 句柄（`hostIntern` / `const_utf8`），
     // ?`wasm_import_type_for_field` ?i32 签名对齐。若?utf8 标成 anyref，call 实参?
     // 被降?`ref.null`，丢?`cli_get_*` 返回的句柄（自举 `exports.build` 会静默失败）?
     // WASI 轨同样以线性内?i32 偏移传字符串?
     let js_glue_utf8_as_anyref = false;
-    let ctx = ExecutableLoweringContext::new_resolved(submission, crate::lowering::shared::physical_layout::LayoutPolicy::WASM32)?;
+    let ctx = ExecutableLoweringContext::new(submission, crate::lowering::shared::physical_layout::LayoutPolicy::WASM32)?;
     let host_import_signatures = host_import_signature_index(submission);
     let mut module = WasmBinaryModule::new();
     // main_type ?type 段的?0 ?() -> i32，供 `build` 桩函数使用?
@@ -547,13 +545,15 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         else {
             return Err(format!("WASM 函数值 `{instance:?}` 缺少含环境槽的 table functype"));
         };
-        let mut body = Vec::new();
-        encode_uleb128(0, &mut body);
-        for index in 0..plan.visible_param_types.len() {
-            encode_local_get(u32::try_from(index).expect("visible parameter index overflow"), &mut body);
-        }
-        encode_call(target_index, &mut body);
-        WasmOpcode::End.encode(&mut body);
+        let mut lir: Vec<WasmBodyInstruction> = (0..plan.visible_param_types.len())
+            .map(|index| WasmBodyInstruction::U32 {
+                opcode: WasmOpcode::LocalGet,
+                operand: u32::try_from(index).expect("visible parameter index overflow"),
+            })
+            .collect();
+        lir.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::Call, operand: target_index });
+        lir.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
+        let body = synthetic_body(lir);
         let wrapper_index = import_count + u32::try_from(code_bodies.len()).expect("code body index overflow");
         function_indices.push(table_type_index);
         code_bodies.push(wasm_function_body(body));
@@ -597,7 +597,10 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
                 && entry_wasm_params.iter().any(|ty| *ty == VALTYPE_ANYREF || *ty == WASM_GC_ANYREF));
 
             let build_entry_wrapper_body = |with_ok_i32: bool| -> Vec<u8> {
+                use WasmBodyInstruction as I;
                 let use_get_arguments = get_arguments_import.zip(argv_array_ty).filter(|_| entry_needs_argv);
+                // 函数体头部（locals 声明）不是指令，仍按 Wasm 二进制形写出；
+                // 指令序列统一经目标 LIR 与 `encode_wasm_body` 编码。
                 let mut body = Vec::new();
                 if let Some((_imp, arr_ty)) = use_get_arguments {
                     // locals: 7×i32 + 1×(ref null $arr_ty)
@@ -611,48 +614,46 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
                 else {
                     encode_uleb128(0, &mut body);
                 }
+                let mut lir = Vec::new();
                 if let Some((import_index, array_ty)) = use_get_arguments {
-                    emit_wasi_argv_from_get_arguments(import_index, array_ty, &mut body);
+                    lir.extend(wasi_argv_from_get_arguments_instructions(import_index, array_ty));
                     // Remaining non-argv params (rare): still push defaults after argv.
-                    if entry_mir_params.len() > 1 {
-                        for ty in entry_mir_params.iter().skip(1) {
-                            emit_wasi_entry_default_arg(ty, &gc_array_type_indices, &mut body);
-                        }
+                    for ty in entry_mir_params.iter().skip(1) {
+                        lir.extend(wasi_entry_default_arg_instructions(ty, &gc_array_type_indices));
                     }
                 }
                 else if !entry_mir_params.is_empty() {
                     for ty in &entry_mir_params {
-                        emit_wasi_entry_default_arg(ty, &gc_array_type_indices, &mut body);
+                        lir.extend(wasi_entry_default_arg_instructions(ty, &gc_array_type_indices));
                     }
                 }
                 else {
                     for &param_ty in &entry_wasm_params {
                         match param_ty {
-                            VALTYPE_I64 => encode_i64_const(0, &mut body),
-                            VALTYPE_F32 => encode_f32_const(0.0, &mut body),
-                            VALTYPE_F64 => encode_f64_const(0.0, &mut body),
-                            VALTYPE_ANYREF | WASM_GC_ANYREF => {
-                                if let Some(array_ty) = argv_array_ty {
-                                    encode_i32_const(0, &mut body);
-                                    encode_array_new_default(array_ty, &mut body);
+                            VALTYPE_I64 => lir.push(I::I64Const(0)),
+                            VALTYPE_F32 => lir.push(I::F32Const(0.0)),
+                            VALTYPE_F64 => lir.push(I::F64Const(0.0)),
+                            VALTYPE_ANYREF | WASM_GC_ANYREF => match argv_array_ty {
+                                Some(array_ty) => {
+                                    lir.push(I::I32Const(0));
+                                    lir.push(I::ArrayNewDefault(array_ty));
                                 }
-                                else {
-                                    encode_ref_null_anyref(&mut body);
-                                }
-                            }
-                            VALTYPE_EXTERNREF | WASM_GC_EXTERNREF => encode_ref_null_externref(&mut body),
-                            _ => encode_i32_const(0, &mut body),
+                                None => lir.push(I::RefNullAnyref),
+                            },
+                            VALTYPE_EXTERNREF | WASM_GC_EXTERNREF => lir.push(I::RefNullExternref),
+                            _ => lir.push(I::I32Const(0)),
                         }
                     }
                 }
-                encode_call(index, &mut body);
+                lir.push(I::U32 { opcode: WasmOpcode::Call, operand: index });
                 if entry_return.flatten().is_some() {
-                    encode_drop(&mut body);
+                    lir.push(I::Opcode(WasmOpcode::Drop));
                 }
                 if with_ok_i32 {
-                    encode_i32_const(0, &mut body);
+                    lir.push(I::I32Const(0));
                 }
-                WasmOpcode::End.encode(&mut body);
+                lir.push(I::Opcode(WasmOpcode::End));
+                body.extend_from_slice(&encode_wasm_body(&lir));
                 body
             };
 
@@ -1123,7 +1124,7 @@ fn freeze_managed_utf8_return_to_host_handle_plans(
                 "库导出 `{instance}`（export_name={public_name}）缺少可用的冻结 ABI 载体合同，无法核对 managed→宿主句柄返回物化配方: {reason}"
             )
         })?;
-        if abi.returns != crate::target_execution_plan::AbiCarrier::I32 {
+        if abi.returns != crate::lowering::backends::wasm::abi::WasmAbiCarrier::I32 {
             return Err(format!(
                 "库导出 `{instance}`（export_name={public_name}）返回类型 `{}` 的冻结 ABI 载体为 `{}`，不是宿主字符串句柄 `i32`；返回物化合同已坏",
                 mir_fn.return_type,
@@ -1167,7 +1168,7 @@ fn freeze_managed_utf8_return_to_host_handle_plans(
 fn freeze_utf8_host_handle_materialize_plans(
     submission: &FragmentSubmission,
     ctx: &ExecutableLoweringContext,
-    callee_wasm_operator: &BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
+    callee_wasm_operator: &BTreeMap<ItemInstanceId, (String, WasmOperatorBinding)>,
     callee_import_index: &BTreeMap<ItemInstanceId, u32>,
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     gc_array_type_indices: &mut BTreeMap<String, u32>,
@@ -1205,7 +1206,7 @@ fn freeze_utf8_host_handle_materialize_plans(
                     MirInstructionKind::Call { callee: MirOperand::Item(callee), .. } => {
                         matches!(
                             callee_wasm_operator.get(callee),
-                            Some((_, TargetOperatorBinding::FrozenWasmGcArray(plan))) if plan.operation == WasmGcArrayOperation::Get
+                            Some((_, WasmOperatorBinding::GcArray(plan))) if plan.operation == WasmGcArrayOperation::Get
                         ) || callee_import_index.contains_key(callee)
                     }
                     // 字符串常量 / `Utf8` SSA 值是宿主 i32 句柄；写入文本载体局部槽
@@ -1523,90 +1524,127 @@ pub(super) const WASI_GET_ARGUMENTS_OUT_PTR: i32 = 16;
 /// (raw utf8 bytes). Guest handles use `[len:u32 LE][utf8…]` in the cabi bump heap (global 0).
 ///
 /// Locals (declared by caller): `0..6` i32, `7` (ref null $array_ty) (argv).
-/// Stack effect: pushes argv anyref.
-pub(super) fn emit_wasi_argv_from_get_arguments(get_arguments_import: u32, array_ty: u32, body: &mut Vec<u8>) {
-    // get-arguments(out=16)
-    encode_i32_const(WASI_GET_ARGUMENTS_OUT_PTR, body);
-    encode_call(get_arguments_import, body);
-    // list_ptr = i32.load(16)
-    encode_i32_const(WASI_GET_ARGUMENTS_OUT_PTR, body);
-    encode_i32_load(2, 0, body);
-    encode_local_set(0, body);
-    // list_len = i32.load(20)
-    encode_i32_const(WASI_GET_ARGUMENTS_OUT_PTR + 4, body);
-    encode_i32_load(2, 0, body);
-    encode_local_set(1, body);
-    // argv = array.new_default(list_len)
-    encode_local_get(1, body);
-    encode_array_new_default(array_ty, body);
-    encode_local_set(7, body);
-    // i = 0
-    encode_i32_const(0, body);
-    encode_local_set(2, body);
-    // block { loop {
-    encode_block_empty(body);
-    encode_loop_empty(body);
-    // if i >= list_len { br 1 }
-    encode_local_get(2, body);
-    encode_local_get(1, body);
-    WasmOpcode::I32GeU.encode(body);
-    encode_br_if(1, body);
-    // elem = list_ptr + i*8
-    encode_local_get(0, body);
-    encode_local_get(2, body);
-    encode_i32_const(8, body);
-    WasmOpcode::I32Mul.encode(body);
-    encode_i32_add(body);
-    encode_local_tee(6, body); // elem base in local 6 temporarily
-    // str_ptr
-    encode_i32_load(2, 0, body);
-    encode_local_set(3, body);
-    // str_len
-    encode_local_get(6, body);
-    encode_i32_load(2, 4, body);
-    encode_local_set(4, body);
-    // size = align4(4 + str_len)
-    encode_local_get(4, body);
-    encode_i32_const(4, body);
-    encode_i32_add(body);
-    encode_i32_const(3, body);
-    encode_i32_add(body);
-    encode_i32_const(!3i32, body); // -4 == !3 for align mask in two's complement-?wait
-    // (x + 3) & !3  where !3 as i32 is -4
-    WasmOpcode::I32And.encode(body);
-    encode_local_set(6, body); // size
-    // handle = global.get 0; global.set(handle+size)
-    encode_global_get(CABI_HEAP_GLOBAL_INDEX, body);
-    encode_local_set(5, body);
-    encode_local_get(5, body);
-    encode_local_get(6, body);
-    encode_i32_add(body);
-    encode_global_set(CABI_HEAP_GLOBAL_INDEX, body);
-    // store len
-    encode_local_get(5, body);
-    encode_local_get(4, body);
-    encode_i32_store(2, 0, body);
-    // memory.copy(handle+4, str_ptr, str_len)
-    encode_local_get(5, body);
-    encode_i32_const(4, body);
-    encode_i32_add(body);
-    encode_local_get(3, body);
-    encode_local_get(4, body);
-    encode_memory_copy(body);
-    // array.set(argv, i, handle)
-    encode_local_get(7, body);
-    encode_local_get(2, body);
-    encode_local_get(5, body);
-    encode_array_set(array_ty, body);
-    // i++
-    encode_local_get(2, body);
-    encode_i32_const(1, body);
-    encode_i32_add(body);
-    encode_local_set(2, body);
-    encode_br(0, body); // continue loop
-    WasmOpcode::End.encode(body); // loop
-    WasmOpcode::End.encode(body); // block
-    encode_local_get(7, body);
+/// Stack effect: pushes argv anyref. 返回值是该包装体的目标 LIR，调用方统一经
+/// `encode_wasm_body` 编码，不再现场拼字节。
+pub(super) fn wasi_argv_from_get_arguments_instructions(
+    get_arguments_import: u32,
+    array_ty: u32,
+) -> Vec<WasmBodyInstruction> {
+    use WasmBodyInstruction as I;
+    let local = |opcode, operand| I::U32 { opcode, operand };
+    let mut lir = vec![
+        // get-arguments(out=16)
+        I::I32Const(WASI_GET_ARGUMENTS_OUT_PTR),
+        local(WasmOpcode::Call, get_arguments_import),
+        // list_ptr = i32.load(16)
+        I::I32Const(WASI_GET_ARGUMENTS_OUT_PTR),
+        I::MemArg { opcode: WasmOpcode::I32Load, align: 2, offset: 0 },
+        local(WasmOpcode::LocalSet, 0),
+        // list_len = i32.load(20)
+        I::I32Const(WASI_GET_ARGUMENTS_OUT_PTR + 4),
+        I::MemArg { opcode: WasmOpcode::I32Load, align: 2, offset: 0 },
+        local(WasmOpcode::LocalSet, 1),
+        // argv = array.new_default(list_len)
+        local(WasmOpcode::LocalGet, 1),
+        I::ArrayNewDefault(array_ty),
+        local(WasmOpcode::LocalSet, 7),
+        // i = 0
+        I::I32Const(0),
+        local(WasmOpcode::LocalSet, 2),
+        // block { loop {
+        I::BlockType { opcode: WasmOpcode::Block, block_type: BLOCKTYPE_EMPTY },
+        I::BlockType { opcode: WasmOpcode::Loop, block_type: BLOCKTYPE_EMPTY },
+        // if i >= list_len { br 1 }
+        local(WasmOpcode::LocalGet, 2),
+        local(WasmOpcode::LocalGet, 1),
+        I::Opcode(WasmOpcode::I32GeU),
+        local(WasmOpcode::BrIf, 1),
+        // elem = list_ptr + i*8
+        local(WasmOpcode::LocalGet, 0),
+        local(WasmOpcode::LocalGet, 2),
+        I::I32Const(8),
+        I::Opcode(WasmOpcode::I32Mul),
+        I::Opcode(WasmOpcode::I32Add),
+        local(WasmOpcode::LocalTee, 6),
+        // str_ptr
+        I::MemArg { opcode: WasmOpcode::I32Load, align: 2, offset: 0 },
+        local(WasmOpcode::LocalSet, 3),
+        // str_len
+        local(WasmOpcode::LocalGet, 6),
+        I::MemArg { opcode: WasmOpcode::I32Load, align: 2, offset: 4 },
+        local(WasmOpcode::LocalSet, 4),
+        // size = align4(4 + str_len)
+        local(WasmOpcode::LocalGet, 4),
+        I::I32Const(4),
+        I::Opcode(WasmOpcode::I32Add),
+        I::I32Const(3),
+        I::Opcode(WasmOpcode::I32Add),
+        I::I32Const(!3i32),
+        I::Opcode(WasmOpcode::I32And),
+        local(WasmOpcode::LocalSet, 6),
+        // handle = global.get 0; global.set(handle+size)
+        local(WasmOpcode::GlobalGet, CABI_HEAP_GLOBAL_INDEX),
+        local(WasmOpcode::LocalSet, 5),
+        local(WasmOpcode::LocalGet, 5),
+        local(WasmOpcode::LocalGet, 6),
+        I::Opcode(WasmOpcode::I32Add),
+        local(WasmOpcode::GlobalSet, CABI_HEAP_GLOBAL_INDEX),
+        // store len
+        local(WasmOpcode::LocalGet, 5),
+        local(WasmOpcode::LocalGet, 4),
+        I::MemArg { opcode: WasmOpcode::I32Store, align: 2, offset: 0 },
+        // memory.copy(handle+4, str_ptr, str_len)
+        local(WasmOpcode::LocalGet, 5),
+        I::I32Const(4),
+        I::Opcode(WasmOpcode::I32Add),
+        local(WasmOpcode::LocalGet, 3),
+        local(WasmOpcode::LocalGet, 4),
+        I::MemoryCopy,
+        // array.set(argv, i, handle)
+        local(WasmOpcode::LocalGet, 7),
+        local(WasmOpcode::LocalGet, 2),
+        local(WasmOpcode::LocalGet, 5),
+        I::ArraySet(array_ty),
+        // i++
+        local(WasmOpcode::LocalGet, 2),
+        I::I32Const(1),
+        I::Opcode(WasmOpcode::I32Add),
+        local(WasmOpcode::LocalSet, 2),
+        local(WasmOpcode::Br, 0),
+        I::Opcode(WasmOpcode::End),
+        I::Opcode(WasmOpcode::End),
+        local(WasmOpcode::LocalGet, 7),
+    ];
+    lir
+}
+
+/// WASI 入口缺失实参的默认值：同样产出目标 LIR，由包装体统一编码。
+pub(super) fn wasi_entry_default_arg_instructions(
+    ty: &NyarType,
+    gc_array_type_indices: &BTreeMap<String, u32>,
+) -> Vec<WasmBodyInstruction> {
+    use WasmBodyInstruction as I;
+    match ty {
+        NyarType::Array(element) | NyarType::FixedArray { element, .. } => {
+            let key = wasm_array_element_type_key(element);
+            let Some(type_index) = gc_array_type_indices.get(&key).copied()
+            else {
+                panic!("WASI entry array parameter `{key}` 缺少已注册的 array type");
+            };
+            vec![I::I32Const(0), I::ArrayNewDefault(type_index)]
+        }
+        NyarType::Float64 => vec![I::F64Const(0.0)],
+        // f32 有独立载体：默认值按真实 f32 位模式发射（+0.0），不得借 f64 载体。
+        NyarType::Float32 => vec![I::F32Const(0.0)],
+        NyarType::Integer64 { .. } | NyarType::Integer128 { .. } => vec![I::I64Const(0)],
+        NyarType::Unit => vec![I::RefNullAnyref],
+        NyarType::Bottom => vec![I::I32Const(0)],
+        other if is_js_glue_host_string_type(other) => vec![I::I32Const(0)],
+        other if type_is_wasm_gc_heap_reference(other) => {
+            panic!("WASI entry heap 参数 `{other:?}` 缺少 array type 合同")
+        }
+        _ => vec![I::I32Const(0)],
+    }
 }
 
 pub(super) fn append_wasm_spy_metadata_sections(
@@ -1835,7 +1873,7 @@ fn emit_library_field_accessors<'name>(
         }
         let gc_struct_type_index = gc_struct_type_indices.get(layout_id).copied();
         for (field_index, _) in layout.fields.iter().enumerate() {
-            let name = super::abi_schema::field_accessor_export_name(layout, field_index);
+            let name = super::abi_schema::field_accessor_export_name(&semantic_aggregate_layout(layout), field_index);
             if !emitted_names.insert(name.clone()) {
                 continue;
             }
@@ -1864,7 +1902,7 @@ fn emit_library_field_accessors<'name>(
         if layout.storage != StorageKind::Reference {
             continue;
         }
-        let name = super::abi_schema::aggregate_constructor_export_name(layout);
+        let name = super::abi_schema::aggregate_constructor_export_name(&semantic_aggregate_layout(layout));
         if !emitted_names.insert(name.clone()) {
             continue;
         }
@@ -1983,12 +2021,12 @@ fn emit_library_field_accessors<'name>(
             Some(struct_type_index) => {
                 // gc struct：(param anyref) → ref.cast + struct.get。
                 let result_type = wasm_gc_field_type_byte_for_glue(&field.ty, js_glue_utf8_as_anyref)?;
-                let mut body = Vec::new();
-                encode_uleb128(0, &mut body);
-                encode_local_get(0, &mut body);
-                encode_ref_cast_type_index(struct_type_index, &mut body);
-                encode_struct_get(struct_type_index, plan.field_index as u32, &mut body);
-                WasmOpcode::End.encode(&mut body);
+                let body = synthetic_body(vec![
+                    WasmBodyInstruction::U32 { opcode: WasmOpcode::LocalGet, operand: 0 },
+                    WasmBodyInstruction::RefCastTypeIndex(struct_type_index),
+                    WasmBodyInstruction::StructGet { type_index: struct_type_index, field_index: plan.field_index as u32 },
+                    WasmBodyInstruction::Opcode(WasmOpcode::End),
+                ]);
                 (vec![WASM_GC_ANYREF], result_type, body)
             }
             None => {
@@ -2006,21 +2044,21 @@ fn emit_library_field_accessors<'name>(
                         _ => VALTYPE_I32,
                     }
                 };
-                let mut body = Vec::new();
-                encode_uleb128(0, &mut body);
-                encode_local_get(0, &mut body);
-                encode_i32_const(field.offset as i32, &mut body);
-                encode_i32_add(&mut body);
+                let mut lir = vec![
+                    WasmBodyInstruction::U32 { opcode: WasmOpcode::LocalGet, operand: 0 },
+                    WasmBodyInstruction::I32Const(field.offset as i32),
+                    WasmBodyInstruction::Opcode(WasmOpcode::I32Add),
+                ];
                 if !inline_aggregate {
-                    match field.ty {
-                        NyarType::Float32 => encode_f32_load(2, 0, &mut body),
-                        NyarType::Float64 => encode_f64_load(3, 0, &mut body),
-                        NyarType::Integer64 { .. } => encode_i64_load(3, 0, &mut body),
-                        _ => encode_i32_load(2, 0, &mut body),
-                    }
+                    lir.push(match field.ty {
+                        NyarType::Float32 => WasmBodyInstruction::MemArg { opcode: WasmOpcode::F32Load, align: 2, offset: 0 },
+                        NyarType::Float64 => WasmBodyInstruction::MemArg { opcode: WasmOpcode::F64Load, align: 3, offset: 0 },
+                        NyarType::Integer64 { .. } => WasmBodyInstruction::MemArg { opcode: WasmOpcode::I64Load, align: 3, offset: 0 },
+                        _ => WasmBodyInstruction::MemArg { opcode: WasmOpcode::I32Load, align: 2, offset: 0 },
+                    });
                 }
-                WasmOpcode::End.encode(&mut body);
-                (vec![VALTYPE_I32], result_type, body)
+                lir.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
+                (vec![VALTYPE_I32], result_type, synthetic_body(lir))
             }
         };
         let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
@@ -2039,14 +2077,12 @@ fn emit_library_field_accessors<'name>(
             .iter()
             .map(|field| wasm_gc_field_type_byte_for_glue(&field.ty, js_glue_utf8_as_anyref))
             .collect::<crate::Result<Vec<u8>>>()?;
-        let mut body = Vec::new();
-        encode_uleb128(0, &mut body);
-        for field_index in 0..layout.fields.len() {
-            encode_local_get(field_index as u32, &mut body);
-        }
-        acorn_wasm::WasmGcOpcode::StructNew.encode(&mut body);
-        encode_uleb128(plan.struct_type_index, &mut body);
-        WasmOpcode::End.encode(&mut body);
+        let mut lir: Vec<WasmBodyInstruction> = (0..layout.fields.len())
+            .map(|field_index| WasmBodyInstruction::U32 { opcode: WasmOpcode::LocalGet, operand: field_index as u32 })
+            .collect();
+        lir.push(WasmBodyInstruction::GcTypeIndex { opcode: acorn_wasm::WasmGcOpcode::StructNew, operand: plan.struct_type_index });
+        lir.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
+        let body = synthetic_body(lir);
         let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
         type_indices.push(wasm_function_type(&param_types, &[WASM_GC_ANYREF]));
         function_indices.push(type_index);
@@ -2061,42 +2097,41 @@ fn emit_library_field_accessors<'name>(
         let element_type = plan.element_type;
         let (param_types, result_types, body) = match plan.kind {
             0 => {
-                let mut body = Vec::new();
-                encode_uleb128(0, &mut body);
-                encode_local_get(0, &mut body);
-                encode_ref_cast_type_index(array_type_index, &mut body);
-                encode_array_len(&mut body);
-                WasmOpcode::End.encode(&mut body);
+                let body = synthetic_body(vec![
+                    WasmBodyInstruction::U32 { opcode: WasmOpcode::LocalGet, operand: 0 },
+                    WasmBodyInstruction::RefCastTypeIndex(array_type_index),
+                    WasmBodyInstruction::ArrayLen,
+                    WasmBodyInstruction::Opcode(WasmOpcode::End),
+                ]);
                 (vec![WASM_GC_ANYREF], vec![VALTYPE_I32], body)
             }
             1 => {
-                let mut body = Vec::new();
-                encode_uleb128(0, &mut body);
-                encode_local_get(0, &mut body);
-                encode_ref_cast_type_index(array_type_index, &mut body);
-                encode_local_get(1, &mut body);
-                encode_array_get(array_type_index, &mut body);
-                WasmOpcode::End.encode(&mut body);
+                let body = synthetic_body(vec![
+                    WasmBodyInstruction::U32 { opcode: WasmOpcode::LocalGet, operand: 0 },
+                    WasmBodyInstruction::RefCastTypeIndex(array_type_index),
+                    WasmBodyInstruction::U32 { opcode: WasmOpcode::LocalGet, operand: 1 },
+                    WasmBodyInstruction::ArrayGet(array_type_index),
+                    WasmBodyInstruction::Opcode(WasmOpcode::End),
+                ]);
                 (vec![WASM_GC_ANYREF, VALTYPE_I32], vec![element_type], body)
             }
             2 => {
-                let mut body = Vec::new();
-                encode_uleb128(0, &mut body);
-                encode_local_get(0, &mut body);
-                encode_array_new_default(array_type_index, &mut body);
-                WasmOpcode::End.encode(&mut body);
+                let body = synthetic_body(vec![
+                    WasmBodyInstruction::U32 { opcode: WasmOpcode::LocalGet, operand: 0 },
+                    WasmBodyInstruction::ArrayNewDefault(array_type_index),
+                    WasmBodyInstruction::Opcode(WasmOpcode::End),
+                ]);
                 (vec![VALTYPE_I32], vec![WASM_GC_ANYREF], body)
             }
             _ => {
-                let mut body = Vec::new();
-                encode_uleb128(0, &mut body);
-                // array.set 无局部变量，body 里不声明 locals。
-                encode_local_get(0, &mut body);
-                encode_ref_cast_type_index(array_type_index, &mut body);
-                encode_local_get(1, &mut body);
-                encode_local_get(2, &mut body);
-                encode_array_set(array_type_index, &mut body);
-                WasmOpcode::End.encode(&mut body);
+                let body = synthetic_body(vec![
+                    WasmBodyInstruction::U32 { opcode: WasmOpcode::LocalGet, operand: 0 },
+                    WasmBodyInstruction::RefCastTypeIndex(array_type_index),
+                    WasmBodyInstruction::U32 { opcode: WasmOpcode::LocalGet, operand: 1 },
+                    WasmBodyInstruction::U32 { opcode: WasmOpcode::LocalGet, operand: 2 },
+                    WasmBodyInstruction::ArraySet(array_type_index),
+                    WasmBodyInstruction::Opcode(WasmOpcode::End),
+                ]);
                 (vec![WASM_GC_ANYREF, VALTYPE_I32, element_type], Vec::new(), body)
             }
         };
@@ -2112,12 +2147,11 @@ fn emit_library_field_accessors<'name>(
     // 与后端函数体的标量↔anyref 强制转换同构：`struct.new` 装进 `[i32]`/`[i64]`，
     // `ref.cast` + `struct.get 0` 拆回。空引用不进入 `get`（宿主先判 null）。
     for (position, (_, _, box_type_index, carrier)) in option_plans.iter().enumerate() {
-        let mut new_body = Vec::new();
-        encode_uleb128(0, &mut new_body);
-        encode_local_get(0, &mut new_body);
-        acorn_wasm::WasmGcOpcode::StructNew.encode(&mut new_body);
-        encode_uleb128(*box_type_index, &mut new_body);
-        WasmOpcode::End.encode(&mut new_body);
+        let new_body = synthetic_body(vec![
+            WasmBodyInstruction::U32 { opcode: WasmOpcode::LocalGet, operand: 0 },
+            WasmBodyInstruction::GcTypeIndex { opcode: acorn_wasm::WasmGcOpcode::StructNew, operand: *box_type_index },
+            WasmBodyInstruction::Opcode(WasmOpcode::End),
+        ]);
         let new_type_index = u32::try_from(type_indices.len()).expect("type index overflow");
         type_indices.push(wasm_function_type(&[*carrier], &[WASM_GC_ANYREF]));
         function_indices.push(new_type_index);
@@ -2125,12 +2159,12 @@ fn emit_library_field_accessors<'name>(
         code_bodies.push(wasm_function_body(new_body));
         exports.push((names[option_name_start + position * 2].as_str(), WasmExternalKind::Func.as_u8(), new_function_index));
 
-        let mut get_body = Vec::new();
-        encode_uleb128(0, &mut get_body);
-        encode_local_get(0, &mut get_body);
-        encode_ref_cast_type_index(*box_type_index, &mut get_body);
-        encode_struct_get(*box_type_index, 0, &mut get_body);
-        WasmOpcode::End.encode(&mut get_body);
+        let get_body = synthetic_body(vec![
+            WasmBodyInstruction::U32 { opcode: WasmOpcode::LocalGet, operand: 0 },
+            WasmBodyInstruction::RefCastTypeIndex(*box_type_index),
+            WasmBodyInstruction::StructGet { type_index: *box_type_index, field_index: 0 },
+            WasmBodyInstruction::Opcode(WasmOpcode::End),
+        ]);
         let get_type_index = u32::try_from(type_indices.len()).expect("type index overflow");
         type_indices.push(wasm_function_type(&[WASM_GC_ANYREF], &[*carrier]));
         function_indices.push(get_type_index);
@@ -2141,12 +2175,12 @@ fn emit_library_field_accessors<'name>(
 
     // 阶段 9：发射 unite tag accessor：`(anyref) -> i32` = ref.cast + struct.get tag。
     for (position, (_, sum_type_index)) in sum_plans.iter().enumerate() {
-        let mut body = Vec::new();
-        encode_uleb128(0, &mut body);
-        encode_local_get(0, &mut body);
-        encode_ref_cast_type_index(*sum_type_index, &mut body);
-        encode_struct_get(*sum_type_index, 0, &mut body);
-        WasmOpcode::End.encode(&mut body);
+        let body = synthetic_body(vec![
+            WasmBodyInstruction::U32 { opcode: WasmOpcode::LocalGet, operand: 0 },
+            WasmBodyInstruction::RefCastTypeIndex(*sum_type_index),
+            WasmBodyInstruction::StructGet { type_index: *sum_type_index, field_index: 0 },
+            WasmBodyInstruction::Opcode(WasmOpcode::End),
+        ]);
         let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
         type_indices.push(wasm_function_type(&[WASM_GC_ANYREF], &[VALTYPE_I32]));
         function_indices.push(type_index);
@@ -2159,16 +2193,17 @@ fn emit_library_field_accessors<'name>(
     // ref.cast sum + struct.get payload；标量载荷再按同一箱型拆箱。
     // 只读匹配 tag 的载荷槽；宿主必须先按 tag accessor 选变体再调用本函数。
     for (position, plan) in sum_payload_plans.iter().enumerate() {
-        let mut body = Vec::new();
-        encode_uleb128(0, &mut body);
-        encode_local_get(0, &mut body);
-        encode_ref_cast_type_index(plan.sum_type_index, &mut body);
-        encode_struct_get(plan.sum_type_index, 1, &mut body);
+        let mut lir = vec![
+            WasmBodyInstruction::U32 { opcode: WasmOpcode::LocalGet, operand: 0 },
+            WasmBodyInstruction::RefCastTypeIndex(plan.sum_type_index),
+            WasmBodyInstruction::StructGet { type_index: plan.sum_type_index, field_index: 1 },
+        ];
         if let Some(box_type_index) = plan.box_type_index {
-            encode_ref_cast_type_index(box_type_index, &mut body);
-            encode_struct_get(box_type_index, 0, &mut body);
+            lir.push(WasmBodyInstruction::RefCastTypeIndex(box_type_index));
+            lir.push(WasmBodyInstruction::StructGet { type_index: box_type_index, field_index: 0 });
         }
-        WasmOpcode::End.encode(&mut body);
+        lir.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
+        let body = synthetic_body(lir);
         let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
         type_indices.push(wasm_function_type(&[WASM_GC_ANYREF], &[plan.carrier]));
         function_indices.push(type_index);
@@ -2177,4 +2212,28 @@ fn emit_library_field_accessors<'name>(
         exports.push((names[sum_payload_name_start + position].as_str(), WasmExternalKind::Func.as_u8(), function_index));
     }
     Ok(())
+}
+
+/// 合成函数体的唯一编码入口：先写空 locals 段，再编码目标 LIR。
+fn synthetic_body(lir: Vec<WasmBodyInstruction>) -> Vec<u8> {
+    let mut body = Vec::new();
+    encode_uleb128(0, &mut body);
+    body.extend_from_slice(&encode_wasm_body(&lir));
+    body
+}
+
+/// 从已解析物理布局重建语义布局形状：导出名只由语义身份派生，偏移与宽度不参与。
+fn semantic_aggregate_layout(layout: &crate::lowering::shared::physical_layout::ResolvedAggregateLayout) -> nyar_types::AggregateLayout {
+    nyar_types::AggregateLayout {
+        id: layout.id,
+        name: layout.name.clone(),
+        namespace: layout.namespace.clone(),
+        key: layout.key.clone(),
+        storage: layout.storage,
+        fields: layout
+            .fields
+            .iter()
+            .map(|field| nyar_types::FieldLayout { name: field.name.clone(), ty: field.ty.clone() })
+            .collect(),
+    }
 }

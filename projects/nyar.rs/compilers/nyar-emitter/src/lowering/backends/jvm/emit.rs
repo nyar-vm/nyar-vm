@@ -25,20 +25,18 @@ use crate::{
         value_copy::{MAX_VALUE_AGGREGATE_COPY_DEPTH, nested_value_aggregate_layout, value_aggregate_copy_depth},
     },
     managed_abi::{ManagedAbiContract, ManagedAbiEntry},
-    target_operator::{
-        TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
-    },
+    target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
     transitional::binary::class::{
         JvmClassFile, JvmCodeBody, JvmFieldRef, JvmFieldSignature, JvmInstruction, JvmMethodDescriptor, JvmMethodRef, JvmMethodSignature,
         JvmTypeDescriptor,
     },
 };
 use nyar_types::{
-    AggregateLayout, AggregateLayoutPlan, FieldId, ItemInstanceId, LayoutId, NominalInstanceId, VariantId,
-    layout_choice::SumRepresentation,
+    AggregateLayout, AggregateLayoutPlan, FieldId, ItemInstanceId, LayoutId, NominalInstanceId, VariantId, layout_choice::SumRepresentation,
 };
 
 use super::JvmOperatorCode;
+use super::recipe::{JvmOperatorBinding, freeze_jvm_operator};
 
 const JVM_ACC_PUBLIC: u16 = 0x0001;
 const JVM_ACC_STATIC: u16 = 0x0008;
@@ -178,7 +176,7 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
         crate::lowering::sanitize_symbol(plan.module_name()),
         crate::lowering::sanitize_symbol(plan.fragment_id().as_str())
     );
-    let operator_by_instance = external_operator_by_instance(submission);
+    let operator_by_instance = external_operator_by_instance(submission)?;
     let mut class_file = JvmClassFile::new(internal_name.clone());
     for instance in &operations {
         let Some(view) = plan.get_function(instance)
@@ -417,16 +415,21 @@ fn collect_jvm_operations(submission: &FragmentSubmission) -> Vec<ItemInstanceId
 }
 
 /// 冻结的 `[jvm_operator("...")]` 绑定：助记符只用于诊断，配方来自计划。
-fn external_operator_by_instance(submission: &FragmentSubmission) -> BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)> {
-    submission
-        .backend_plan
-        .imports()
-        .iter()
-        .filter_map(|(instance, import)| {
-            let mnemonic = crate::lowering::shared::interop::jvm_operator_target(&import.link)?;
-            Some((*instance, (mnemonic.to_string(), import.target_operator.unwrap_or(TargetOperatorBinding::Unfrozen))))
-        })
-        .collect()
+fn external_operator_by_instance(submission: &FragmentSubmission) -> Result<BTreeMap<ItemInstanceId, (String, JvmOperatorBinding)>> {
+    let mut operators = BTreeMap::new();
+    for (instance, import) in submission.backend_plan.imports() {
+        let Some(mnemonic) = crate::lowering::shared::interop::jvm_operator_target(&import.link)
+        else {
+            continue;
+        };
+        let symbol = submission.backend_plan.abi_name_for_instance(*instance).map(|name| name.to_string()).unwrap_or_default();
+        let Some(binding) = freeze_jvm_operator(&import.link, *instance, &symbol, &import.parameter_types, &import.return_type)?
+        else {
+            continue;
+        };
+        operators.insert(*instance, (mnemonic.to_string(), binding));
+    }
+    Ok(operators)
 }
 
 fn function_descriptor(layouts: &AggregateLayoutPlan, function: &MirFunction) -> Result<JvmMethodDescriptor> {
@@ -550,10 +553,7 @@ fn build_sum_classes(submission: &FragmentSubmission) -> Result<Vec<JvmClassFile
             return Err(format!("JVM 最小 lowering：sum nominal `{nominal:?}` 没有冻结的 `SumRepresentation`"));
         };
         if sum.tag_width == 0 || sum.tag_width > 4 {
-            return Err(format!(
-                "JVM 最小 lowering：sum nominal `{nominal:?}` 的 `tag_width`={} 超出 1..=4 合同",
-                sum.tag_width
-            ));
+            return Err(format!("JVM 最小 lowering：sum nominal `{nominal:?}` 的 `tag_width`={} 超出 1..=4 合同", sum.tag_width));
         }
         let mut class_file = JvmClassFile::new(jvm_sum_class_name(nominal, sum));
         class_file.fields.push(JvmFieldSignature {
@@ -624,12 +624,8 @@ fn jvm_box_class_name(descriptor: &JvmTypeDescriptor) -> Result<String> {
 fn jvm_box_value_of(descriptor: &JvmTypeDescriptor) -> Result<JvmMethodRef> {
     let (owner, parameter, return_type) = match descriptor {
         JvmTypeDescriptor::Long => ("java/lang/Long", JvmTypeDescriptor::Long, JvmTypeDescriptor::Object("java/lang/Long".to_string())),
-        JvmTypeDescriptor::Float => {
-            ("java/lang/Float", JvmTypeDescriptor::Float, JvmTypeDescriptor::Object("java/lang/Float".to_string()))
-        }
-        JvmTypeDescriptor::Double => {
-            ("java/lang/Double", JvmTypeDescriptor::Double, JvmTypeDescriptor::Object("java/lang/Double".to_string()))
-        }
+        JvmTypeDescriptor::Float => ("java/lang/Float", JvmTypeDescriptor::Float, JvmTypeDescriptor::Object("java/lang/Float".to_string())),
+        JvmTypeDescriptor::Double => ("java/lang/Double", JvmTypeDescriptor::Double, JvmTypeDescriptor::Object("java/lang/Double".to_string())),
         JvmTypeDescriptor::Boolean => {
             ("java/lang/Boolean", JvmTypeDescriptor::Boolean, JvmTypeDescriptor::Object("java/lang/Boolean".to_string()))
         }
@@ -664,11 +660,7 @@ fn jvm_unbox_method(descriptor: &JvmTypeDescriptor) -> Result<JvmMethodRef> {
             return Err(format!("JVM 最小 lowering：`{descriptor}` 不是可解箱的标量载体"));
         }
     };
-    Ok(JvmMethodRef {
-        owner: owner.to_string(),
-        name: name.to_string(),
-        descriptor: JvmMethodDescriptor::new(Vec::new(), return_type),
-    })
+    Ok(JvmMethodRef { owner: owner.to_string(), name: name.to_string(), descriptor: JvmMethodDescriptor::new(Vec::new(), return_type) })
 }
 
 /// 数组类型 `Array<T>` / `FixedArray { element, .. }` 的元素类型。
@@ -774,9 +766,7 @@ pub(crate) fn jvm_type_descriptor(layouts: &AggregateLayoutPlan, ty: &NyarType) 
         // 泛型实例的实例表示必须在计划边界结算为携带布局身份的 `Nominal`；
         // 缺少冻结布局身份即缺载体合同，禁止按引用擦除。
         NyarType::Apply(..) => {
-            return Err(format!(
-                "JVM 最小 lowering：泛型实例 `{ty}` 缺少实例级布局结算：canonical 未冻结该实例的布局身份，拒绝按引用擦除"
-            ));
+            return Err(format!("JVM 最小 lowering：泛型实例 `{ty}` 缺少实例级布局结算：canonical 未冻结该实例的布局身份，拒绝按引用擦除"));
         }
         // 携带身份的名义类型：存储类按 `layout` 身份解析，引用/值存储都指向
         // companion 布局类。JVM 没有内联结构体，逐字段拷贝由 `AggregateCopy` 承担，
@@ -811,7 +801,7 @@ struct JvmMethodEmitter<'a> {
     slots: ExecutableSlotPlan,
     slot_offsets: Vec<u16>,
     method_plans: &'a BTreeMap<ItemInstanceId, JvmMethodPlan>,
-    operator_by_instance: &'a BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
+    operator_by_instance: &'a BTreeMap<ItemInstanceId, (String, JvmOperatorBinding)>,
     instructions: Vec<JvmInstruction>,
     current_block: MirBlockRef,
     comparison_ordinal: usize,
@@ -831,7 +821,7 @@ fn lower_function(
     function: &MirFunction,
     method: &JvmMethodPlan,
     method_plans: &BTreeMap<ItemInstanceId, JvmMethodPlan>,
-    operator_by_instance: &BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
+    operator_by_instance: &BTreeMap<ItemInstanceId, (String, JvmOperatorBinding)>,
 ) -> Result<JvmMethodSignature> {
     let slots = ExecutableSlotPlan::plan_nyar(function);
     let mut slot_offsets = Vec::with_capacity(slots.local_types.len());
@@ -850,7 +840,7 @@ fn lower_function(
         };
         operator_by_instance
             .get(instance)
-            .is_some_and(|(_, binding)| matches!(binding, TargetOperatorBinding::Frozen(plan) if plan.encoding == TargetOperatorEncoding::Jvm(JvmOperatorCode::LongCompareLessThanUnsigned)))
+            .is_some_and(|(_, binding)| matches!(binding, JvmOperatorBinding::Frozen(plan) if plan.encoding == JvmOperatorCode::LongCompareLessThanUnsigned))
     });
     let scratch_long_slot = if needs_scratch_long {
         let slot = local_count;
@@ -970,10 +960,7 @@ impl JvmMethodEmitter<'_> {
                 for (field, value) in fields {
                     let Some((layout_id, slot)) = self.submission.backend_plan.aggregate_layout_by_field().get(field).copied()
                     else {
-                        return Err(format!(
-                            "JVM 最小 lowering：字段身份 `{field:?}` 未登记布局索引: function={}",
-                            self.function.symbol
-                        ));
+                        return Err(format!("JVM 最小 lowering：字段身份 `{field:?}` 未登记布局索引: function={}", self.function.symbol));
                     };
                     if layout_id != layout.id {
                         return Err(format!(
@@ -1299,18 +1286,15 @@ impl JvmMethodEmitter<'_> {
     fn emit_operator_call(
         &mut self,
         mnemonic: &str,
-        binding: &TargetOperatorBinding,
+        binding: &JvmOperatorBinding,
         arguments: &[Operand],
         output: Option<(u16, JvmSlotKind)>,
     ) -> Result<()> {
-        let TargetOperatorBinding::Frozen(plan) = binding
+        let JvmOperatorBinding::Frozen(plan) = binding
         else {
             return Err(format!("JVM 目标 `jvm_operator` 绑定缺少可编码助记符 `{mnemonic}`: function={}", self.function.symbol));
         };
-        let TargetOperatorEncoding::Jvm(code) = plan.encoding
-        else {
-            return Err(format!("JVM 目标 `jvm_operator` 绑定 `{mnemonic}` 冻结了非 JVM 编码: function={}", self.function.symbol));
-        };
+        let code = plan.encoding;
         if arguments.len() != plan.arity {
             return Err(format!(
                 "JVM 目标 operator `{mnemonic}` 实参数量与冻结 arity 不符: function={} expected={} actual={}",
@@ -1362,7 +1346,7 @@ impl JvmMethodEmitter<'_> {
         &mut self,
         mnemonic: &str,
         expected_kind: JvmSlotKind,
-        plan: &TargetOperatorPlan,
+        plan: &TargetOperatorPlan<JvmOperatorCode>,
         arguments: &[Operand],
     ) -> Result<()> {
         match plan.recipe {
@@ -1573,10 +1557,7 @@ impl JvmMethodEmitter<'_> {
     fn layout_by_nominal(&self, nominal: NominalInstanceId) -> Result<AggregateLayout> {
         let Some(layout_id) = self.submission.backend_plan.aggregate_layout_by_nominal().get(&nominal).copied()
         else {
-            return Err(format!(
-                "JVM 最小 lowering：nominal `{nominal:?}` 没有冻结的布局身份: function={}",
-                self.function.symbol
-            ));
+            return Err(format!("JVM 最小 lowering：nominal `{nominal:?}` 没有冻结的布局身份: function={}", self.function.symbol));
         };
         self.layout_by_id(layout_id)
     }
@@ -1584,10 +1565,7 @@ impl JvmMethodEmitter<'_> {
     fn layout_field_descriptor(&self, layout: &AggregateLayout, slot: u32) -> Result<(JvmTypeDescriptor, JvmSlotKind)> {
         let Some(field) = layout.fields.get(slot as usize)
         else {
-            return Err(format!(
-                "JVM 最小 lowering：布局 `{}` 缺少字段槽 {slot}: function={}",
-                layout.name, self.function.symbol
-            ));
+            return Err(format!("JVM 最小 lowering：布局 `{}` 缺少字段槽 {slot}: function={}", layout.name, self.function.symbol));
         };
         let layouts = self.submission.backend_plan.aggregate_layouts();
         let descriptor = jvm_type_descriptor(layouts, &field.ty)?;
@@ -1597,10 +1575,7 @@ impl JvmMethodEmitter<'_> {
     fn field_location(&self, field: FieldId) -> Result<(AggregateLayout, u32)> {
         let Some((layout_id, slot)) = self.submission.backend_plan.aggregate_layout_by_field().get(&field).copied()
         else {
-            return Err(format!(
-                "JVM 最小 lowering：字段身份 `{field:?}` 未登记布局索引: function={}",
-                self.function.symbol
-            ));
+            return Err(format!("JVM 最小 lowering：字段身份 `{field:?}` 未登记布局索引: function={}", self.function.symbol));
         };
         Ok((self.layout_by_id(layout_id)?, slot))
     }
@@ -1619,10 +1594,7 @@ impl JvmMethodEmitter<'_> {
                 Constant::Bool(_) => NyarType::Boolean,
                 Constant::Utf8(_) | Constant::Utf16(_) => NyarType::Utf8,
                 other => {
-                    return Err(format!(
-                        "JVM 最小 lowering：常量 `{other:?}` 没有可装箱的冻结类型: function={}",
-                        self.function.symbol
-                    ));
+                    return Err(format!("JVM 最小 lowering：常量 `{other:?}` 没有可装箱的冻结类型: function={}", self.function.symbol));
                 }
             }),
             other => Err(format!("JVM 最小 lowering：操作数 `{other:?}` 没有冻结类型: function={}", self.function.symbol)),
@@ -1645,17 +1617,11 @@ impl JvmMethodEmitter<'_> {
     fn reference_operand_slot(&self, operand: &Operand) -> Result<u16> {
         let Operand::Value(value) = operand
         else {
-            return Err(format!(
-                "JVM 最小 lowering：只有 SSA 值可作为引用局部目标: function={} dest={operand:?}",
-                self.function.symbol
-            ));
+            return Err(format!("JVM 最小 lowering：只有 SSA 值可作为引用局部目标: function={} dest={operand:?}", self.function.symbol));
         };
         let (slot, kind) = self.value_slot(*value)?;
         if kind != JvmSlotKind::Reference {
-            return Err(format!(
-                "JVM 最小 lowering：聚合拷贝目标必须是引用载体: function={} actual={kind:?}",
-                self.function.symbol
-            ));
+            return Err(format!("JVM 最小 lowering：聚合拷贝目标必须是引用载体: function={} actual={kind:?}", self.function.symbol));
         }
         Ok(slot)
     }
@@ -1663,10 +1629,7 @@ impl JvmMethodEmitter<'_> {
     fn store_operand(&mut self, operand: &Operand, kind: JvmSlotKind) -> Result<()> {
         let Operand::Value(value) = operand
         else {
-            return Err(format!(
-                "JVM 最小 lowering：只有 SSA 值可作为局部目标: function={} dest={operand:?}",
-                self.function.symbol
-            ));
+            return Err(format!("JVM 最小 lowering：只有 SSA 值可作为局部目标: function={} dest={operand:?}", self.function.symbol));
         };
         let (slot, actual) = self.value_slot(*value)?;
         if actual != kind {
@@ -1687,10 +1650,9 @@ impl JvmMethodEmitter<'_> {
         };
         match &descriptor {
             JvmTypeDescriptor::Object(_) | JvmTypeDescriptor::Array(_) => self.emit_operand(operand, Some(JvmSlotKind::Reference)),
-            JvmTypeDescriptor::Void => Err(format!(
-                "JVM 最小 lowering：`{ty}` 是 void 形态，不能作为需要引用的值: function={}",
-                self.function.symbol
-            )),
+            JvmTypeDescriptor::Void => {
+                Err(format!("JVM 最小 lowering：`{ty}` 是 void 形态，不能作为需要引用的值: function={}", self.function.symbol))
+            }
             scalar => {
                 let kind = JvmSlotKind::of(scalar)?;
                 self.emit_operand(operand, Some(kind))?;
@@ -1707,9 +1669,7 @@ impl JvmMethodEmitter<'_> {
             (jvm_type_descriptor(layouts, element)?, jvm_array_element_descriptor(layouts, element)?)
         };
         let target_kind = JvmSlotKind::of(&target)?;
-        if matches!(element_descriptor, JvmTypeDescriptor::Object(_) | JvmTypeDescriptor::Array(_))
-            && target_kind != JvmSlotKind::Reference
-        {
+        if matches!(element_descriptor, JvmTypeDescriptor::Object(_) | JvmTypeDescriptor::Array(_)) && target_kind != JvmSlotKind::Reference {
             return self.emit_boxed_operand(operand, element);
         }
         self.emit_operand(operand, Some(target_kind))
@@ -1809,7 +1769,8 @@ impl JvmMethodEmitter<'_> {
         nominal: NominalInstanceId,
         variant: VariantId,
         payload: &Option<Operand>,
-    ) -> Result<()> {        let Some(sum) = self.submission.backend_plan.sum_representations().get(&nominal).cloned()
+    ) -> Result<()> {
+        let Some(sum) = self.submission.backend_plan.sum_representations().get(&nominal).cloned()
         else {
             return Err(format!(
                 "JVM 最小 lowering：sum nominal `{nominal:?}` 没有冻结的 `SumRepresentation`: function={}",
@@ -1835,10 +1796,7 @@ impl JvmMethodEmitter<'_> {
             .map_err(|_| format!("JVM 最小 lowering：variant `{variant:?}` 的 tag 超出 `int` 载体: function={}", self.function.symbol))?;
         let output = self.require_output(instruction)?;
         if output.1 != JvmSlotKind::Reference {
-            return Err(format!(
-                "JVM 最小 lowering：sum 构造结果必须是引用槽: function={} actual={:?}",
-                self.function.symbol, output.1
-            ));
+            return Err(format!("JVM 最小 lowering：sum 构造结果必须是引用槽: function={} actual={:?}", self.function.symbol, output.1));
         }
         let class_name = jvm_sum_class_name(nominal, &sum);
         self.instructions.push(JvmInstruction::New(class_name.clone()));
@@ -1977,10 +1935,7 @@ impl JvmMethodEmitter<'_> {
         match self.output_of(instruction)? {
             Some((slot, kind)) => {
                 if kind != JvmSlotKind::Int {
-                    return Err(format!(
-                        "JVM 最小 lowering：布尔结果槽载体必须是 `int`: function={} actual={kind:?}",
-                        self.function.symbol
-                    ));
+                    return Err(format!("JVM 最小 lowering：布尔结果槽载体必须是 `int`: function={} actual={kind:?}", self.function.symbol));
                 }
                 self.instructions.push(JvmInstruction::IStore(slot));
                 Ok(())
@@ -2016,10 +1971,7 @@ impl JvmMethodEmitter<'_> {
         match self.output_of(instruction)? {
             Some((slot, kind)) => {
                 if kind != JvmSlotKind::Reference {
-                    return Err(format!(
-                        "JVM 最小 lowering：数组结果必须是引用槽: function={} actual={kind:?}",
-                        self.function.symbol
-                    ));
+                    return Err(format!("JVM 最小 lowering：数组结果必须是引用槽: function={} actual={kind:?}", self.function.symbol));
                 }
                 self.instructions.push(JvmInstruction::AStore(slot));
                 Ok(())
@@ -2042,10 +1994,7 @@ impl JvmMethodEmitter<'_> {
         match self.output_of(instruction)? {
             Some((slot, kind)) => {
                 if kind != JvmSlotKind::Reference {
-                    return Err(format!(
-                        "JVM 最小 lowering：数组结果必须是引用槽: function={} actual={kind:?}",
-                        self.function.symbol
-                    ));
+                    return Err(format!("JVM 最小 lowering：数组结果必须是引用槽: function={} actual={kind:?}", self.function.symbol));
                 }
                 self.instructions.push(JvmInstruction::AStore(slot));
                 Ok(())
@@ -2083,9 +2032,7 @@ impl JvmMethodEmitter<'_> {
             self.instructions.push(JvmInstruction::IConst(mask));
             self.instructions.push(JvmInstruction::IAnd);
         }
-        if matches!(element_descriptor, JvmTypeDescriptor::Object(_) | JvmTypeDescriptor::Array(_))
-            && target_kind != JvmSlotKind::Reference
-        {
+        if matches!(element_descriptor, JvmTypeDescriptor::Object(_) | JvmTypeDescriptor::Array(_)) && target_kind != JvmSlotKind::Reference {
             self.instructions.push(JvmInstruction::CheckCast(jvm_box_class_name(&target)?));
             self.instructions.push(JvmInstruction::InvokeVirtual(jvm_unbox_method(&target)?));
         }

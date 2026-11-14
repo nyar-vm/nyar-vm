@@ -76,7 +76,6 @@ fn wasm_static_call_to_registered_host_import_lowers() {
         link: nyar::ExternalImportLink::host(Some(Identifier::new("wasm")), vec!["env".into(), "utf8_length".into()]),
         parameter_types: Vec::new(),
         return_type: I32,
-        target_operator: None,
     };
     lower(call_main(Operand::Item(callee)), Some((callee, import))).expect("已登记宿主导入的静态调用必须正常 lower");
 }
@@ -130,7 +129,6 @@ fn wasm_i64_slot_receiving_i32_carrier_fails_structured() {
         link: nyar::ExternalImportLink::host(Some(Identifier::new("wasm")), vec!["env".into(), "utf8_length".into()]),
         parameter_types: vec![NyarType::Integer64 { signed: true }],
         return_type: I32,
-        target_operator: None,
     };
     let error = lower(function, Some((callee, import))).expect_err("i32 实参送进 i64 形参槽必须结构化失败，禁止静默 extend");
     assert!(error.contains("WASM ABI 宽度失配"), "错误必须指明宽度失配: {error}");
@@ -147,7 +145,6 @@ fn wasm_library_export_lane_registers_host_import_callees() {
         link: nyar::ExternalImportLink::host(Some(Identifier::new("wasm")), vec!["env".into(), "utf8_length".into()]),
         parameter_types: Vec::new(),
         return_type: I32,
-        target_operator: None,
     };
     let main_name = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), call_main(Operand::Item(callee)))]));

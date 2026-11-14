@@ -4,7 +4,7 @@
 pub mod transitional;
 
 mod artifacts;
-mod assembly;
+pub mod assembly;
 mod abi_structure;
 #[doc(hidden)]
 pub mod backend;
@@ -48,7 +48,7 @@ pub use nyar_types::CompiledProgram;
 use nyar_types::{AggregateLayoutPlan, FlagsLayout, SingletonInstancePlan};
 use std::collections::{BTreeMap, BTreeSet};
 #[doc(hidden)]
-pub use target_execution_plan::{AbiCarrier, BackendImport, LibraryExportAbi, ProgramTextRepresentation, TargetExecutionPlan};
+pub use target_execution_plan::{BackendImport, ProgramTextRepresentation, TargetExecutionPlan};
 
 use crate::{
     backend_plan_views::ExecutableFunction,
@@ -88,6 +88,7 @@ pub(crate) fn test_canonical_primitive(spelling: &str) -> nyar_types::NyarType {
         other => panic!("测试只支持 canonical 原语拼写: {other}"),
     }
 }
+pub use assembly::{AdaptedFragmentInput, AssembledFragment, FragmentTargetInput, TargetInputRequest};
 pub use nyar::ArtifactPartition;
 
 /// Integration-test support wrappers for crate-internal lowering and compile flows.
@@ -534,10 +535,11 @@ pub trait FrontendBuildBundle {
     /// 返回驱动层可消费的分区计划视图。
     fn planned_partitions(&self) -> &dyn PlannedArtifactPartitionsView;
 
-    /// 为指定分区提交 Compiler 已完成语义装配的 fragment。
+    /// 为指定分区提交前端已完成语义闭合的装配结果。
     ///
-    /// 前端不得在此边界生产目标私有输入；目标 lowering 由 Emitter 统一完成。
-    fn assemble_fragment_for_partition(&self, partition_index: usize) -> Result<nyar::AssembledFragment>;
+    /// 前端必须显式声明接入能力：复用共享语义子集，或由自己的语言→平台适配器
+    /// 准备目标输入。编排层不要求所有语言先转成同一份公共 MIR。
+    fn assemble_fragment_for_partition(&self, partition_index: usize) -> Result<AssembledFragment>;
 
     /// 返回目标 profile 的 host flavor，供 Emitter 选择目标私有编码。
     fn target_host_flavor(&self) -> Option<String>;
@@ -685,20 +687,6 @@ impl LoweredBackendInput {
         })
     }
 
-    /// 从 Compiler 生成的完整目标片段直接生成后端输入。
-    pub fn from_assembled_fragment(
-        payload: nyar::AssembledFragment,
-        backend_family: TargetBackendFamily,
-        host_boundary: HostProjectionBoundary,
-        output_dir: &Path,
-        host_flavor: &str,
-        wasm_package_kind: nyar_backend_wasi::WasmPackageKind,
-    ) -> Result<Self> {
-        let submission =
-            crate::assembly::fragment_submission_from_assembled(payload).map_err(|error| format!("后端私有计划生产失败: {error}"))?;
-        Self::from_fragment_submission(&submission, backend_family, host_boundary, output_dir, host_flavor, wasm_package_kind)
-    }
-
     pub(crate) fn into_driver_backend_input(self) -> DriverBackendInput {
         self.input
     }
@@ -835,13 +823,15 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
             request.planned_partitions.partition(partition_index).ok_or_else(|| format!("分区索引 `{partition_index}` 超出范围"))?;
         let fragment = request.bundle.assemble_fragment_for_partition(partition_index)?;
         let host_flavor = request.bundle.target_host_flavor().ok_or_else(|| format!("分区计划缺少目标 host flavor"))?;
-        let lowered_input = LoweredBackendInput::from_assembled_fragment(
+        let lowered_input = assembly::prepare_assembled_fragment(
             fragment,
-            backend_family_for_partition(partition),
-            partition.host_boundary,
-            request.output_dir,
-            &host_flavor,
-            request.bundle.wasm_package_kind(),
+            &TargetInputRequest {
+                backend_family: backend_family_for_partition(partition),
+                host_boundary: partition.host_boundary,
+                output_dir: request.output_dir,
+                host_flavor: &host_flavor,
+                wasm_package_kind: request.bundle.wasm_package_kind(),
+            },
         )?;
         let artifact_base_name = lowered_input.entry_artifact_name().unwrap_or(request.project_name);
         let artifact_name = partition_artifact_name(artifact_base_name, partition, partition_count);

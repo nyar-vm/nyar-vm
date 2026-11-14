@@ -40,14 +40,16 @@ pub(super) use nyar_types::{LayoutId, NominalInstanceId, VariantId};
 // 从 crate 顶层模块 re-export
 pub(super) use crate::{
     contracts::{ArrayInitialization, instruction_primary_result},
-    target_operator::{TargetOperatorBinding, WasmGcArrayOperation, WasmGcArrayOperatorPlan},
+    target_operator::{WasmGcArrayOperation, WasmGcArrayOperatorPlan},
 };
+
+pub(crate) use operator::{WasmOperatorBinding, freeze_wasm_operator_binding};
 
 // 从 wasm gc 模块 re-export
 pub(super) use super::gc::WASM_GC_ANYREF;
 
 // 从子模块 re-export（供兄弟子模块通过 super::* 消费）
-pub(super) use lir::{WasmBodyInstruction, encode_wasm_body};
+pub(crate) use lir::{WasmBodyInstruction, encode_wasm_body};
 pub(super) use lowerer::{
     HostHandleToManagedUtf8Plan, ManagedUtf8ToHostHandlePlan, Utf8HostHandleMaterializePlan, WASM_GC_EXTERNREF, WasmMirLowerer,
     array_element_type,
@@ -71,6 +73,7 @@ mod lir;
 mod lowerer;
 pub(crate) mod numeric;
 mod operands;
+mod operator;
 mod representation;
 mod strings;
 mod type_registry;
@@ -83,14 +86,10 @@ pub(crate) use entry::{augment_wasm_with_value_aggregate_metadata, lower_fragmen
 ///
 /// 公共 [`crate::TargetExecutionPlan`] 只携带逻辑导出身份与签名，构造时不再
 /// 为任何目标预先冻结物理载体。Wasm lane 在需要导出 ABI 时按函数签名现场冻结；
-/// 缓存存在时只复用本 lane 已冻结的事实。其它 lane 不受 Wasm 载体资格约束。
-pub(super) fn wasm_library_export_abi(
+/// 本 lane 的载体合同不会写回共享计划，其它 lane 也不受 Wasm 载体资格约束。
+pub(crate) fn wasm_library_export_abi(
     plan: &crate::TargetExecutionPlan,
     instance: &nyar_types::ItemInstanceId,
-) -> crate::Result<crate::LibraryExportAbi> {
-    if let Some(abi) = plan.library_export_abi(instance) {
-        return Ok(abi.clone());
-    }
-    let view = plan.get_function(instance).ok_or_else(|| format!("库导出 `{instance}` 缺少 Compiler 函数体，无法冻结 Wasm ABI 载体合同"))?;
-    crate::target_execution_plan::freeze_library_export_abi(&view.function)
+) -> crate::Result<crate::lowering::backends::wasm::abi::WasmLibraryExportAbi> {
+    crate::lowering::backends::wasm::abi::freeze_wasm_export_abi_for(plan, instance)
 }

@@ -2,7 +2,10 @@
 
 use std::collections::BTreeMap;
 
+use crate::lowering::shared::physical_layout::{ResolvedAggregateLayout, ResolvedFieldLayout};
+
 use super::{
+    WasmOperatorBinding,
     super::{
         super::{
             executable::{ExecutableLoweringContext, collect_reachable_blocks},
@@ -24,10 +27,9 @@ use crate::{
         ExecutableInstruction as MirInstruction, ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand,
         ExecutableStorageKind as MirStorageKind, ExecutableValueRef as MirValueRef, NyarType,
     },
-    target_operator::TargetOperatorBinding,
 };
 use acorn_wasm::{VALTYPE_EXTERNREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, WasmOpcode};
-use nyar_types::{AggregateLayout, FieldLayout, ItemInstanceId, LayoutId};
+use nyar_types::{ItemInstanceId, LayoutId};
 
 pub(in crate::lowering::backends::wasm) fn array_element_type(array_type: &NyarType) -> Option<&NyarType> {
     match array_type {
@@ -115,7 +117,7 @@ pub(in crate::lowering::backends::wasm) fn lower_mir_function_to_wasm_bytes(
     gc_f64_box_type_index: u32,
     gc_closure_type_index: u32,
     callee_import_index: &BTreeMap<ItemInstanceId, u32>,
-    callee_wasm_operator: &BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
+    callee_wasm_operator: &BTreeMap<ItemInstanceId, (String, WasmOperatorBinding)>,
     host_imports: &[(String, String)],
     string_literal_index: &BTreeMap<String, u32>,
     string_literal_offset: &BTreeMap<String, u32>,
@@ -130,7 +132,7 @@ pub(in crate::lowering::backends::wasm) fn lower_mir_function_to_wasm_bytes(
         // release 构建会继续 lowering 并可能把残差 `PatternMatch` 编成运行期 trap。
         return Err(format!("pattern matching contract violation in function `{}`: {error:?}", mir_fn.symbol));
     }
-    let ctx = ExecutableLoweringContext::new_resolved(submission, crate::lowering::shared::physical_layout::LayoutPolicy::WASM32)?;
+    let ctx = ExecutableLoweringContext::new(submission, crate::lowering::shared::physical_layout::LayoutPolicy::WASM32)?;
     let mut lowerer = WasmMirLowerer::new(
         &ctx,
         mir_fn,
@@ -219,7 +221,7 @@ pub(in crate::lowering::backends::wasm) struct WasmMirLowerer<'a> {
     pub(in crate::lowering::backends::wasm::mir) gc_sum_type_indices: &'a BTreeMap<NominalInstanceId, u32>,
     pub(in crate::lowering::backends::wasm::mir) callee_import_index: &'a BTreeMap<ItemInstanceId, u32>,
     /// `[wasm_operator]` 绑定的 provider 实例 → 计划冻结的目标指令配方。
-    pub(in crate::lowering::backends::wasm::mir) callee_wasm_operator: &'a BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
+    pub(in crate::lowering::backends::wasm::mir) callee_wasm_operator: &'a BTreeMap<ItemInstanceId, (String, WasmOperatorBinding)>,
     /// WASI 宿主 import 表（?stream 内建），?write-via-stream 协议查找索引?
     pub(in crate::lowering::backends::wasm::mir) host_imports: &'a [(String, String)],
     pub(in crate::lowering::backends::wasm::mir) string_literal_index: &'a BTreeMap<String, u32>,
@@ -264,7 +266,7 @@ impl<'a> WasmMirLowerer<'a> {
         gc_f64_box_type_index: u32,
         gc_closure_type_index: u32,
         callee_import_index: &'a BTreeMap<ItemInstanceId, u32>,
-        callee_wasm_operator: &'a BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
+        callee_wasm_operator: &'a BTreeMap<ItemInstanceId, (String, WasmOperatorBinding)>,
         host_imports: &'a [(String, String)],
         string_literal_index: &'a BTreeMap<String, u32>,
         string_literal_offset: &'a BTreeMap<String, u32>,
@@ -650,11 +652,11 @@ impl<'a> WasmMirLowerer<'a> {
     ///
     /// 反面教训：曾在此处按 `layout.storage` / 字段类型二次推导，导致同一 layout 在
     /// 构造侧走线性内存、消费侧走 gc struct，运行时直接 `illegal cast`。
-    pub(super) fn layout_uses_gc_struct(&self, layout: &AggregateLayout) -> bool {
+    pub(super) fn layout_uses_gc_struct(&self, layout: &ResolvedAggregateLayout) -> bool {
         self.gc_struct_type_indices.contains_key(&layout.id)
     }
 
-    pub(super) fn resolve_layout(&self, nominal: nyar_types::NominalInstanceId) -> AggregateLayout {
+    pub(super) fn resolve_layout(&self, nominal: nyar_types::NominalInstanceId) -> ResolvedAggregateLayout {
         self.ctx
             .layout_by_nominal(nominal)
             .cloned()
@@ -780,7 +782,7 @@ impl<'a> WasmMirLowerer<'a> {
         }
     }
 
-    pub(super) fn field_store_stack_type(&self, field: &FieldLayout) -> crate::Result<u8> {
+    pub(super) fn field_store_stack_type(&self, field: &ResolvedFieldLayout) -> crate::Result<u8> {
         if self.storage_for_type(&field.ty) == StorageKind::Reference {
             // 引用字段在线性内存中不存 GC 引用，用 i32 占位。
             Ok(VALTYPE_I32)
@@ -795,7 +797,7 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     /// wasm-gc `struct.set` 字段值栈类型（与 `register_gc_struct_types` / `wasm_gc_field_type_byte` 一致）。
-    pub(super) fn gc_struct_field_stack_type(&self, field: &FieldLayout) -> crate::Result<u8> {
+    pub(super) fn gc_struct_field_stack_type(&self, field: &ResolvedFieldLayout) -> crate::Result<u8> {
         wasm_gc_field_type_byte_for_glue(&field.ty, self.js_glue_utf8_as_anyref)
     }
 
@@ -805,7 +807,7 @@ impl<'a> WasmMirLowerer<'a> {
     /// For nested value-type fields, emits `memory.copy` to copy the inline contents
     /// from the source address (already on the stack) into the parent's field region.
     /// Stack at entry: `[dest_addr, source_value_or_addr]`.
-    pub(super) fn emit_store_at_field(&mut self, field: &FieldLayout) -> crate::Result<()> {
+    pub(super) fn emit_store_at_field(&mut self, field: &ResolvedFieldLayout) -> crate::Result<()> {
         // 只有带字段的内联聚合才以地址形式存储；标量与零字段值布局直接存载体。
         if type_is_inline_aggregate(self.ctx, &field.ty) {
             // Stack: [dest_addr, source_addr] → memory.copy expects [dest, source, len]
@@ -825,7 +827,7 @@ impl<'a> WasmMirLowerer<'a> {
         Ok(())
     }
 
-    pub(super) fn emit_load_at_field(&mut self, field: &FieldLayout) -> crate::Result<()> {
+    pub(super) fn emit_load_at_field(&mut self, field: &ResolvedFieldLayout) -> crate::Result<()> {
         match self.gc_struct_field_stack_type(field)? {
             VALTYPE_F32 => self.code.push(WasmBodyInstruction::MemArg { opcode: WasmOpcode::F32Load, align: 2, offset: 0 }),
             VALTYPE_F64 => self.code.push(WasmBodyInstruction::MemArg { opcode: WasmOpcode::F64Load, align: 3, offset: 0 }),

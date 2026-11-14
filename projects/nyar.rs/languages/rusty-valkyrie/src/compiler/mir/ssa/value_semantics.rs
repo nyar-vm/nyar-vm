@@ -213,8 +213,7 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
         else {
             continue;
         };
-        let Some(carrier) =
-            hir_struct.primitive_identity.as_deref().and_then(crate::compiler::types::hir::primitive_identity_builtin_type)
+        let Some(carrier) = hir_struct.primitive_identity.as_deref().and_then(crate::compiler::types::hir::primitive_identity_builtin_type)
         else {
             continue;
         };
@@ -372,8 +371,6 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
         };
         if let Some(existing) = plan.layouts.iter_mut().find(|layout| layout.id == layout_id) {
             existing.fields = resolved.fields;
-            existing.size = resolved.size;
-            existing.align = resolved.align;
         }
     }
     plan
@@ -443,19 +440,10 @@ pub fn instance_layout_for_type(
     let mut fields = Vec::with_capacity(field_types.len());
     for (declared, ty) in structure.fields.iter().zip(field_types.iter()) {
         let layout_ty = layout_field_type(ty, declaration_spellings, plan)?;
-        fields.push(FieldLayout { name: declared.name.clone(), ty: layout_ty, offset: 0, size: 0, align: 1 });
+        fields.push(FieldLayout { name: declared.name.clone(), ty: layout_ty });
     }
     let id = next_layout_id(plan);
-    plan.layouts.push(AggregateLayout {
-        id,
-        name: structure.name.clone(),
-        namespace: structure.namespace.clone(),
-        key: None,
-        storage,
-        size: 0,
-        align: 1,
-        fields,
-    });
+    plan.layouts.push(AggregateLayout { id, name: structure.name.clone(), namespace: structure.namespace.clone(), key: None, storage, fields });
     Some(InstanceLayout { id, field_types })
 }
 
@@ -601,8 +589,8 @@ pub fn ensure_layout_for_type(plan: &mut AggregateLayoutPlan, ty: &ValkyrieType)
 ///
 /// 语言层只冻结「该 sum 声明拥有布局身份」这一语义事实，不发明任何物理载体：
 /// `tag` 宽度、payload 载体、对象字段与偏移全部属于目标表示，由各平台按自己的
-/// 数据布局决定。这里登记零字段、零尺寸的身份记录；需要物理布局的目标只能从
-/// 自己的 sum 表示计划取值，不得读取这里的占位值。
+/// 数据布局决定。这里只登记零字段的语义身份记录；需要物理布局的目标只能从
+/// 自己的 sum 表示计划取值，不得读取语言载荷补猜载体。
 /// `display_name` 仅诊断/调试；禁止用名称合并或反查布局。
 pub fn ensure_unite_tagged_layout(plan: &mut AggregateLayoutPlan, declaration: nyar_types::ItemId, display_name: &str) -> LayoutId {
     if let Some(id) = plan.declaration_to_layout.get(&declaration).copied() {
@@ -616,8 +604,6 @@ pub fn ensure_unite_tagged_layout(plan: &mut AggregateLayoutPlan, declaration: n
         namespace: String::new(),
         key: None,
         storage: MirStorageKind::Reference,
-        size: 0,
-        align: 1,
         fields: Vec::new(),
     });
     id
@@ -647,36 +633,32 @@ pub fn ensure_unite_layouts_for_sums(plan: &mut AggregateLayoutPlan, sum_types: 
 }
 
 pub fn layout_for_tuple(element_types: &[ValkyrieType], plan: &AggregateLayoutPlan) -> AggregateLayout {
-    let mut layout =
-        build_semantic_layout(next_layout_id(plan), "tuple", String::new(), MirStorageKind::Value, element_fields(element_types));
+    let mut layout = build_semantic_layout(next_layout_id(plan), "tuple", String::new(), MirStorageKind::Value, element_fields(element_types));
     layout.key = synthetic_layout_key(&ValkyrieType::Tuple(element_types.to_vec()));
     layout
 }
 
 pub fn layout_for_fixed_array(element_type: &ValkyrieType, length: usize, plan: &AggregateLayoutPlan) -> AggregateLayout {
-    let fields = (0..length)
-        .map(|index| FieldSpec { name: index.to_string(), ty: element_type.clone(), size: 0, align: 1 })
-        .collect::<Vec<_>>();
-    let mut layout =
-        build_semantic_layout(next_layout_id(plan), "fixedarray", String::new(), MirStorageKind::Value, fields);
+    let fields =
+        (0..length).map(|index| FieldSpec { name: index.to_string(), ty: element_type.clone(), size: 0, align: 1 }).collect::<Vec<_>>();
+    let mut layout = build_semantic_layout(next_layout_id(plan), "fixedarray", String::new(), MirStorageKind::Value, fields);
     layout.key = synthetic_layout_key(&ValkyrieType::FixedArray { element: Box::new(element_type.clone()), length });
     layout
 }
 
 /// 由字段规格构造**语义布局**：只冻结字段名、类型与顺序。
 ///
-/// `FieldSpec` 的字节字段仅服务显式测试夹具；生产路径一律写无目标占位，
-/// 物理 extent 由目标表示计划计算。
+/// `FieldSpec` 只提供字段身份与类型；物理 extent 由目标表示计划计算。
 fn build_semantic_layout(id: LayoutId, name: &str, namespace: String, storage: MirStorageKind, specs: Vec<FieldSpec>) -> AggregateLayout {
     let fields = specs
         .into_iter()
         .map(|spec| {
             let ty = concretize_type(&spec.ty)
                 .unwrap_or_else(|err| panic!("aggregate layout `{namespace}::{name}` field `{}` 无法严格 concretize: {err}", spec.name));
-            FieldLayout { name: spec.name, ty, offset: 0, size: 0, align: 1 }
+            FieldLayout { name: spec.name, ty }
         })
         .collect();
-    AggregateLayout { id, name: name.to_string(), namespace, key: None, storage, size: 0, align: 1, fields }
+    AggregateLayout { id, name: name.to_string(), namespace, key: None, storage, fields }
 }
 
 /// 递归应用 primitive 载体：结构容器内的 `Nominal{core primitive}` 同样映射到平台载体。
@@ -760,19 +742,10 @@ fn layout_for_struct(
             Err(error) => layout_field_type(&mapped, &facts.declaration_spellings, plan)
                 .ok_or_else(|| format!("字段 `{}`: {error}", field.name.as_str()))?,
         };
-        fields.push(FieldLayout { name: field.name.to_string(), ty, offset: 0, size: 0, align: 1 });
+        fields.push(FieldLayout { name: field.name.to_string(), ty });
     }
     let namespace = hir_struct.namespace.iter().map(|id| id.as_str()).collect::<Vec<_>>().join(".");
-    Ok(AggregateLayout {
-        id: next_layout_id(plan),
-        name: hir_struct.name.to_string(),
-        namespace,
-        key: None,
-        storage,
-        size: 0,
-        align: 1,
-        fields,
-    })
+    Ok(AggregateLayout { id: next_layout_id(plan), name: hir_struct.name.to_string(), namespace, key: None, storage, fields })
 }
 
 fn register_declared_layout(plan: &mut AggregateLayoutPlan, declaration: &HirStruct, layout: AggregateLayout) {
@@ -824,37 +797,21 @@ pub struct FieldSpec {
 }
 
 fn element_fields(element_types: &[ValkyrieType]) -> Vec<FieldSpec> {
-    element_types
-        .iter()
-        .enumerate()
-        .map(|(index, ty)| FieldSpec { name: index.to_string(), ty: ty.clone(), size: 0, align: 1 })
-        .collect()
+    element_types.iter().enumerate().map(|(index, ty)| FieldSpec { name: index.to_string(), ty: ty.clone(), size: 0, align: 1 }).collect()
 }
 
-/// 按字段规格计算偏移与对齐并构造聚合布局；字段类型必须严格 concretize。
+/// 按字段规格构造**语义**聚合布局；字段类型必须严格 concretize。
+///
+/// 语言层只提交字段身份、类型与声明顺序。字节偏移、字段宽度与对齐属于目标
+/// 表示，由各平台的布局解析器计算；这里不得写入占位物理事实。
 #[doc(hidden)]
 pub fn build_aggregate_layout(id: LayoutId, name: &str, namespace: String, storage: MirStorageKind, specs: Vec<FieldSpec>) -> AggregateLayout {
-    let mut offset = 0u32;
-    let mut max_align = 1u32;
     let mut fields = Vec::with_capacity(specs.len());
     for spec in specs {
-        offset = align_offset(offset, spec.align);
         // 布局字段类型必须严格 concretize；禁止 lossy 把 Self/Generic/Nominal 擦成伪 Named。
         let ty = concretize_type(&spec.ty)
             .unwrap_or_else(|err| panic!("aggregate layout `{namespace}::{name}` field `{}` 无法严格 concretize: {err}", spec.name));
-        fields.push(FieldLayout { name: spec.name, ty, offset, size: spec.size, align: spec.align });
-        offset += spec.size;
-        max_align = max_align.max(spec.align);
+        fields.push(FieldLayout { name: spec.name, ty });
     }
-    // Empty aggregates would otherwise get size=0 and fail SMIR010; language-level
-    // empty structs still need a non-zero carrier for layout contracts.
-    let size = align_offset(offset, max_align).max(if fields.is_empty() { max_align.max(1) } else { 0 });
-    AggregateLayout { id, name: name.to_string(), namespace, key: None, storage, size, align: max_align.max(1), fields }
-}
-
-fn align_offset(offset: u32, align: u32) -> u32 {
-    if align <= 1 {
-        return offset;
-    }
-    ((offset + align - 1) / align) * align
+    AggregateLayout { id, name: name.to_string(), namespace, key: None, storage, fields }
 }

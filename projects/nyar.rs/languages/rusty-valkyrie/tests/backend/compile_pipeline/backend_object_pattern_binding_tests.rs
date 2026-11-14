@@ -117,7 +117,6 @@ fn declare_test_export(plan: &mut TargetExecutionPlan, program: &nyar_types::Com
         .map(|(instance, _)| *instance)
         .unwrap_or_else(|| panic!("缺少 `{symbol_suffix}` 的 callable 实例"));
     plan.testing_export_names_mut().insert(instance, symbol_suffix.to_string());
-    plan.testing_freeze_library_export_abis().expect("测试显式登记的导出必须冻结 ABI 载体");
 }
 
 fn run_export(program: &nyar_types::CompiledProgram, name: &str) -> i32 {

@@ -9,9 +9,7 @@ use nyar::{ExternalImportLink, Identifier, QualifiedName};
 use nyar_emitter::{
     BackendImport, FragmentSubmission, TargetExecutionPlan,
     nyar_backend_clr::{MethodBodyEncoder, MsilMethodSignature, MsilModule, MsilOpcode, MsilType},
-    target_operator::{
-        TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
-    },
+    target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
     testing::lower_fragment_to_clr_module,
     transitional::binary::pe::{ClrImageKind, PeWriter, PeWriterOptions},
 };
@@ -59,41 +57,47 @@ fn instr(kind: InstructionKind, results: Vec<ValueRef>) -> Instruction {
     instruction
 }
 
-fn operator_import(mnemonic: &str, plan: TargetOperatorPlan) -> BackendImport {
+/// CLR operator 绑定由 CLR lane 自己的冻结入口从链接助记符派生，计划不再携带它。
+fn operator_import(mnemonic: &str, plan: TargetOperatorPlan<MsilOpcode>) -> BackendImport {
+    let return_type = match plan.result_type {
+        TargetOperandType::I32 => BOOLEAN,
+        TargetOperandType::I64 => LONG,
+        TargetOperandType::F32 => NyarType::Float32,
+        TargetOperandType::F64 => NyarType::Float64,
+    };
     BackendImport {
         index: ImportIndex::from_index(0).expect("import index"),
         link: ExternalImportLink::host(Some(Identifier::new("clr-operator")), vec![mnemonic.to_string()]),
         parameter_types: vec![LONG, LONG],
-        return_type: LONG,
-        target_operator: Some(TargetOperatorBinding::Frozen(plan)),
+        return_type,
     }
 }
 
-fn operator_plan(encoding: MsilOpcode, operand_type: TargetOperandType, result_type: TargetOperandType) -> TargetOperatorPlan {
+fn operator_plan(encoding: MsilOpcode, operand_type: TargetOperandType, result_type: TargetOperandType) -> TargetOperatorPlan<MsilOpcode> {
     TargetOperatorPlan {
         arity: 2,
         operand_type,
         result_type,
         recipe: TargetOperatorRecipe::Operands,
-        encoding: TargetOperatorEncoding::Clr(encoding),
+        encoding,
     }
 }
 
 /// `i64` 移位的冻结配方：发射实参后先 `conv.i4` 截窄位移量，再执行 `shl`/`shr`。
 const I64_SHIFT_STEPS: &[TargetOperandStep] = &[TargetOperandStep::Arguments, TargetOperandStep::NarrowTopI64ToI32];
 
-fn shift_operator_plan(encoding: MsilOpcode) -> TargetOperatorPlan {
+fn shift_operator_plan(encoding: MsilOpcode) -> TargetOperatorPlan<MsilOpcode> {
     TargetOperatorPlan {
         arity: 2,
         operand_type: TargetOperandType::I64,
         result_type: TargetOperandType::I64,
         recipe: TargetOperatorRecipe::Steps(I64_SHIFT_STEPS),
-        encoding: TargetOperatorEncoding::Clr(encoding),
+        encoding,
     }
 }
 
 /// 构造只调用一个任意冻结配方 operator 的导出函数（结果载体 `I64`），返回降低后的 MSIL 模块。
-fn lower_operator_call_with_plan(name: &str, mnemonic: &str, operator: TargetOperatorPlan) -> MsilModule {
+fn lower_operator_call_with_plan(name: &str, mnemonic: &str, operator: TargetOperatorPlan<MsilOpcode>) -> MsilModule {
     let instance = ItemInstanceId::from_index(1).expect("operator instance");
     let mut fixture = function("clr.fixture", LONG, vec![LONG, LONG]);
     fixture.value_types.insert(ValueRef(2), LONG);
@@ -273,8 +277,7 @@ fn unfrozen_operator_binding_is_rejected_structurally() {
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main, fixture)]));
     plan.testing_module_name("clr_lowering");
     plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "add".to_string());
-    let mut import = operator_import("i64.add", operator_plan(MsilOpcode::Add, TargetOperandType::I64, TargetOperandType::I64));
-    import.target_operator = Some(TargetOperatorBinding::Unfrozen);
+    let mut import = operator_import("i64.not_a_clr_mnemonic", operator_plan(MsilOpcode::Add, TargetOperandType::I64, TargetOperandType::I64));
     plan.testing_register_import(operator, import);
 
     let error = lower_fragment_to_clr_module(&FragmentSubmission::from_backend_plan(plan)).expect_err("unfrozen binding must fail");
@@ -341,11 +344,9 @@ fn option_char_layout() -> AggregateLayout {
         namespace: "core".to_string(),
         key: None,
         storage: StorageKind::Reference,
-        size: 8,
-        align: 4,
         fields: vec![
-            FieldLayout { name: "discriminant".to_string(), ty: NyarType::Integer32 { signed: false }, offset: 0, size: 4, align: 4 },
-            FieldLayout { name: "payload".to_string(), ty: NyarType::Character, offset: 4, size: 4, align: 4 },
+            FieldLayout { name: "discriminant".to_string(), ty: NyarType::Integer32 { signed: false } },
+            FieldLayout { name: "payload".to_string(), ty: NyarType::Character },
         ],
     }
 }
@@ -491,9 +492,7 @@ fn nested_value_layout_plan() -> AggregateLayoutPlan {
                 namespace: "demo".to_string(),
                 key: None,
                 storage: StorageKind::Value,
-                size: 4,
-                align: 4,
-                fields: vec![FieldLayout { name: "value".to_string(), ty: NyarType::Integer32 { signed: true }, offset: 0, size: 4, align: 4 }],
+                fields: vec![FieldLayout { name: "value".to_string(), ty: NyarType::Integer32 { signed: true } }],
             },
             AggregateLayout {
                 id: 1,
@@ -501,14 +500,9 @@ fn nested_value_layout_plan() -> AggregateLayoutPlan {
                 namespace: "demo".to_string(),
                 key: None,
                 storage: StorageKind::Value,
-                size: 4,
-                align: 4,
                 fields: vec![FieldLayout {
                     name: "inner".to_string(),
                     ty: NyarType::Nominal { layout: 0, spelling: Identifier::new("Inner") },
-                    offset: 0,
-                    size: 4,
-                    align: 4,
                 }],
             },
         ],

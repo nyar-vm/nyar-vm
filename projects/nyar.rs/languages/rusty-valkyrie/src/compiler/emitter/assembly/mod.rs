@@ -1,10 +1,11 @@
 //! 从唯一 `CompiledProgram` 选择分区并交给目标 preparation。
 //!
-//! 分区选择不重新生产语义事实；共享载荷携带已验证程序与明确的目标分区。
+//! 分区选择不重新生产语义事实；前端显式声明“复用共享语义子集”这一接入能力，
+//! 而不是把完整公共 MIR 当作所有语言唯一的入口载荷。
 use nyar::{ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy, Identifier, PlanningError, projection_policy_for_target_profile};
 use nyar_types::CompiledProgram;
 
-pub use nyar::AssembledFragment;
+pub use nyar_emitter::{AssembledFragment, FragmentTargetInput};
 
 /// 返回已解析的导出/入口数量；装配器不直接读取语义计划。
 #[doc(hidden)]
@@ -74,6 +75,6 @@ pub fn assemble_fragment(
     Ok(AssembledFragment {
         partition: partition.clone(),
         theory_bundle: fragment_view.theory_bundle.clone(),
-        compiled_program: compiled_program.clone(),
+        input: FragmentTargetInput::SharedSemanticSubset(compiled_program.clone()),
     })
 }

@@ -237,7 +237,6 @@ fn external_import_call_plans_with_import_parameter_types() {
             link: ExternalImportLink::host(Some(Identifier::new("js")), vec!["random".into()]),
             parameter_types: vec![NyarType::Integer32 { signed: true }],
             return_type: NyarType::Integer32 { signed: true },
-            target_operator: None,
         },
     );
     let submission = FragmentSubmission::from_backend_plan(plan);

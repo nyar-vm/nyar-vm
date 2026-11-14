@@ -18,9 +18,7 @@ use nyar_emitter::{
         write_dotnet_runtime_config,
     },
     nyar_backend_clr::{MsilModule, MsilOpcode},
-    target_operator::{
-        TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
-    },
+    target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
     testing::lower_fragment_to_clr_managed_surface,
     transitional::binary::pe::{ClrImageKind, PeWriter, PeWriterOptions},
 };
@@ -67,36 +65,40 @@ fn instr(kind: InstructionKind, results: Vec<ValueRef>) -> Instruction {
     instruction
 }
 
-fn operator_import(mnemonic: &str, parameter_types: Vec<NyarType>, return_type: NyarType, plan: TargetOperatorPlan) -> BackendImport {
+fn operator_import(
+    mnemonic: &str,
+    parameter_types: Vec<NyarType>,
+    return_type: NyarType,
+    _plan: TargetOperatorPlan<MsilOpcode>,
+) -> BackendImport {
     BackendImport {
         index: ImportIndex::from_index(0).expect("import index"),
         link: ExternalImportLink::host(Some(Identifier::new("clr-operator")), vec![mnemonic.to_string()]),
         parameter_types,
         return_type,
-        target_operator: Some(TargetOperatorBinding::Frozen(plan)),
     }
 }
 
-fn macro_plan(encoding: MsilOpcode, operand_type: TargetOperandType, result_type: TargetOperandType) -> TargetOperatorPlan {
+fn macro_plan(encoding: MsilOpcode, operand_type: TargetOperandType, result_type: TargetOperandType) -> TargetOperatorPlan<MsilOpcode> {
     TargetOperatorPlan {
         arity: 2,
         operand_type,
         result_type,
         recipe: TargetOperatorRecipe::Operands,
-        encoding: TargetOperatorEncoding::Clr(encoding),
+        encoding,
     }
 }
 
 /// `i64` 移位的冻结配方：先 `conv.i4` 截窄位移量，再执行移位。
 const I64_SHIFT_STEPS: &[TargetOperandStep] = &[TargetOperandStep::Arguments, TargetOperandStep::NarrowTopI64ToI32];
 
-fn shift_plan(encoding: MsilOpcode, operand_type: TargetOperandType, result_type: TargetOperandType) -> TargetOperatorPlan {
+fn shift_plan(encoding: MsilOpcode, operand_type: TargetOperandType, result_type: TargetOperandType) -> TargetOperatorPlan<MsilOpcode> {
     TargetOperatorPlan {
         arity: 2,
         operand_type,
         result_type,
         recipe: TargetOperatorRecipe::Steps(I64_SHIFT_STEPS),
-        encoding: TargetOperatorEncoding::Clr(encoding),
+        encoding,
     }
 }
 
@@ -106,7 +108,7 @@ fn lower_exported_operator(
     parameter_types: Vec<NyarType>,
     result_type: NyarType,
     mnemonic: &str,
-    operator: TargetOperatorPlan,
+    operator: TargetOperatorPlan<MsilOpcode>,
 ) -> MsilModule {
     let operator_instance = ItemInstanceId::from_index(1).expect("operator instance");
     let value = ValueRef(parameter_types.len() as u32);

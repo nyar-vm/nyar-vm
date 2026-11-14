@@ -75,15 +75,15 @@ pub fn validate_submission(submission: &FragmentSubmission) -> Result<(), Semant
 
 fn validate_aggregate_layouts(submission: &FragmentSubmission) -> Result<(), SemanticMirContractError> {
     for layout in &submission.backend_plan.aggregate_layouts().layouts {
-        // 语言 MIR 只携带语义布局：字段身份、完整类型与存储类。`size` 可以是 0，
-        // 因为字节偏移/宽度/对齐属于目标数据布局，由各目标表示计划负责计算与
-        // 校验；这里只拒绝缺名字或非法对齐这类结构性事实。
-        if layout.name.is_empty() || layout.align == 0 {
+        // 语言 MIR 只携带语义布局：字段身份、完整类型与存储类。字节日志属于
+        // 目标数据布局，由各目标表示计划负责计算与校验；这里只拒绝缺名字这类
+        // 结构性事实。
+        if layout.name.is_empty() {
             return Err(SemanticMirContractError {
                 code: "SMIR010",
                 function: layout.name.clone(),
                 location: "aggregate layout".to_string(),
-                detail: "aggregate layout requires a name and non-zero alignment".to_string(),
+                detail: "aggregate layout requires a name".to_string(),
             });
         }
         if layout.fields.iter().any(|field| field.name.is_empty())

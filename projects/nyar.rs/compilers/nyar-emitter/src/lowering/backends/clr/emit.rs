@@ -10,6 +10,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::mir::{ClrOperatorBinding, freeze_clr_operator};
+
 use crate::{
     FragmentSubmission, Result,
     backend_plan_views::{
@@ -22,9 +24,7 @@ use crate::{
         value_copy::{MAX_VALUE_AGGREGATE_COPY_DEPTH, nested_value_aggregate_layout, value_aggregate_copy_depth},
     },
     managed_abi::{ManagedAbiContract, ManagedAbiEntry},
-    target_operator::{
-        TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
-    },
+    target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
     transitional::msil::{
         MsilAssembly, MsilField, MsilInstruction, MsilInstructionOperand, MsilMethodBody, MsilMethodRef, MsilMethodSignature, MsilModule,
         MsilOpcode, MsilType, MsilTypeDef,
@@ -123,7 +123,7 @@ pub(crate) fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> R
         method_plans.insert(*instance, ClrMethodPlan { name, signature: function_signature(plan.aggregate_layouts(), &view.function)? });
     }
 
-    let operator_by_instance = external_operator_by_instance(submission);
+    let operator_by_instance = external_operator_by_instance(submission)?;
     let entry_operation = plan.entry_operation();
     let layout_types = build_layout_types(plan.aggregate_layouts())?;
     let sum_types = build_sum_types(submission)?;
@@ -143,14 +143,7 @@ pub(crate) fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> R
         let method = method_plans.get(instance).cloned().ok_or_else(|| format!("CLR 最小 lowering：可达操作 `{instance:?}` 缺少方法计划"))?;
         // 有导出面时 PE 入口由合成的 `managed_entry` 独占；单个导出方法不能再标入口。
         let is_entry_point = entry_operation == Some(*instance) && plan.export_names().is_empty();
-        module.global_methods.push(lower_function(
-            submission,
-            &view.function,
-            &method,
-            &method_plans,
-            &operator_by_instance,
-            is_entry_point,
-        )?);
+        module.global_methods.push(lower_function(submission, &view.function, &method, &method_plans, &operator_by_instance, is_entry_point)?);
     }
 
     let managed_abi = build_managed_abi_surface(&mut module, plan.export_names(), &method_plans)?;
@@ -404,16 +397,21 @@ fn collect_clr_operations(submission: &FragmentSubmission) -> Vec<ItemInstanceId
 }
 
 /// 冻结的 `[clr_operator("...")]` 绑定：助记符只用于诊断，配方来自计划。
-fn external_operator_by_instance(submission: &FragmentSubmission) -> BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)> {
-    submission
-        .backend_plan
-        .imports()
-        .iter()
-        .filter_map(|(instance, import)| {
-            let mnemonic = crate::lowering::shared::interop::clr_operator_target(&import.link)?;
-            Some((*instance, (mnemonic.to_string(), import.target_operator.unwrap_or(TargetOperatorBinding::Unfrozen))))
-        })
-        .collect()
+fn external_operator_by_instance(submission: &FragmentSubmission) -> Result<BTreeMap<ItemInstanceId, (String, ClrOperatorBinding)>> {
+    let mut operators = BTreeMap::new();
+    for (instance, import) in submission.backend_plan.imports() {
+        let Some(mnemonic) = crate::lowering::shared::interop::clr_operator_target(&import.link)
+        else {
+            continue;
+        };
+        let symbol = submission.backend_plan.abi_name_for_instance(*instance).map(|name| name.to_string()).unwrap_or_default();
+        let Some(binding) = freeze_clr_operator(&import.link, *instance, &symbol, &import.parameter_types, &import.return_type)?
+        else {
+            continue;
+        };
+        operators.insert(*instance, (mnemonic.to_string(), binding));
+    }
+    Ok(operators)
 }
 
 fn function_signature(layouts: &AggregateLayoutPlan, function: &MirFunction) -> Result<MsilMethodSignature> {
@@ -545,10 +543,7 @@ fn build_sum_types(submission: &FragmentSubmission) -> Result<Vec<MsilTypeDef>> 
             return Err(format!("CLR 最小 lowering：sum nominal `{nominal:?}` 没有冻结的 `SumRepresentation`"));
         };
         if sum.tag_width == 0 || sum.tag_width > 4 {
-            return Err(format!(
-                "CLR 最小 lowering：sum nominal `{nominal:?}` 的 `tag_width`={} 超出 1..=4 合同",
-                sum.tag_width
-            ));
+            return Err(format!("CLR 最小 lowering：sum nominal `{nominal:?}` 的 `tag_width`={} 超出 1..=4 合同", sum.tag_width));
         }
         let type_name = clr_sum_type_name(nominal);
         types.push(MsilTypeDef {
@@ -696,9 +691,7 @@ pub(crate) fn msil_type(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<
         // 泛型实例的实例表示必须在计划边界结算为携带布局身份的 `Nominal`；
         // 缺少冻结布局身份即缺载体合同，禁止按引用擦除。
         NyarType::Apply(..) => {
-            return Err(format!(
-                "CLR 最小 lowering：泛型实例 `{ty}` 缺少实例级布局结算：canonical 未冻结该实例的布局身份，拒绝按引用擦除"
-            ));
+            return Err(format!("CLR 最小 lowering：泛型实例 `{ty}` 缺少实例级布局结算：canonical 未冻结该实例的布局身份，拒绝按引用擦除"));
         }
         // 携带身份的名义类型：存储类按 `layout` 身份解析，引用/值存储都指向
         // 布局类型定义。CLR 没有内联结构体，逐字段拷贝由 `AggregateCopy` 承担，
@@ -727,7 +720,7 @@ struct ClrMethodEmitter<'a> {
     return_type: MsilType,
     slots: ExecutableSlotPlan,
     method_plans: &'a BTreeMap<ItemInstanceId, ClrMethodPlan>,
-    operator_by_instance: &'a BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
+    operator_by_instance: &'a BTreeMap<ItemInstanceId, (String, ClrOperatorBinding)>,
     instructions: Vec<MsilInstruction>,
     /// 值聚合递归复制使用的临时引用局部：每层复制占 2 槽（源/目标）。
     copy_scratch: Vec<u16>,
@@ -740,7 +733,7 @@ fn lower_function(
     function: &MirFunction,
     method: &ClrMethodPlan,
     method_plans: &BTreeMap<ItemInstanceId, ClrMethodPlan>,
-    operator_by_instance: &BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
+    operator_by_instance: &BTreeMap<ItemInstanceId, (String, ClrOperatorBinding)>,
     is_entry_point: bool,
 ) -> Result<MsilMethodBody> {
     let slots = ExecutableSlotPlan::plan_nyar(function);
@@ -880,10 +873,7 @@ impl ClrMethodEmitter<'_> {
                 for (field, value) in fields {
                     let Some((layout_id, slot)) = self.submission.backend_plan.aggregate_layout_by_field().get(field).copied()
                     else {
-                        return Err(format!(
-                            "CLR 最小 lowering：字段身份 `{field:?}` 未登记布局索引: function={}",
-                            self.function.symbol
-                        ));
+                        return Err(format!("CLR 最小 lowering：字段身份 `{field:?}` 未登记布局索引: function={}", self.function.symbol));
                     };
                     if layout_id != layout.id {
                         return Err(format!(
@@ -1193,18 +1183,15 @@ impl ClrMethodEmitter<'_> {
     fn emit_operator_call(
         &mut self,
         mnemonic: &str,
-        binding: &TargetOperatorBinding,
+        binding: &ClrOperatorBinding,
         arguments: &[Operand],
         output: Option<(u16, ClrValueKind)>,
     ) -> Result<()> {
-        let TargetOperatorBinding::Frozen(plan) = binding
+        let ClrOperatorBinding::Frozen(plan) = binding
         else {
             return Err(format!("CLR 目标 `clr_operator` 绑定缺少可编码助记符 `{mnemonic}`: function={}", self.function.symbol));
         };
-        let TargetOperatorEncoding::Clr(opcode) = plan.encoding
-        else {
-            return Err(format!("CLR 目标 `clr_operator` 绑定 `{mnemonic}` 冻结了非 CLR 编码: function={}", self.function.symbol));
-        };
+        let opcode = plan.encoding;
         if arguments.len() != plan.arity {
             return Err(format!(
                 "CLR 目标 operator `{mnemonic}` 实参数量与冻结 arity 不符: function={} expected={} actual={}",
@@ -1236,7 +1223,7 @@ impl ClrMethodEmitter<'_> {
         &mut self,
         mnemonic: &str,
         expected_kind: ClrValueKind,
-        plan: &TargetOperatorPlan,
+        plan: &TargetOperatorPlan<MsilOpcode>,
         arguments: &[Operand],
     ) -> Result<()> {
         match plan.recipe {
@@ -1548,9 +1535,7 @@ impl ClrMethodEmitter<'_> {
             MsilType::String | MsilType::Object | MsilType::Named(_) | MsilType::SzArray(_) => {
                 self.emit_operand(operand, Some(ClrValueKind::Reference))
             }
-            MsilType::Void => {
-                Err(format!("CLR 最小 lowering：`{ty}` 是 void 形态，不能作为需要引用的值: function={}", self.function.symbol))
-            }
+            MsilType::Void => Err(format!("CLR 最小 lowering：`{ty}` 是 void 形态，不能作为需要引用的值: function={}", self.function.symbol)),
             scalar => {
                 let kind = ClrValueKind::of_msil_type(scalar)?;
                 self.emit_operand(operand, Some(kind))?;
@@ -1722,10 +1707,7 @@ impl ClrMethodEmitter<'_> {
         match self.output_of(instruction)? {
             Some((slot, kind)) => {
                 if kind != ClrValueKind::Int32 {
-                    return Err(format!(
-                        "CLR 最小 lowering：布尔结果槽载体必须是 `int32`: function={} actual={kind:?}",
-                        self.function.symbol
-                    ));
+                    return Err(format!("CLR 最小 lowering：布尔结果槽载体必须是 `int32`: function={} actual={kind:?}", self.function.symbol));
                 }
                 self.store_local(slot);
                 Ok(())
@@ -1738,9 +1720,7 @@ impl ClrMethodEmitter<'_> {
     }
 
     fn emit_array_from_elements(&mut self, instruction: &MirInstruction, array_type: &NyarType, elements: &[Operand]) -> Result<()> {
-        let element = clr_array_element_type(array_type)
-            .map_err(|error| format!("{error}: function={}", self.function.symbol))?
-            .clone();
+        let element = clr_array_element_type(array_type).map_err(|error| format!("{error}: function={}", self.function.symbol))?.clone();
         let carrier = msil_array_element_type(self.submission.backend_plan.aggregate_layouts(), &element)
             .map_err(|error| format!("{error}: function={}", self.function.symbol))?;
         let length = i32::try_from(elements.len())
@@ -1771,9 +1751,7 @@ impl ClrMethodEmitter<'_> {
     }
 
     fn emit_array_new(&mut self, instruction: &MirInstruction, array_type: &NyarType, length: &Operand) -> Result<()> {
-        let element = clr_array_element_type(array_type)
-            .map_err(|error| format!("{error}: function={}", self.function.symbol))?
-            .clone();
+        let element = clr_array_element_type(array_type).map_err(|error| format!("{error}: function={}", self.function.symbol))?.clone();
         let carrier = msil_array_element_type(self.submission.backend_plan.aggregate_layouts(), &element)
             .map_err(|error| format!("{error}: function={}", self.function.symbol))?;
         self.emit_operand(length, Some(ClrValueKind::Int32))?;
@@ -1795,9 +1773,7 @@ impl ClrMethodEmitter<'_> {
 
     fn emit_array_get(&mut self, instruction: &MirInstruction, array: &Operand, index: &Operand) -> Result<()> {
         let array_type = self.operand_type(array)?;
-        let element = clr_array_element_type(&array_type)
-            .map_err(|error| format!("{error}: function={}", self.function.symbol))?
-            .clone();
+        let element = clr_array_element_type(&array_type).map_err(|error| format!("{error}: function={}", self.function.symbol))?.clone();
         let carrier = msil_array_element_type(self.submission.backend_plan.aggregate_layouts(), &element)
             .map_err(|error| format!("{error}: function={}", self.function.symbol))?;
         let carrier_kind = ClrValueKind::of_msil_type(&carrier)?;
@@ -1830,9 +1806,7 @@ impl ClrMethodEmitter<'_> {
 
     fn emit_array_set(&mut self, array: &Operand, index: &Operand, value: &Operand) -> Result<()> {
         let array_type = self.operand_type(array)?;
-        let element = clr_array_element_type(&array_type)
-            .map_err(|error| format!("{error}: function={}", self.function.symbol))?
-            .clone();
+        let element = clr_array_element_type(&array_type).map_err(|error| format!("{error}: function={}", self.function.symbol))?.clone();
         let carrier = msil_array_element_type(self.submission.backend_plan.aggregate_layouts(), &element)
             .map_err(|error| format!("{error}: function={}", self.function.symbol))?;
         self.emit_operand(array, Some(ClrValueKind::Reference))?;

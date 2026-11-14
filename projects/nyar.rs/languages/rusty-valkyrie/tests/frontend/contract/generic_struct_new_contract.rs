@@ -131,17 +131,12 @@ fn named_self_output_rejects_without_string_special_case() {
         name: "Box".to_string(),
         namespace: String::new(),
         storage: StorageKind::Reference,
-        size: 16,
-        align: 8,
         fields: vec![
             FieldLayout {
                 name: "_items".to_string(),
                 ty: NyarType::Array(Box::new(NyarType::Named(Identifier::new("T")))),
-                offset: 0,
-                size: 8,
-                align: 8,
             },
-            FieldLayout { name: "_cap".to_string(), ty: NyarType::Integer32 { signed: true }, offset: 8, size: 4, align: 4 },
+            FieldLayout { name: "_cap".to_string(), ty: NyarType::Integer32 { signed: true } },
         ],
     });
 

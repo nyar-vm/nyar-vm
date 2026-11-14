@@ -10,7 +10,7 @@ use crate::compiler::{
     types::hir::HirModule,
 };
 use nyar_types::{
-    FieldId, ItemInstanceId, NyarFunctionType, NyarType, NominalInstanceId, WitnessObject,
+    FieldId, ItemInstanceId, NominalInstanceId, NyarFunctionType, NyarType, WitnessObject,
     layout::{AggregateLayout, AggregateLayoutPlan, LayoutId},
 };
 
@@ -364,10 +364,7 @@ fn declaration_for_layout(module: &MirModule, layout: &AggregateLayout) -> Optio
 }
 
 fn layout_contract_differs(existing: &AggregateLayout, incoming: &AggregateLayout) -> bool {
-    existing.storage != incoming.storage
-        || existing.size != incoming.size
-        || existing.align != incoming.align
-        || existing.fields != incoming.fields
+    existing.storage != incoming.storage || existing.fields != incoming.fields
 }
 
 fn layout_diagnostic_label(layout: &AggregateLayout) -> String {
@@ -391,43 +388,28 @@ fn normalize_layout_references(
     Ok(normalized)
 }
 
-fn remap_layout_references(
-    ty: &NyarType,
-    local_to_merged: &BTreeMap<LayoutId, LayoutId>,
-    label: &str,
-) -> Result<NyarType, ParseError> {
-    let missing = |layout: LayoutId| ParseError::Invalid {
-        message: format!("布局 `{label}` 字段类型引用未登记布局 #{layout}"),
-        span: None,
-    };
+fn remap_layout_references(ty: &NyarType, local_to_merged: &BTreeMap<LayoutId, LayoutId>, label: &str) -> Result<NyarType, ParseError> {
+    let missing =
+        |layout: LayoutId| ParseError::Invalid { message: format!("布局 `{label}` 字段类型引用未登记布局 #{layout}"), span: None };
     Ok(match ty {
-        NyarType::Nominal { layout, spelling } => NyarType::Nominal {
-            layout: *local_to_merged.get(layout).ok_or_else(|| missing(*layout))?,
-            spelling: spelling.clone(),
-        },
+        NyarType::Nominal { layout, spelling } => {
+            NyarType::Nominal { layout: *local_to_merged.get(layout).ok_or_else(|| missing(*layout))?, spelling: spelling.clone() }
+        }
         NyarType::Apply(base, arguments) => NyarType::Apply(
             Box::new(remap_layout_references(base, local_to_merged, label)?),
-            arguments
-                .iter()
-                .map(|argument| remap_layout_references(argument, local_to_merged, label))
-                .collect::<Result<_, _>>()?,
+            arguments.iter().map(|argument| remap_layout_references(argument, local_to_merged, label)).collect::<Result<_, _>>()?,
         ),
         NyarType::Function(function) => NyarType::Function(Box::new(NyarFunctionType {
-            params: function
-                .params
-                .iter()
-                .map(|param| remap_layout_references(param, local_to_merged, label))
-                .collect::<Result<_, _>>()?,
+            params: function.params.iter().map(|param| remap_layout_references(param, local_to_merged, label)).collect::<Result<_, _>>()?,
             return_type: remap_layout_references(&function.return_type, local_to_merged, label)?,
         })),
-        NyarType::Tuple(items) => NyarType::Tuple(
-            items.iter().map(|item| remap_layout_references(item, local_to_merged, label)).collect::<Result<_, _>>()?,
-        ),
+        NyarType::Tuple(items) => {
+            NyarType::Tuple(items.iter().map(|item| remap_layout_references(item, local_to_merged, label)).collect::<Result<_, _>>()?)
+        }
         NyarType::Array(element) => NyarType::Array(Box::new(remap_layout_references(element, local_to_merged, label)?)),
-        NyarType::FixedArray { element, length } => NyarType::FixedArray {
-            element: Box::new(remap_layout_references(element, local_to_merged, label)?),
-            length: *length,
-        },
+        NyarType::FixedArray { element, length } => {
+            NyarType::FixedArray { element: Box::new(remap_layout_references(element, local_to_merged, label)?), length: *length }
+        }
         NyarType::TraitObject(witness) => NyarType::TraitObject(WitnessObject {
             trait_path: witness.trait_path.clone(),
             type_arguments: witness
@@ -437,9 +419,9 @@ fn remap_layout_references(
                 .collect::<Result<_, _>>()?,
         }),
         NyarType::Nullable(inner) => NyarType::Nullable(Box::new(remap_layout_references(inner, local_to_merged, label)?)),
-        NyarType::Union(items) => NyarType::Union(
-            items.iter().map(|item| remap_layout_references(item, local_to_merged, label)).collect::<Result<_, _>>()?,
-        ),
+        NyarType::Union(items) => {
+            NyarType::Union(items.iter().map(|item| remap_layout_references(item, local_to_merged, label)).collect::<Result<_, _>>()?)
+        }
         other => other.clone(),
     })
 }
@@ -641,10 +623,9 @@ pub(super) fn remap_installed_provider_aggregates(
     function: &mut MirFunction,
 ) -> Result<(), ParseError> {
     let (_, _, remaps) = freeze_aggregate_identities(consumer, dependencies)?;
-    let remap = remaps.get(source_module_index).ok_or_else(|| ParseError::Invalid {
-        message: "provider 来源模块身份不在当前源码闭包中".into(),
-        span: None,
-    })?;
+    let remap = remaps
+        .get(source_module_index)
+        .ok_or_else(|| ParseError::Invalid { message: "provider 来源模块身份不在当前源码闭包中".into(), span: None })?;
     remap_function_aggregates(function, remap)
 }
 

@@ -512,13 +512,14 @@ fn layout_identity_facts(layout: &AggregateLayout) -> String {
     facts.push_str(&layout.name);
     facts.push('\n');
     for item in &layout.fields {
-        facts.push_str(&format!("{}:{:?}@{}+{}\n", item.name, item.ty, item.offset, item.size));
+        facts.push_str(&format!("{}:{:?}\n", item.name, item.ty));
     }
     facts
 }
 
-/// 字段 accessor 的确定性导出名：只由冻结布局身份（命名空间、类型名、
-/// 全部字段的名/型/偏移/尺寸）派生，不按类型名识别，不查询任何注解。
+/// 字段 accessor 的确定性导出名：只由冻结语义布局身份（命名空间、类型名、
+/// 全部字段的名与型）派生，不按类型名识别，不查询任何注解，也不混入目标
+/// 物理偏移——偏移属于平台表示，不参与跨目标导出身份。
 ///
 /// 同一布局在任意导出位置派生同一名字；字段形状不同的布局永不撞名。
 pub fn field_accessor_export_name(layout: &AggregateLayout, field_index: usize) -> String {
@@ -529,7 +530,7 @@ pub fn field_accessor_export_name(layout: &AggregateLayout, field_index: usize) 
     facts.push_str(&layout.name);
     facts.push('\n');
     for item in &layout.fields {
-        facts.push_str(&format!("{}:{:?}@{}+{}\n", item.name, item.ty, item.offset, item.size));
+        facts.push_str(&format!("{}:{:?}\n", item.name, item.ty));
     }
     let digest = combined_content_hash(&[&facts]);
     let suffix = digest.get(..16).unwrap_or(&digest);
@@ -758,11 +759,9 @@ mod tests {
             namespace: "app".to_string(),
             key: None,
             storage: nyar_types::StorageKind::Value,
-            size: 8,
-            align: 4,
             fields: vec![
-                FieldLayout { name: "target".to_string(), ty: nyar("i32"), offset: 0, size: 4, align: 4 },
-                FieldLayout { name: "entry".to_string(), ty: nyar("i32"), offset: 4, size: 4, align: 4 },
+                FieldLayout { name: "target".to_string(), ty: nyar("i32") },
+                FieldLayout { name: "entry".to_string(), ty: nyar("i32") },
             ],
         }
     }
@@ -818,9 +817,6 @@ mod tests {
         let first = field_accessor_export_name(&layout, 0);
         let second = field_accessor_export_name(&config_layout(), 0);
         assert_eq!(first, second, "同一布局身份必须派生同一 accessor 名");
-        let mut shifted = config_layout();
-        shifted.fields[1].offset += 4;
-        assert_ne!(first, field_accessor_export_name(&shifted, 0), "布局事实变化必须改变身份摘要");
     }
 
     #[test]
@@ -841,9 +837,7 @@ mod tests {
             namespace: "app".to_string(),
             key: None,
             storage: nyar_types::StorageKind::Value,
-            size: 16,
-            align: 8,
-            fields: vec![FieldLayout { name: "big".to_string(), ty: nyar("i128"), offset: 0, size: 16, align: 8 }],
+            fields: vec![FieldLayout { name: "big".to_string(), ty: nyar("i128") }],
         };
         let mut plan = AggregateLayoutPlan::default();
         plan.layouts.push(layout);

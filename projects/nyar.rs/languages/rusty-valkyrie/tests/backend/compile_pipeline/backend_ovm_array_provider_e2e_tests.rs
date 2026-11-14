@@ -283,7 +283,6 @@ fn lower(
             .ok_or_else(|| format!("缺少 `{symbol}` 的 callable 实例"))?;
         plan.testing_export_names_mut().insert(instance, (*symbol).to_string());
     }
-    plan.testing_freeze_library_export_abis()?;
     nyar_emitter::lowering::backends::ovm::lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
         .map_err(|error| error.to_string())
 }

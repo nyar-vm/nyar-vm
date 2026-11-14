@@ -11,27 +11,27 @@
 //! 上需要 `ceq + not` 之类的序列配方，补齐前不在本表，禁止猜默认指令。
 
 use crate::{
-    target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe},
+    target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
     transitional::msil::MsilOpcode,
 };
 
-const fn binary(operand_type: TargetOperandType, result_type: TargetOperandType, opcode: MsilOpcode) -> TargetOperatorPlan {
+const fn binary(operand_type: TargetOperandType, result_type: TargetOperandType, opcode: MsilOpcode) -> TargetOperatorPlan<MsilOpcode> {
     TargetOperatorPlan {
         arity: 2,
         operand_type,
         result_type,
         recipe: TargetOperatorRecipe::Operands,
-        encoding: TargetOperatorEncoding::Clr(opcode),
+        encoding: opcode,
     }
 }
 
-const fn unary(operand_type: TargetOperandType, opcode: MsilOpcode) -> TargetOperatorPlan {
+const fn unary(operand_type: TargetOperandType, opcode: MsilOpcode) -> TargetOperatorPlan<MsilOpcode> {
     TargetOperatorPlan {
         arity: 1,
         operand_type,
         result_type: operand_type,
         recipe: TargetOperatorRecipe::Operands,
-        encoding: TargetOperatorEncoding::Clr(opcode),
+        encoding: opcode,
     }
 }
 
@@ -39,18 +39,18 @@ const fn unary(operand_type: TargetOperandType, opcode: MsilOpcode) -> TargetOpe
 /// 位移量，截窄（`conv.i4`）由冻结配方显式给出，emit 只机械执行。
 const I64_SHIFT_STEPS: &[TargetOperandStep] = &[TargetOperandStep::Arguments, TargetOperandStep::NarrowTopI64ToI32];
 
-const fn i64_shift(steps: &'static [TargetOperandStep], opcode: MsilOpcode) -> TargetOperatorPlan {
+const fn i64_shift(steps: &'static [TargetOperandStep], opcode: MsilOpcode) -> TargetOperatorPlan<MsilOpcode> {
     TargetOperatorPlan {
         arity: 2,
         operand_type: TargetOperandType::I64,
         result_type: TargetOperandType::I64,
         recipe: TargetOperatorRecipe::Steps(steps),
-        encoding: TargetOperatorEncoding::Clr(opcode),
+        encoding: opcode,
     }
 }
 
 /// 唯一助记符表。未知助记符返回 `None`。
-pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperatorPlan> {
+pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperatorPlan<MsilOpcode>> {
     Some(match mnemonic {
         // int32 算术：MSIL 单 opcode。
         "i32.add" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Add),
@@ -110,4 +110,33 @@ pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperat
         "f64.gt" => binary(TargetOperandType::F64, TargetOperandType::I32, MsilOpcode::Cgt),
         _ => return None,
     })
+}
+
+/// CLR 平台私有的 operator 绑定。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ClrOperatorBinding {
+    /// 已冻结的 MSIL 配方。
+    Frozen(TargetOperatorPlan<MsilOpcode>),
+    /// 声明了 `[clr_operator]`，但没有 CLR 可编码配方；emit 必须结构化失败。
+    Unfrozen,
+}
+
+/// 按声明的导入签名冻结 CLR operator 绑定。
+pub(crate) fn freeze_clr_operator(
+    link: &nyar::ExternalImportLink,
+    instance: nyar_types::ItemInstanceId,
+    symbol: &str,
+    parameter_types: &[nyar_types::NyarType],
+    return_type: &nyar_types::NyarType,
+) -> crate::Result<Option<ClrOperatorBinding>> {
+    let Some(mnemonic) = crate::lowering::shared::interop::clr_operator_target(link)
+    else {
+        return Ok(None);
+    };
+    let Some(plan) = freeze_clr_operator_binding(mnemonic)
+    else {
+        return Ok(Some(ClrOperatorBinding::Unfrozen));
+    };
+    crate::target_operator::validate_frozen_operator(mnemonic, instance, symbol, parameter_types, return_type, &plan)?;
+    Ok(Some(ClrOperatorBinding::Frozen(plan)))
 }

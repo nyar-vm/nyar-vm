@@ -16,11 +16,9 @@ fn reference_layout_plan() -> AggregateLayoutPlan {
             namespace: "core".to_string(),
             key: None,
             storage: StorageKind::Reference,
-            size: 8,
-            align: 4,
             fields: vec![
-                FieldLayout { name: "discriminant".to_string(), ty: NyarType::Integer32 { signed: false }, offset: 0, size: 4, align: 4 },
-                FieldLayout { name: "payload".to_string(), ty: NyarType::Character, offset: 4, size: 4, align: 4 },
+                FieldLayout { name: "discriminant".to_string(), ty: NyarType::Integer32 { signed: false } },
+                FieldLayout { name: "payload".to_string(), ty: NyarType::Character },
             ],
         }],
         ..AggregateLayoutPlan::default()

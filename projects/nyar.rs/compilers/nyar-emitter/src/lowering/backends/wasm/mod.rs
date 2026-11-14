@@ -4,6 +4,7 @@
 //! 正式入口只能消费 Compiler 的函数体；宿主包装只属于产物层，
 //! 不得由调用摘要生成可执行语义。`suspend` 保留显式参数驱动的底层控制流编码。
 
+pub(crate) mod abi;
 #[doc(hidden)]
 pub mod cabi;
 mod gc;

@@ -7,20 +7,20 @@
 //! 失败闭合是设计的一部分：
 //! - 未注册布局、`i128`、`Utf16`、`TraitObject`、未知/不支持结构一律返回错误；
 //! - 任何 `Unsupported` 都不会进入 JSON，也不会被降级成“先跑再说”的兜底；
-//! - 参数/返回的物理载体必须与同一冻结派生点产出的 [`LibraryExportAbi`] 一致，
-//!   不一致即失败；零参数 / `Void` 边界是合法的空合同，不算缺合同。
+//! - 参数/返回的物理载体完全由本 lane 的结构投影产出；OVM 不读取也不比较
+//!   Wasm 的载体表，零参数 / `Void` 边界是合法的空合同。
 //!
 //! digest 覆盖规范化 JSON 里的 `schema_version` 与全部导出（按逻辑名排序），
 //! 同一布局事实在任意导出位置派生同一 digest。
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use nyar_types::{AggregateLayoutPlan, ItemInstanceId, LayoutId, NominalInstanceId, NyarType, combined_content_hash};
 use acorn_odin::OdinLayout;
+use nyar_types::{AggregateLayoutPlan, ItemInstanceId, LayoutId, NominalInstanceId, NyarType, combined_content_hash};
 use serde::Serialize;
 
 use crate::{
-    AbiCarrier, LibraryExportAbi, ProgramTextRepresentation, Result, TargetExecutionPlan,
+    ProgramTextRepresentation, Result, TargetExecutionPlan,
     abi_structure::{AbiStructure, AggregateStructure, abi_structure_for_type_with_layouts, canonical_parameter_identities},
     backend_plan_views::ExecutableFunction,
     lowering::shared::executable::slots::ExecutableSlotPlan,
@@ -65,13 +65,10 @@ pub fn derive_contract(
     let mut entries = Vec::with_capacity(ordered.len());
     for (instance, logical_name) in ordered {
         let view = plan.get_function(instance).ok_or_else(|| format!("库导出 `{logical_name}` 缺少 Compiler 函数体，无法派生 OVM ABI 合同"))?;
-        let abi = export_abi(plan, instance, &view.function)
-            .map_err(|reason| format!("库导出 `{logical_name}` 的边界类型无法表达为 OVM ABI 合同: {reason}"))?;
         entries.push(derive_export(
             plan,
             logical_name,
             &view.function,
-            &abi,
             module_layouts,
             layout_indices,
             sum_layout_indices,
@@ -132,34 +129,18 @@ pub(crate) fn frozen_entry_parameter_layouts(plan: &TargetExecutionPlan, functio
         .unwrap_or_default()
 }
 
-/// 取导出面的冻结载体。
-///
-/// wasm 导出面的预冻结缓存（[`TargetExecutionPlan::library_export_abi`]）是首选
-/// 事实；OVM 的 `exported_operations` / 程序入口不在该缓存里时，按同一冻结派生点
-/// [`crate::target_execution_plan::freeze_library_export_abi`] 现场冻结。
-///
-/// “未登记”不等于“不可携带”：零参数、`Void` 返回或完全无可携带内容的边界必须
-/// 产出 `params: []` 的空合同；只有边界上真的出现没有载体的类型才失败闭合。
-fn export_abi(plan: &TargetExecutionPlan, instance: &ItemInstanceId, function: &ExecutableFunction) -> Result<LibraryExportAbi> {
-    match plan.library_export_abi(instance) {
-        Some(abi) => Ok(abi.clone()),
-        None => crate::target_execution_plan::freeze_library_export_abi(function),
-    }
-}
-
 fn derive_export(
     plan: &TargetExecutionPlan,
     logical_name: &str,
     function: &ExecutableFunction,
-    abi: &LibraryExportAbi,
     module_layouts: &mut Vec<OdinLayout>,
     layout_indices: &mut BTreeMap<LayoutId, i32>,
     sum_layout_indices: &BTreeMap<NominalInstanceId, i32>,
     option_box_indices: &mut BTreeMap<String, i32>,
 ) -> Result<OvmAbiExport> {
     let identities = canonical_parameter_identities(logical_name, function)?;
-    if abi.params.len() != identities.len() {
-        return Err(format!("库导出 `{logical_name}` 冻结载体数（{}）与参数身份数（{}）不一致", abi.params.len(), identities.len()));
+    if function.param_types.len() != identities.len() {
+        return Err(format!("库导出 `{logical_name}` 参数类型数（{}）与参数身份数（{}）不一致", function.param_types.len(), identities.len()));
     }
     let entry_layouts = frozen_entry_parameter_layouts(plan, function);
     let mut projection =
@@ -176,8 +157,6 @@ fn derive_export(
         let projected = projection
             .project(&structure, TextSlot::Parameter(position))
             .map_err(|reason| format!("库导出 `{logical_name}` 参数 `{name}` 没有 OVM ABI 合同: {reason}"))?;
-        verify_carrier(abi.params[position], &projected)
-            .map_err(|reason| format!("库导出 `{logical_name}` 参数 `{name}` 载体合同不一致: {reason}"))?;
         params.push(OvmAbiParam { index: position, name: name.to_string(), carrier: carrier_label(&projected).to_string(), ty: projected });
     }
     let return_structure = abi_structure_for_type_with_layouts(
@@ -189,7 +168,6 @@ fn derive_export(
     let returns = projection
         .project(&return_structure, TextSlot::Return)
         .map_err(|reason| format!("库导出 `{logical_name}` 返回类型没有 OVM ABI 合同: {reason}"))?;
-    verify_carrier(abi.returns, &returns).map_err(|reason| format!("库导出 `{logical_name}` 返回载体合同不一致: {reason}"))?;
     Ok(OvmAbiExport { logical_name: logical_name.to_string(), params, returns_carrier: carrier_label(&returns).to_string(), returns })
 }
 
@@ -399,52 +377,26 @@ fn layout_index(
     Ok(index)
 }
 
-/// 交叉核对 plan 冻结载体与结构投影；不一致即失败闭合。
-///
-/// `utf8` 特例：plan 载体是 wasm 物理事实（JS glue 的 intern `i32` 句柄），
-/// 不是 OVM 文本边界。OVM 文本载体由 [`OvmTextRepresentation`] 声明，因此这里
-/// 只校验 plan 确实把它冻结成 `i32`，不与 OVM 的 `text` / `handle` 标签比较。
-fn verify_carrier(expected: AbiCarrier, ty: &OvmAbiType) -> Result<()> {
-    if matches!(ty, OvmAbiType::Text { .. }) {
-        if expected != AbiCarrier::I32 {
-            return Err(format!("冻结载体 `{}` 不是 `utf8` 的 wasm 物理载体 `i32`", expected.as_str()));
-        }
-        return Ok(());
-    }
-    let actual = carrier_of(ty);
-    if expected != actual {
-        return Err(format!("冻结载体 `{}` 与结构投影载体 `{}` 不一致", expected.as_str(), actual.as_str()));
-    }
-    Ok(())
-}
-
 /// 载体的 JSON 标签。
 ///
-/// `utf8` 不使用 plan 的 wasm `i32`：raw 宿主串标 `text`，托管文本对象标
-/// `handle`，消费端据此选择 JSON ↔ 值的物化路径。
+/// OVM 只输出本 lane 的投影标签：raw 宿主串标 `text`，托管文本对象标 `handle`。
+/// 这里不读取、也不比较 Wasm 的载体表。
 fn carrier_label(ty: &OvmAbiType) -> &'static str {
     match ty {
         OvmAbiType::Text { representation: OvmTextRepresentation::Raw } => "text",
         OvmAbiType::Text { representation: OvmTextRepresentation::Managed { .. } } => "handle",
-        other => carrier_of(other).as_str(),
-    }
-}
-
-fn carrier_of(ty: &OvmAbiType) -> AbiCarrier {
-    match ty {
-        OvmAbiType::Unit => AbiCarrier::Void,
-        // `Text` 的 plan 载体是 wasm intern `i32`；OVM 标签由 `carrier_label` 给出。
-        OvmAbiType::I32 | OvmAbiType::Bool | OvmAbiType::Char | OvmAbiType::Text { .. } => AbiCarrier::I32,
-        OvmAbiType::I64 => AbiCarrier::I64,
-        OvmAbiType::F32 => AbiCarrier::F32,
-        OvmAbiType::F64 => AbiCarrier::F64,
+        OvmAbiType::Unit => "void",
+        OvmAbiType::I32 | OvmAbiType::Bool | OvmAbiType::Char => "i32",
+        OvmAbiType::I64 => "i64",
+        OvmAbiType::F32 => "f32",
+        OvmAbiType::F64 => "f64",
         OvmAbiType::Array { .. }
         | OvmAbiType::FixedArray { .. }
         | OvmAbiType::Option { .. }
         | OvmAbiType::Tuple { .. }
         | OvmAbiType::Aggregate { .. }
         | OvmAbiType::InstanceHandle { .. }
-        | OvmAbiType::Unite { .. } => AbiCarrier::Handle,
+        | OvmAbiType::Unite { .. } => "handle",
     }
 }
 
@@ -521,9 +473,7 @@ mod tests {
     }
 
     fn plan(export: &str, function: ExecutableFunction) -> TargetExecutionPlan {
-        let mut plan = plan_with(export, function);
-        plan.testing_freeze_library_export_abis().expect("载体冻结");
-        plan
+        plan_with(export, function)
     }
 
     fn plan_multi(entries: &[(&str, ExecutableFunction)]) -> TargetExecutionPlan {
@@ -579,9 +529,7 @@ mod tests {
             namespace: "demo".to_string(),
             key: None,
             storage,
-            size: 0,
-            align: 1,
-            fields: fields.into_iter().map(|(name, ty)| FieldLayout { name: name.to_string(), ty, offset: 0, size: 0, align: 1 }).collect(),
+            fields: fields.into_iter().map(|(name, ty)| FieldLayout { name: name.to_string(), ty }).collect(),
         }
     }
 
@@ -719,7 +667,6 @@ mod tests {
                 plan.testing_functions_mut().get_mut(&instance).expect("函数体").value_layouts.insert(ValueRef(0), 11u32);
             }
         }
-        plan.testing_freeze_library_export_abis().expect("载体冻结");
         let contract = derive(&plan).expect("同一合同两种文本表示都必须按各自事实解释");
         let raw = contract.export("raw").expect("raw 导出");
         let managed = contract.export("managed").expect("managed 导出");
@@ -876,9 +823,9 @@ mod tests {
             NyarType::Utf16,
             NyarType::TraitObject(nyar_types::WitnessObject { trait_path: Identifier::new("demo::Shape"), type_arguments: Vec::new() }),
         ] {
-            let mut plan = plan_with("bad", function(&[(0, "value", nyar("i64"))], ty));
-            let error = plan.testing_freeze_library_export_abis().expect_err("不支持的导出类型必须失败");
-            assert!(error.contains("冻结 ABI 载体合同失败"), "got: {error}");
+            let plan = plan_with("bad", function(&[(0, "value", nyar("i64"))], ty));
+            let error = derive(&plan).expect_err("不支持的导出类型必须失败");
+            assert!(!error.is_empty(), "错误必须携带具体原因");
         }
     }
 
@@ -908,8 +855,10 @@ mod tests {
         }
     }
 
+    /// 不可携带的边界类型必须由本 lane 的结构投影直接失败，不依赖任何外部
+    /// 平台的预冻结载体表。
     #[test]
-    fn unsupported_export_types_fail_derive_without_wasm_freeze() {
+    fn unsupported_export_types_fail_derive() {
         for ty in [
             nyar("i128"),
             NyarType::Utf16,
@@ -917,7 +866,7 @@ mod tests {
         ] {
             let plan = plan_with("bad", function(&[(0, "value", nyar("i64"))], ty));
             let error = derive(&plan).expect_err("不可携带类型必须结构化失败");
-            assert!(error.contains("无法表达为 OVM ABI 合同"), "got: {error}");
+            assert!(error.contains("没有 OVM ABI 合同"), "got: {error}");
         }
     }
 

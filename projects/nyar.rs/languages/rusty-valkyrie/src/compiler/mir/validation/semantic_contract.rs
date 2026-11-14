@@ -56,12 +56,12 @@ pub fn validate_semantic_module(module: &MirModule) -> Result<(), SemanticMirCon
         // 语言 MIR 的布局只冻结语义事实（字段身份/完整类型/存储类）。
         // 字节偏移、宽度与对齐属于目标数据布局，由各平台自己的表示计划计算；
         // 这里不得把「无目标物理尺寸」当成合同违约。
-        if layout.name.is_empty() || layout.align == 0 {
+        if layout.name.is_empty() {
             return Err(SemanticMirContractError {
                 code: "SMIR010",
                 function: layout.name.clone(),
                 location: "aggregate layout".to_string(),
-                detail: "aggregate layout requires a name and non-zero alignment".to_string(),
+                detail: "aggregate layout requires a name".to_string(),
             });
         }
         if layout.fields.iter().any(|field| field.name.is_empty())
@@ -104,32 +104,33 @@ pub(super) fn validate_aggregate_field_contracts(module: &MirModule, function: &
                 let declaration_id = owner.nominal_declaration().ok_or_else(|| failure("字段对象不是已绑定 declaration 的名义实例"))?;
                 // payload 多字段变体是名义变体记录：字段合同与普通聚合同一口径，
                 // 但声明来源必须是已冻结的 variant declaration，不能回落到 sum/struct 短名。
-                let expected = if let Some(declaration) = crate::compiler::mir::ssa::MirStruct::find_by_declaration(&module.structs, declaration_id) {
-                    let declared_field = declaration
-                        .fields
-                        .iter()
-                        .find(|candidate| candidate.id == *field)
-                        .ok_or_else(|| failure("字段 identity 不属于对象声明"))?;
-                    declaration
-                        .instantiate_field(&owner, declared_field.name.as_str())
-                        .ok_or_else(|| failure("字段身份或完整类型代入与声明不一致"))?
-                }
-                else {
-                    let (sum, variant) = crate::compiler::mir::MirSumDeclaration::find_record_variant(&module.sum_types, declaration_id)
-                        .ok_or_else(|| failure("字段对象没有声明合同"))?;
-                    let slot = variant
-                        .fields
-                        .iter()
-                        .position(|candidate| candidate.id == *field)
-                        .ok_or_else(|| failure("字段 identity 不属于变体记录声明"))?;
-                    let arguments = match &owner {
-                        ValkyrieType::Nominal { arguments, .. } => arguments.as_slice(),
-                        _ => &[],
+                let expected =
+                    if let Some(declaration) = crate::compiler::mir::ssa::MirStruct::find_by_declaration(&module.structs, declaration_id) {
+                        let declared_field = declaration
+                            .fields
+                            .iter()
+                            .find(|candidate| candidate.id == *field)
+                            .ok_or_else(|| failure("字段 identity 不属于对象声明"))?;
+                        declaration
+                            .instantiate_field(&owner, declared_field.name.as_str())
+                            .ok_or_else(|| failure("字段身份或完整类型代入与声明不一致"))?
+                    }
+                    else {
+                        let (sum, variant) = crate::compiler::mir::MirSumDeclaration::find_record_variant(&module.sum_types, declaration_id)
+                            .ok_or_else(|| failure("字段对象没有声明合同"))?;
+                        let slot = variant
+                            .fields
+                            .iter()
+                            .position(|candidate| candidate.id == *field)
+                            .ok_or_else(|| failure("字段 identity 不属于变体记录声明"))?;
+                        let arguments = match &owner {
+                            ValkyrieType::Nominal { arguments, .. } => arguments.as_slice(),
+                            _ => &[],
+                        };
+                        sum.instantiate_field_types(variant, arguments)
+                            .and_then(|fields| fields.get(slot).cloned())
+                            .ok_or_else(|| failure("字段身份或完整类型代入与变体记录不一致"))?
                     };
-                    sum.instantiate_field_types(variant, arguments)
-                        .and_then(|fields| fields.get(slot).cloned())
-                        .ok_or_else(|| failure("字段身份或完整类型代入与变体记录不一致"))?
-                };
                 if let Some(stored) = stored {
                     if !instruction.results.is_empty() || infer_operand_static_type(function, stored).as_ref() != Some(&expected) {
                         return Err(failure("字段写入值或结果数量与声明不一致"));
@@ -173,9 +174,7 @@ pub(super) fn validate_aggregate_field_contracts(module: &MirModule, function: &
                 let field_types_match = expected_fields.as_ref().is_some_and(|expected| {
                     expected.len() == payloads.len()
                         && payloads.iter().zip(expected).all(|(operand, expected)| match operand {
-                            MirOperand::Value(value) => {
-                                sum_slot_matches(function.value_types.get(value), Some(expected), &module.structs)
-                            }
+                            MirOperand::Value(value) => sum_slot_matches(function.value_types.get(value), Some(expected), &module.structs),
                             _ => false,
                         })
                 });
@@ -311,11 +310,7 @@ pub(super) fn validate_nominal_structs(module: &MirModule) -> Result<(), Semanti
 /// 与 SMIR007 的调用实参口径一致：`type utf8 = Utf8Text` 让文本字面量落在内建
 /// `Utf8`，而声明字段类型经替换后是名义 `Utf8Text`；两者是同一值空间的不同形态，
 /// 不是 sum 构造合同冲突。非文本类型仍逐字段严格相等。
-fn sum_slot_matches(
-    actual: Option<&ValkyrieType>,
-    expected: Option<&ValkyrieType>,
-    structs: &[crate::compiler::mir::MirStruct],
-) -> bool {
+fn sum_slot_matches(actual: Option<&ValkyrieType>, expected: Option<&ValkyrieType>, structs: &[crate::compiler::mir::MirStruct]) -> bool {
     match (actual, expected) {
         (Some(actual), Some(expected)) => actual == expected || text_carriers_equivalent(expected, actual, structs),
         (None, None) => true,

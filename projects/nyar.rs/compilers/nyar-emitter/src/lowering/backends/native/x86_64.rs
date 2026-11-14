@@ -21,7 +21,7 @@ use crate::{
     contracts::{Constant, InstructionKind, Operand, Terminator},
     lowering::shared::executable::{collect_reachable_blocks, slots::ExecutableSlotPlan},
     nyar_backend_native::{NativeExecutableKind, classify_native_image},
-    target_operator::{TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe},
+    target_operator::{TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
     transitional::binary::pe::{NativePeImage, NativePeWriter},
 };
 use nyar::abstractions::BinaryArch;
@@ -584,7 +584,14 @@ impl FunctionLowerer<'_> {
                 .imports()
                 .get(&instance)
                 .ok_or_else(|| format!("x86_64 最小 lowering：导入实例 `{instance:?}` 缺失: function={}", self.function.symbol))?;
-            (import.target_operator, import.link.clone())
+            let symbol = self
+                .submission
+                .backend_plan
+                .abi_name_for_instance(instance)
+                .map(|name| name.to_string())
+                .unwrap_or_default();
+            let binding = freeze_x86_64_operator(&import.link, instance, &symbol, &import.parameter_types, &import.return_type)?;
+            (binding, import.link.clone())
         };
         let Some(binding) = binding
         else {
@@ -593,20 +600,14 @@ impl FunctionLowerer<'_> {
                 self.function.symbol
             ));
         };
-        let TargetOperatorBinding::Frozen(plan) = binding
+        let X86OperatorBinding::Frozen(plan) = binding
         else {
             return Err(format!(
                 "x86_64 目标 operator `{instance:?}` 绑定未冻结（链接 `{link}`）：拒绝补造指令: function={}",
                 self.function.symbol
             ));
         };
-        let TargetOperatorEncoding::X86_64(code) = plan.encoding
-        else {
-            return Err(format!(
-                "x86_64 目标 operator `{instance:?}` 冻结了非 x86-64 编码 {:?}: function={}",
-                plan.encoding, self.function.symbol
-            ));
-        };
+        let code = plan.encoding;
         if arguments.len() != plan.arity || plan.arity != code.arity() {
             return Err(format!(
                 "x86_64 目标 operator `{instance:?}` 实参数量与冻结 arity 不符: function={} expected={} actual={}",
@@ -752,13 +753,13 @@ fn is_exit_code_type(ty: &NyarType) -> bool {
 /// 与 JVM/CLR 使用同一组 provider 名（`integer.*` / `long.*`），便于 std 按目标替换
 /// 实现而不改调用点。未实现的 provider（无符号除/余、逻辑右移、浮点）返回 `None`，
 /// 计划落 `Unfrozen`，由 emit 结构化失败，不猜编码。
-pub(crate) fn freeze_x86_64_operator_binding(operator_name: &str) -> Option<TargetOperatorPlan> {
+pub(crate) fn freeze_x86_64_operator_binding(operator_name: &str) -> Option<TargetOperatorPlan<X86_64OperatorCode>> {
     let freeze = |code: X86_64OperatorCode| TargetOperatorPlan {
         arity: code.arity(),
         operand_type: code.operand_type(),
         result_type: code.result_type(),
         recipe: TargetOperatorRecipe::Operands,
-        encoding: TargetOperatorEncoding::X86_64(code),
+        encoding: code,
     };
     Some(freeze(match operator_name {
         // 32 位整数算术/位/移位：`eax` 载体，结果零扩展到 64 位槽。
@@ -829,4 +830,33 @@ fn instruction_kind_name(kind: &InstructionKind) -> &'static str {
         InstructionKind::NullIsNull { .. } => "NullIsNull",
         InstructionKind::NullUnwrap { .. } => "NullUnwrap",
     }
+}
+
+/// x86-64 平台私有的 operator 绑定。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum X86OperatorBinding {
+    /// 已冻结的 x86-64 算子编码。
+    Frozen(TargetOperatorPlan<X86_64OperatorCode>),
+    /// 声明了 x86-64 operator，但没有可编码配方；emit 必须结构化失败。
+    Unfrozen,
+}
+
+/// 按声明的导入签名冻结 x86-64 operator 绑定。
+pub(crate) fn freeze_x86_64_operator(
+    link: &nyar::ExternalImportLink,
+    instance: nyar_types::ItemInstanceId,
+    symbol: &str,
+    parameter_types: &[nyar_types::NyarType],
+    return_type: &nyar_types::NyarType,
+) -> crate::Result<Option<X86OperatorBinding>> {
+    let Some(mnemonic) = crate::lowering::shared::interop::x86_64_operator_target(link)
+    else {
+        return Ok(None);
+    };
+    let Some(plan) = freeze_x86_64_operator_binding(mnemonic)
+    else {
+        return Ok(Some(X86OperatorBinding::Unfrozen));
+    };
+    crate::target_operator::validate_frozen_operator(mnemonic, instance, symbol, parameter_types, return_type, &plan)?;
+    Ok(Some(X86OperatorBinding::Frozen(plan)))
 }

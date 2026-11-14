@@ -312,7 +312,6 @@ fn host_echo_import(symbol: &str, parameter_types: Vec<NyarType>) -> BackendImpo
         link: ExternalImportLink::host(Some(Identifier::new("ovm")), vec![symbol.to_string()]),
         parameter_types,
         return_type: NyarType::Integer32 { signed: true },
-        target_operator: None,
     }
 }
 

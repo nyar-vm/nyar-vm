@@ -160,15 +160,13 @@ fn layout_item(index: u32) -> nyar_types::ItemId {
     nyar_types::ItemId::from_index(index).expect("ItemId")
 }
 
-fn inner_layout(id: u32, size: u32) -> AggregateLayout {
+fn inner_layout(id: u32) -> AggregateLayout {
     AggregateLayout {
         id,
         name: "Inner".into(),
         namespace: "example".into(),
         key: None,
         storage: StorageKind::Value,
-        size,
-        align: 8,
         fields: Vec::new(),
     }
 }
@@ -180,14 +178,9 @@ fn record_layout(id: u32, inner_id: u32) -> AggregateLayout {
         namespace: "example".into(),
         key: None,
         storage: StorageKind::Value,
-        size: 8,
-        align: 8,
         fields: vec![FieldLayout {
             name: "inner".into(),
             ty: nyar_types::NyarType::Nominal { layout: inner_id, spelling: nyar_types::Identifier::new("Inner") },
-            offset: 0,
-            size: 8,
-            align: 8,
         }],
     }
 }
@@ -201,7 +194,7 @@ fn modular_layout_consumer() -> rusty_valkyrie::mir::MirModule {
     consumer.aggregate_layouts = AggregateLayoutPlan::default();
     // consumer 本地编号：Record=5 的字段引用 Inner=7。
     consumer.aggregate_layouts.layouts.push(record_layout(5, 7));
-    consumer.aggregate_layouts.layouts.push(inner_layout(7, 8));
+    consumer.aggregate_layouts.layouts.push(inner_layout(7));
     consumer.aggregate_layouts.declaration_to_layout.insert(layout_item(1), 5);
     consumer.aggregate_layouts.declaration_to_layout.insert(layout_item(2), 7);
     consumer.aggregate_layouts.value_type_declarations.insert(layout_item(1));
@@ -216,7 +209,7 @@ fn repeated_layout_declaration_merges_by_identity_with_remapped_local_ids() {
     dependency.aggregate_layouts = AggregateLayoutPlan::default();
     // 依赖本地编号不同：Record=1 的字段引用 Inner=3，但声明身份相同。
     dependency.aggregate_layouts.layouts.push(record_layout(1, 3));
-    dependency.aggregate_layouts.layouts.push(inner_layout(3, 8));
+    dependency.aggregate_layouts.layouts.push(inner_layout(3));
     dependency.aggregate_layouts.declaration_to_layout.insert(layout_item(1), 1);
     dependency.aggregate_layouts.declaration_to_layout.insert(layout_item(2), 3);
     dependency.aggregate_layouts.value_type_declarations.insert(layout_item(1));
@@ -239,14 +232,21 @@ fn layout_contract_conflict_across_modules_still_fails() {
     let mut dependency = consumer.clone();
     dependency.name = "dependency".into();
     dependency.aggregate_layouts = AggregateLayoutPlan::default();
-    // 同一 declaration，依赖侧 Inner 物理尺寸不同 —— 真实合同冲突仍必须闭合。
+    // 同一 declaration，依赖侧存储类不同 —— 语义合同冲突仍必须闭合。
     dependency.aggregate_layouts.layouts.push(record_layout(1, 3));
-    dependency.aggregate_layouts.layouts.push(inner_layout(3, 16));
+    dependency.aggregate_layouts.layouts.push(inner_layout(3));
+    dependency
+        .aggregate_layouts
+        .layouts
+        .iter_mut()
+        .find(|layout| layout.id == 3)
+        .expect("dependency Inner 必须已登记")
+        .storage = StorageKind::Reference;
     dependency.aggregate_layouts.declaration_to_layout.insert(layout_item(1), 1);
     dependency.aggregate_layouts.declaration_to_layout.insert(layout_item(2), 3);
     dependency.aggregate_layouts.value_type_declarations.insert(layout_item(1));
 
     let error = rusty_valkyrie::compiler::emitter::pipeline::merge_aggregate_layouts(&consumer, &[dependency])
-        .expect_err("尺寸不同不能合并");
+        .expect_err("存储类不同不能合并");
     assert!(error.to_string().contains("合同冲突"), "实际错误：{error}");
 }

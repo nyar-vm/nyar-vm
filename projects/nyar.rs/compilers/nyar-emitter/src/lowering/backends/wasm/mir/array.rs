@@ -8,7 +8,7 @@
 //! `ArrayLength` 臂共用同一发射入口，本表不冻结任何类型索引。
 //!
 //! 本模块只接受下表列出的助记符，未知助记符返回 `None`，计划据此冻结为
-//! `TargetOperatorBinding::Unfrozen`，由 emit 结构化失败，禁止猜默认指令。
+//! `对应 lane 的 `Unfrozen` 绑定`，由 emit 结构化失败，禁止猜默认指令。
 
 use crate::target_operator::{WasmGcArrayOperation, WasmGcArrayOperatorPlan};
 

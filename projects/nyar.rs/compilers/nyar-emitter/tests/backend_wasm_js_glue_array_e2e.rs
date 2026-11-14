@@ -32,11 +32,9 @@ fn reference_layout(id: u32, name: &str) -> AggregateLayout {
         namespace: "demo".to_string(),
         key: None,
         storage: StorageKind::Reference,
-        size: 16,
-        align: 8,
         fields: vec![
-            FieldLayout { name: "samples".to_string(), ty: array_of(I64), offset: 0, size: 8, align: 8 },
-            FieldLayout { name: "version".to_string(), ty: I64, offset: 8, size: 8, align: 8 },
+            FieldLayout { name: "samples".to_string(), ty: array_of(I64) },
+            FieldLayout { name: "version".to_string(), ty: I64 },
         ],
     }
 }
@@ -87,7 +85,6 @@ fn emit_bridge(layouts: &[(NyarType, AggregateLayout)]) -> EmittedBridge {
         plan.testing_register_type_layout(ty.clone(), layout.clone());
     }
     plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("实例身份"), "echo".to_string());
-    plan.testing_freeze_library_export_abis().expect("冻结库导出载体");
     let submission = FragmentSubmission::from_backend_plan(plan);
     let (module, imports) =
         lower_fragment_to_wasm_module_for(&submission, HostProjectionBoundary::WasmJsGlue, WasiPreview::Preview2, WasmPackageKind::Library)
@@ -106,7 +103,6 @@ fn emit_plain(ty: NyarType) -> EmittedBridge {
     let name = QualifiedName::new(vec![Identifier::new("echo")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(name, identity_function(ty, None))]));
     plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("实例身份"), "echo".to_string());
-    plan.testing_freeze_library_export_abis().expect("冻结库导出载体");
     let submission = FragmentSubmission::from_backend_plan(plan);
     let (module, imports) =
         lower_fragment_to_wasm_module_for(&submission, HostProjectionBoundary::WasmJsGlue, WasiPreview::Preview2, WasmPackageKind::Library)
@@ -252,14 +248,9 @@ fn utf8_text_layout(id: u32) -> AggregateLayout {
         namespace: "std".to_string(),
         key: None,
         storage: StorageKind::Reference,
-        size: 8,
-        align: 8,
         fields: vec![FieldLayout {
             name: "_repr".to_string(),
             ty: NyarType::Array(Box::new(NyarType::Integer8 { signed: false })),
-            offset: 0,
-            size: 8,
-            align: 8,
         }],
     }
 }

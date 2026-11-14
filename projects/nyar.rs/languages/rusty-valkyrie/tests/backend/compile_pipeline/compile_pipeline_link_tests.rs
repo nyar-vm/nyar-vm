@@ -18,8 +18,6 @@ fn identical_layout_names_without_identity_do_not_merge() {
         namespace: "example".into(),
         key: None,
         storage: nyar_types::layout::StorageKind::Value,
-        size: 0,
-        align: 1,
         fields: vec![],
     };
     consumer.aggregate_layouts = AggregateLayoutPlan::default();
@@ -43,8 +41,6 @@ fn repeated_layout_declaration_merges_by_identity() {
         namespace: "example".into(),
         key: None,
         storage: nyar_types::layout::StorageKind::Value,
-        size: 0,
-        align: 1,
         fields: vec![],
     });
     consumer.aggregate_layouts.declaration_to_layout.insert(nyar_types::ItemId::from_index(1).unwrap(), 1);

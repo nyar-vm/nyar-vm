@@ -10,32 +10,30 @@ pub fn platform_type(ty: &NyarType) -> NyarType {
 }
 use std::borrow::Cow;
 
-use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldId, FieldLayout, LayoutId, NominalInstanceId, TypeId};
+use nyar_types::{AggregateLayoutPlan, FieldId, LayoutId, NominalInstanceId, TypeId};
 
 use crate::{
     FragmentSubmission,
     backend_plan_views::{ExecutableBlockRef, ExecutableFunction, ExecutableStorageKind, ExecutableTerminator},
     contracts::InstructionKind,
-    lowering::shared::physical_layout::{LayoutPolicy, resolve_physical_layouts},
+    lowering::shared::physical_layout::{
+        LayoutPolicy, ResolvedAggregateLayout, ResolvedFieldLayout, ResolvedLayoutPlan, resolve_physical_layouts,
+    },
 };
 
 /// Cross-backend lowering context attached to a fragment submission.
 ///
-/// `layouts` 默认是语言语义布局（无目标物理 extent）。需要读取
-/// `offset/size/align` 的后端必须用 [`Self::new_resolved`] 按自己的
-/// [`LayoutPolicy`] 解析物理布局，禁止直接消费语言层占位值。
+/// 上下文只提供**目标已解析**的物理布局：偏移、宽度与对齐必须由调用方选择
+/// [`LayoutPolicy`] 后解析得到。语言语义布局（无物理 extent）不能作为布局查询
+/// 来源，因此不再提供未解析构造。
 pub struct ExecutableLoweringContext<'a> {
     pub submission: &'a FragmentSubmission,
-    pub layouts: Cow<'a, AggregateLayoutPlan>,
+    pub layouts: Cow<'a, ResolvedLayoutPlan>,
 }
 
 impl<'a> ExecutableLoweringContext<'a> {
-    pub fn new(submission: &'a FragmentSubmission) -> Self {
-        Self { submission, layouts: Cow::Borrowed(submission.backend_plan.aggregate_layouts()) }
-    }
-
-    /// 按目标数据布局策略解析物理布局，供需要字节 offset/size/align 的 lane 使用。
-    pub fn new_resolved(submission: &'a FragmentSubmission, policy: LayoutPolicy) -> crate::Result<Self> {
+    /// 按目标数据布局策略解析物理布局。
+    pub fn new(submission: &'a FragmentSubmission, policy: LayoutPolicy) -> crate::Result<Self> {
         let layouts = resolve_physical_layouts(submission.backend_plan.aggregate_layouts(), policy)?;
         Ok(Self { submission, layouts: Cow::Owned(layouts) })
     }
@@ -44,15 +42,15 @@ impl<'a> ExecutableLoweringContext<'a> {
         layout_id.unwrap_or_else(|| panic!("missing layout_id for {context}; executable instructions must carry layout metadata"))
     }
 
-    pub fn layout_by_id(&self, id: LayoutId) -> Option<&AggregateLayout> {
-        self.layouts.layouts.iter().find(|layout| layout.id == id)
+    pub fn layout_by_id(&self, id: LayoutId) -> Option<&ResolvedAggregateLayout> {
+        self.layouts.layout(id)
     }
 
-    pub fn layout_by_nominal(&self, nominal: NominalInstanceId) -> Option<&AggregateLayout> {
+    pub fn layout_by_nominal(&self, nominal: NominalInstanceId) -> Option<&ResolvedAggregateLayout> {
         self.submission.backend_plan.aggregate_layout_by_nominal().get(&nominal).and_then(|id| self.layout_by_id(*id))
     }
 
-    pub fn layout_by_type_id(&self, ty: TypeId) -> Option<&AggregateLayout> {
+    pub fn layout_by_type_id(&self, ty: TypeId) -> Option<&ResolvedAggregateLayout> {
         self.submission.backend_plan.aggregate_layout_by_type().get(&ty).and_then(|id| self.layout_by_id(*id))
     }
 
@@ -60,7 +58,7 @@ impl<'a> ExecutableLoweringContext<'a> {
     ///
     /// `Nominal` 自带 `LayoutId`；`Apply`（泛型实例）从计划冻结的
     /// `NyarType → LayoutId` 索引解析。两者之外不做名字回查。
-    pub fn layout_for_nyar_type(&self, ty: &NyarType) -> Option<&AggregateLayout> {
+    pub fn layout_for_nyar_type(&self, ty: &NyarType) -> Option<&ResolvedAggregateLayout> {
         let layout_id = match ty {
             NyarType::Nominal { layout, .. } => *layout,
             _ => *self.submission.backend_plan.aggregate_layout_by_nyar_type().get(ty)?,
@@ -68,14 +66,14 @@ impl<'a> ExecutableLoweringContext<'a> {
         self.layout_by_id(layout_id)
     }
 
-    pub fn field_layout_by_id(&self, field: FieldId) -> Option<(&AggregateLayout, &FieldLayout, u32)> {
+    pub fn field_layout_by_id(&self, field: FieldId) -> Option<(&ResolvedAggregateLayout, &ResolvedFieldLayout, u32)> {
         let (layout_id, slot) = self.submission.backend_plan.aggregate_layout_by_field().get(&field)?;
         let layout = self.layout_by_id(*layout_id)?;
         let field_layout = layout.fields.get(*slot as usize)?;
         Some((layout, field_layout, *slot))
     }
 
-    pub fn field_layout(&self, layout_id: LayoutId, field: &str) -> Option<&FieldLayout> {
+    pub fn field_layout(&self, layout_id: LayoutId, field: &str) -> Option<&ResolvedFieldLayout> {
         self.layout_by_id(layout_id).and_then(|layout| layout.fields.iter().find(|item| item.name == field))
     }
 
@@ -282,7 +280,7 @@ pub fn executable_has_state_machine(function: &ExecutableFunction) -> bool {
 mod tests {
     use super::*;
     use crate::TargetExecutionPlan;
-    use nyar_types::{Identifier, StorageKind};
+    use nyar_types::{AggregateLayout, FieldLayout, Identifier, StorageKind};
 
     /// 构造仅含返回类型与参数类型的最小可执行函数。
     fn identity_function(return_type: NyarType, param_types: Vec<NyarType>) -> ExecutableFunction {
@@ -329,9 +327,7 @@ mod tests {
                 namespace: "app".to_string(),
                 key: None,
                 storage: StorageKind::Value,
-                size: 8,
-                align: 8,
-                fields: vec![FieldLayout { name: "payload".to_string(), ty: field_ty, offset: 0, size: 8, align: 8 }],
+                fields: vec![FieldLayout { name: "payload".to_string(), ty: field_ty }],
             }],
             ..AggregateLayoutPlan::default()
         }

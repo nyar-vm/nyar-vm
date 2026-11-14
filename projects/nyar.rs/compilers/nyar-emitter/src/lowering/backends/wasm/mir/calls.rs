@@ -8,7 +8,7 @@
 use super::*;
 use crate::{
     lowering::backends::wasm::cabi::CABI_HEAP_GLOBAL_INDEX,
-    target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorEncoding, TargetOperatorRecipe},
+    target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorRecipe},
 };
 
 /// 计划冻结的目标标量载体 → wasm 栈类型字节。
@@ -535,20 +535,14 @@ impl<'a> WasmMirLowerer<'a> {
         else {
             return Ok(false);
         };
-        let TargetOperatorBinding::Frozen(plan) = binding
+        let WasmOperatorBinding::Numeric(plan) = binding
         else {
-            if let TargetOperatorBinding::FrozenWasmGcArray(array_plan) = binding {
+            if let WasmOperatorBinding::GcArray(array_plan) = binding {
                 return self.try_emit_wasm_gc_array_operator(mnemonic, *array_plan, arguments, output, instance).map(|()| true);
             }
             return Err(format!("WASM `wasm_operator` 绑定缺少可编码助记符 `{mnemonic}`: callee={instance:?} function={}", self.mir_fn.symbol));
         };
-        let TargetOperatorEncoding::Wasm(opcode) = plan.encoding
-        else {
-            return Err(format!(
-                "WASM `wasm_operator` 绑定 `{mnemonic}` 冻结了非 wasm 编码: callee={instance:?} function={}",
-                self.mir_fn.symbol
-            ));
-        };
+        let opcode = plan.encoding;
         if arguments.len() != plan.arity {
             return Err(format!(
                 "WASM `wasm_operator` 绑定 `{mnemonic}` 实参数量与冻结 arity 不符: callee={instance:?} function={} expected={} actual={}",

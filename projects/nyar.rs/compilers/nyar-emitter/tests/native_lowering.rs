@@ -17,7 +17,7 @@ use nyar_emitter::{
     BackendImport, FragmentSubmission, TargetExecutionPlan,
     lowering::backends::native::x86_64::X86_64OperatorCode,
     nyar_backend_native::{NativeBinaryBackend, NativeBinaryBackendInput, NativeExecutableKind, classify_native_image},
-    target_operator::{TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe},
+    target_operator::{TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
     testing::lower_fragment_to_native_image,
 };
 use nyar_types::{
@@ -88,13 +88,13 @@ fn integer(value: i64) -> Operand {
     Operand::Constant(Constant::Int(value))
 }
 
-fn operator_plan(code: X86_64OperatorCode) -> TargetOperatorPlan {
+fn operator_plan(code: X86_64OperatorCode) -> TargetOperatorPlan<X86_64OperatorCode> {
     TargetOperatorPlan {
         arity: code.arity(),
         operand_type: code.operand_type(),
         result_type: code.result_type(),
         recipe: TargetOperatorRecipe::Operands,
-        encoding: TargetOperatorEncoding::X86_64(code),
+        encoding: code,
     }
 }
 
@@ -108,13 +108,52 @@ fn carrier_type(operand: TargetOperandType) -> NyarType {
     }
 }
 
+/// operator 编码对应的规范助记符：冻结入口只从导入链接读助记符。
+fn mnemonic_of(code: X86_64OperatorCode) -> &'static str {
+    match code {
+        X86_64OperatorCode::I32Add => "integer.add",
+        X86_64OperatorCode::I32Subtract => "integer.subtract",
+        X86_64OperatorCode::I32Multiply => "integer.multiply",
+        X86_64OperatorCode::I32Negate => "integer.negate",
+        X86_64OperatorCode::I32BitAnd => "integer.and",
+        X86_64OperatorCode::I32BitOr => "integer.or",
+        X86_64OperatorCode::I32BitXor => "integer.xor",
+        X86_64OperatorCode::I32ShiftLeft => "integer.shift_left",
+        X86_64OperatorCode::I32ShiftRight => "integer.shift_right",
+        X86_64OperatorCode::I32ShiftRightUnsigned => "integer.shift_right_unsigned",
+        X86_64OperatorCode::I32CompareEqual => "integer.compare_equal",
+        X86_64OperatorCode::I32CompareNotEqual => "integer.compare_not_equal",
+        X86_64OperatorCode::I32CompareLessThan => "integer.compare_less_than",
+        X86_64OperatorCode::I32CompareLessOrEqual => "integer.compare_less_or_equal",
+        X86_64OperatorCode::I32CompareGreaterThan => "integer.compare_greater_than",
+        X86_64OperatorCode::I32CompareGreaterOrEqual => "integer.compare_greater_or_equal",
+        X86_64OperatorCode::I32CompareLessThanUnsigned => "integer.compare_less_than_unsigned",
+        X86_64OperatorCode::I64Add => "long.add",
+        X86_64OperatorCode::I64Subtract => "long.subtract",
+        X86_64OperatorCode::I64Multiply => "long.multiply",
+        X86_64OperatorCode::I64Negate => "long.negate",
+        X86_64OperatorCode::I64BitAnd => "long.and",
+        X86_64OperatorCode::I64BitOr => "long.or",
+        X86_64OperatorCode::I64BitXor => "long.xor",
+        X86_64OperatorCode::I64ShiftLeft => "long.shift_left",
+        X86_64OperatorCode::I64ShiftRight => "long.shift_right",
+        X86_64OperatorCode::I64ShiftRightUnsigned => "long.shift_right_unsigned",
+        X86_64OperatorCode::I64CompareEqual => "long.compare_equal",
+        X86_64OperatorCode::I64CompareNotEqual => "long.compare_not_equal",
+        X86_64OperatorCode::I64CompareLessThan => "long.compare_less_than",
+        X86_64OperatorCode::I64CompareLessOrEqual => "long.compare_less_or_equal",
+        X86_64OperatorCode::I64CompareGreaterThan => "long.compare_greater_than",
+        X86_64OperatorCode::I64CompareGreaterOrEqual => "long.compare_greater_or_equal",
+        X86_64OperatorCode::I64CompareLessThanUnsigned => "long.compare_less_than_unsigned",
+    }
+}
+
 fn operator_import(code: X86_64OperatorCode, return_type: NyarType) -> BackendImport {
     BackendImport {
         index: ImportIndex::from_index(0).expect("import index"),
-        link: ExternalImportLink::host(Some(Identifier::new("x86_64-operator")), vec![format!("{code:?}")]),
+        link: ExternalImportLink::host(Some(Identifier::new("x86_64-operator")), vec![mnemonic_of(code).to_string()]),
         parameter_types: vec![carrier_type(code.operand_type()); code.arity()],
         return_type,
-        target_operator: Some(TargetOperatorBinding::Frozen(operator_plan(code))),
     }
 }
 
@@ -325,7 +364,6 @@ fn host_import_without_binding_is_rejected() {
             link: ExternalImportLink::host(Some(Identifier::new("host")), vec!["println".to_string()]),
             parameter_types: Vec::new(),
             return_type: LONG,
-            target_operator: None,
         },
     );
 
@@ -335,29 +373,21 @@ fn host_import_without_binding_is_rejected() {
 
 #[test]
 fn unfrozen_operator_binding_is_rejected() {
-    let submission = single_operator_submission(TargetOperatorBinding::Unfrozen, LONG);
+    let submission = single_operator_submission("long.unknown_operator", LONG);
     let error = lower_windows_x64(&submission).expect_err("未冻结绑定必须失败");
     assert!(error.contains("未冻结"), "错误必须点名未冻结绑定: {error}");
 }
 
 #[test]
-fn non_native_operator_encoding_is_rejected() {
-    let submission = single_operator_submission(
-        TargetOperatorBinding::Frozen(TargetOperatorPlan {
-            arity: 2,
-            operand_type: TargetOperandType::I64,
-            result_type: TargetOperandType::I64,
-            recipe: TargetOperatorRecipe::Operands,
-            encoding: TargetOperatorEncoding::Wasm(acorn_wasm::WasmOpcode::I32Add),
-        }),
-        LONG,
-    );
-    let error = lower_windows_x64(&submission).expect_err("非 x86-64 编码必须失败");
-    assert!(error.contains("非 x86-64 编码"), "错误必须点名非 x86-64 编码: {error}");
+fn operator_signature_mismatch_is_rejected() {
+    // `long.add` 的结果载体是 `I64`；声明返回 `i32` 与冻结计划不一致，必须在 lane 入口失败。
+    let submission = single_operator_submission("long.add", INTEGER);
+    let error = lower_windows_x64(&submission).expect_err("签名与冻结计划不符必须失败");
+    assert!(error.contains("结果槽载体与冻结计划不符"), "错误必须点名载体不符: {error}");
 }
 
 /// 构造 `main() = operator(10, 3)`：调用指定绑定的一次算子。
-fn single_operator_submission(binding: TargetOperatorBinding, return_type: NyarType) -> FragmentSubmission {
+fn single_operator_submission(mnemonic: &str, return_type: NyarType) -> FragmentSubmission {
     let mut main = function("main", return_type.clone(), Vec::new());
     main.value_types.insert(ValueRef(0), return_type.clone());
     main.blocks[0].instructions.push(call(operator_instance(0), vec![integer(10), integer(3)], vec![ValueRef(0)]));
@@ -370,10 +400,9 @@ fn single_operator_submission(binding: TargetOperatorBinding, return_type: NyarT
         operator_instance(0),
         BackendImport {
             index: ImportIndex::from_index(0).expect("import index"),
-            link: ExternalImportLink::host(Some(Identifier::new("native-operator")), vec!["probe".to_string()]),
+            link: ExternalImportLink::host(Some(Identifier::new("x86_64-operator")), vec![mnemonic.to_string()]),
             parameter_types: vec![LONG, LONG],
             return_type,
-            target_operator: Some(binding),
         },
     );
     FragmentSubmission::from_backend_plan(plan)

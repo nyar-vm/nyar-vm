@@ -162,14 +162,9 @@ fn record_layout() -> AggregateLayout {
         namespace: "fixture".to_string(),
         key: None,
         storage: StorageKind::Value,
-        size: 4,
-        align: 4,
         fields: vec![FieldLayout {
             name: "slot".to_string(),
             ty: int32(),
-            offset: 0,
-            size: 4,
-            align: 4,
         }],
     }
 }
@@ -209,7 +204,7 @@ fn aggregate_array_sum_valid_paired_observation_matches() {
                     ),
                     rust_instr(
                         InstructionKind::ArrayFromElements {
-                            layout_id: 7,
+                            layout_id: None,
                             array_type: array.clone(),
                             elements: vec![Operand::Value(ValueRef(9))],
                         },
@@ -276,7 +271,6 @@ fn aggregate_array_sum_valid_paired_observation_matches() {
             link: ExternalImportLink::host(Some(Identifier::new("contract")), vec!["neutral.push".to_string()]),
             parameter_types: vec![array.clone(), record.clone()],
             return_type: array.clone(),
-            target_operator: None,
         },
     );
     plan.testing_register_import(
@@ -286,7 +280,6 @@ fn aggregate_array_sum_valid_paired_observation_matches() {
             link: ExternalImportLink::host(Some(Identifier::new("contract")), vec!["neutral.get".to_string()]),
             parameter_types: vec![array.clone(), int32()],
             return_type: record.clone(),
-            target_operator: None,
         },
     );
     let rust = FragmentSubmission::from_backend_plan(plan);
@@ -395,14 +388,9 @@ fn aggregate_array_sum_valid_paired_observation_matches() {
         namespace: "fixture".to_string(),
         key: None,
         storage: StorageKind::Value,
-        size: 4,
-        align: 4,
         fields: vec![FieldLayout {
             name: "slot".to_string(),
             ty: int32(),
-            offset: 0,
-            size: 4,
-            align: 4,
         }],
     });
     module.aggregate_layouts = layouts;
@@ -631,7 +619,6 @@ fn exact_external_call_contract_paired_observation_matches() {
             link: link.clone(),
             parameter_types: Vec::new(),
             return_type: NyarType::Unit,
-            target_operator: None,
         },
     );
     let rust = FragmentSubmission::from_backend_plan(plan);

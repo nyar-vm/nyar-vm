@@ -89,9 +89,7 @@ fn wasm_aggregate_copy_without_address_slot_fails_structured() {
         namespace: String::new(),
         key: None,
         storage: StorageKind::Value,
-        size: 8,
-        align: 4,
-        fields: vec![FieldLayout { name: "payload".to_string(), ty: I32, offset: 0, size: 4, align: 4 }],
+        fields: vec![FieldLayout { name: "payload".to_string(), ty: I32 }],
     };
     let load = Instruction::from_kind(InstructionKind::LoadConstant { constant: Constant::Int(1), ty: Some(I32) });
     let copy = Instruction::from_kind(InstructionKind::AggregateCopy {
@@ -135,9 +133,7 @@ fn wasm_aggregate_copy_gc_missing_reference_slot_fails_structured() {
         namespace: String::new(),
         key: None,
         storage: StorageKind::Reference,
-        size: 8,
-        align: 4,
-        fields: vec![FieldLayout { name: "payload".to_string(), ty: I32, offset: 0, size: 4, align: 4 }],
+        fields: vec![FieldLayout { name: "payload".to_string(), ty: I32 }],
     };
     let load = Instruction::from_kind(InstructionKind::LoadConstant { constant: Constant::Int(1), ty: Some(I32) });
     // dest 是 I32 标量槽（非引用），storage=Reference 触发 gc struct 分支 → 缺 dest 引用槽。
@@ -164,8 +160,6 @@ fn wasm_aggregate_copy_zero_field_missing_dest_slot_fails_structured() {
         namespace: String::new(),
         key: None,
         storage: StorageKind::Value,
-        size: 0,
-        align: 4,
         fields: Vec::new(),
     };
     let load = Instruction::from_kind(InstructionKind::LoadConstant { constant: Constant::Int(1), ty: Some(I32) });

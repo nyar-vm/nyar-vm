@@ -1,13 +1,15 @@
-//! 目标私有物理布局解析。
+//! 目标物理布局解析。
 //!
-//! 语言 MIR 的 `AggregateLayout` 只携带语义事实：布局身份、字段顺序、完整类型与
-//! 存储类；`offset/size/align` 是无目标占位。本模块按目标数据布局策略从这些
-//! 语义事实计算物理 extent。任何后端读取 `offset/size/align` 前都必须先经过
-//! 本解析器，不得消费语言层占位值，也不得在编码器内另写一套尺寸规则。
+//! 语言层只提交语义聚合形状（字段身份、类型、顺序、值/引用存储类）。
+//! 本模块按目标自己的 [`LayoutPolicy`] 从这些语义事实计算字段偏移、字段宽度、
+//! 对齐与对象 body 尺寸，并产出**独立**的 [`ResolvedLayoutPlan`]：物理解析结果
+//! 与语义计划是两组类型，消费者无法再把语义形状当成已布局事实。
+//!
+//! 引用存储的聚合与引用类型的字段只占引用槽；只有值存储聚合才按 body 内联递归。
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldLayout, LayoutId, LayoutKey, NyarType};
+use nyar_types::{AggregateLayoutPlan, LayoutId, LayoutKey, NyarType, StorageKind};
 
 /// 目标数据布局策略。
 ///
@@ -32,28 +34,80 @@ impl LayoutPolicy {
     pub(crate) const OVM: Self = Self { reference_extent: (8, 8), text_extent: (4, 4) };
 }
 
+/// 已解析的字段物理布局。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedFieldLayout {
+    /// 字段身份（来自语义布局）。
+    pub name: String,
+    /// 字段类型（来自语义布局）。
+    pub ty: NyarType,
+    /// 相对对象 body 起点的字节偏移。
+    pub offset: u32,
+    /// 字段在对象 body 中占用的字节数。
+    pub size: u32,
+    /// 字段对齐。
+    pub align: u32,
+}
+
+/// 已解析的聚合物理布局。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedAggregateLayout {
+    /// 布局身份（与语义计划一致）。
+    pub id: LayoutId,
+    /// 类型简单名（诊断用）。
+    pub name: String,
+    /// 命名空间（诊断用）。
+    pub namespace: String,
+    /// 合成布局键；名义布局为 `None`。
+    pub key: Option<LayoutKey>,
+    /// 值/引用存储类。
+    pub storage: StorageKind,
+    /// 对象 body 的总尺寸。
+    pub size: u32,
+    /// 聚合对齐。
+    pub align: u32,
+    /// 已解析字段。
+    pub fields: Vec<ResolvedFieldLayout>,
+}
+
+/// 目标已解析的模块级布局计划。
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ResolvedLayoutPlan {
+    /// 按布局身份升序的物理布局。
+    pub layouts: Vec<ResolvedAggregateLayout>,
+    /// 合成 tuple / fixedarray 结构键到布局 id 的映射。
+    pub synthetic_layouts: BTreeMap<LayoutKey, LayoutId>,
+    /// 结构声明到布局的稳定绑定。
+    pub declaration_to_layout: BTreeMap<nyar_types::ItemId, LayoutId>,
+    /// 按 declaration 登记的 value 存储结构。
+    pub value_type_declarations: BTreeSet<nyar_types::ItemId>,
+}
+
+impl ResolvedLayoutPlan {
+    /// 按布局身份查询物理布局。
+    pub fn layout(&self, id: LayoutId) -> Option<&ResolvedAggregateLayout> {
+        self.layouts.iter().find(|layout| layout.id == id)
+    }
+}
+
 /// 按策略计算聚合的物理字段偏移、字段宽度、对齐与整体尺寸。
 ///
-/// 递归解析名义字段；环检测与缺失布局都失败闭合，禁止回落到默认尺寸。
-pub(crate) fn resolve_physical_layouts(semantic: &AggregateLayoutPlan, policy: LayoutPolicy) -> Result<AggregateLayoutPlan, String> {
-    let mut resolved = AggregateLayoutPlan {
-        layouts: Vec::with_capacity(semantic.layouts.len()),
-        synthetic_layouts: semantic.synthetic_layouts.clone(),
-        declaration_to_layout: semantic.declaration_to_layout.clone(),
-        value_type_declarations: semantic.value_type_declarations.clone(),
-    };
+/// 递归解析值存储的名义字段；引用存储的聚合与引用类型字段只占引用槽，
+/// 不展开 body。环检测与缺失布局都失败闭合，禁止回落到默认尺寸。
+pub(crate) fn resolve_physical_layouts(semantic: &AggregateLayoutPlan, policy: LayoutPolicy) -> Result<ResolvedLayoutPlan, String> {
     let mut memo: BTreeMap<LayoutId, (u32, u32)> = BTreeMap::new();
+    let mut layouts = Vec::with_capacity(semantic.layouts.len());
     for layout in &semantic.layouts {
-        let extent = resolve_layout_extent(layout.id, semantic, policy, &mut memo, &mut BTreeSet::new())?;
+        let extent = layout_extent(layout.id, semantic, policy, &mut memo, &mut BTreeSet::new())?;
         let mut fields = Vec::with_capacity(layout.fields.len());
         let mut offset = 0u32;
         for field in &layout.fields {
-            let (size, align) = resolve_type_extent(&field.ty, semantic, policy, &mut memo, &mut BTreeSet::new())?;
+            let (size, align) = type_extent(&field.ty, semantic, policy, &mut memo, &mut BTreeSet::new())?;
             offset = align_up(offset, align);
-            fields.push(FieldLayout { name: field.name.clone(), ty: field.ty.clone(), offset, size, align });
+            fields.push(ResolvedFieldLayout { name: field.name.clone(), ty: field.ty.clone(), offset, size, align });
             offset = offset.saturating_add(size);
         }
-        resolved.layouts.push(AggregateLayout {
+        layouts.push(ResolvedAggregateLayout {
             id: layout.id,
             name: layout.name.clone(),
             namespace: layout.namespace.clone(),
@@ -64,10 +118,15 @@ pub(crate) fn resolve_physical_layouts(semantic: &AggregateLayoutPlan, policy: L
             fields,
         });
     }
-    Ok(resolved)
+    Ok(ResolvedLayoutPlan {
+        layouts,
+        synthetic_layouts: semantic.synthetic_layouts.clone(),
+        declaration_to_layout: semantic.declaration_to_layout.clone(),
+        value_type_declarations: semantic.value_type_declarations.clone(),
+    })
 }
 
-fn resolve_layout_extent(
+fn layout_extent(
     id: LayoutId,
     semantic: &AggregateLayoutPlan,
     policy: LayoutPolicy,
@@ -77,31 +136,26 @@ fn resolve_layout_extent(
     if let Some(extent) = memo.get(&id) {
         return Ok(*extent);
     }
+    let layout =
+        semantic.layouts.iter().find(|candidate| candidate.id == id).ok_or_else(|| format!("物理布局解析缺少布局身份 `{id:?}` 的语义记录"))?;
+    // 引用存储的对象由目标用引用槽/句柄承载，不内联 body，也不参与值递归。
+    if layout.storage == StorageKind::Reference {
+        memo.insert(id, policy.reference_extent);
+        return Ok(policy.reference_extent);
+    }
     if !visiting.insert(id) {
         return Err(format!("聚合布局 `{id:?}` 的字段依赖形成环，无法计算目标物理尺寸"));
     }
-    let layout = semantic
-        .layouts
-        .iter()
-        .find(|candidate| candidate.id == id)
-        .ok_or_else(|| format!("物理布局解析缺少布局身份 `{id:?}` 的语义记录"))?;
-    // 零字段布局：值存储保留 1 字节最小载体；引用存储按引用槽。
-    // 这是目标表示选择，不是语言层事实。
+    // 零字段值类型保留 1 字节最小载体；这是目标表示选择，不是语言层事实。
     if layout.fields.is_empty() {
-        let extent = if layout.storage == nyar_types::StorageKind::Value {
-            (1, 1)
-        }
-        else {
-            (policy.reference_extent.0.max(1), policy.reference_extent.1.max(1))
-        };
         visiting.remove(&id);
-        memo.insert(id, extent);
-        return Ok(extent);
+        memo.insert(id, (1, 1));
+        return Ok((1, 1));
     }
     let mut offset = 0u32;
     let mut max_align = 1u32;
     for field in &layout.fields {
-        let (size, align) = resolve_type_extent(&field.ty, semantic, policy, memo, visiting)?;
+        let (size, align) = type_extent(&field.ty, semantic, policy, memo, visiting)?;
         offset = align_up(offset, align);
         offset = offset.saturating_add(size);
         max_align = max_align.max(align);
@@ -112,7 +166,7 @@ fn resolve_layout_extent(
     Ok(extent)
 }
 
-fn resolve_type_extent(
+fn type_extent(
     ty: &NyarType,
     semantic: &AggregateLayoutPlan,
     policy: LayoutPolicy,
@@ -121,22 +175,22 @@ fn resolve_type_extent(
 ) -> Result<(u32, u32), String> {
     match ty {
         NyarType::Nominal { layout, spelling, .. } => {
-            resolve_layout_extent(*layout, semantic, policy, memo, visiting).map_err(|reason| format!("名义字段 `{spelling}`: {reason}"))
+            layout_extent(*layout, semantic, policy, memo, visiting).map_err(|reason| format!("名义字段 `{spelling}`: {reason}"))
         }
         NyarType::Tuple(types) => {
             let key = LayoutKey::Tuple(types.clone());
             if let Some(layout) = semantic.synthetic_layouts.get(&key).copied() {
-                return resolve_layout_extent(layout, semantic, policy, memo, visiting);
+                return layout_extent(layout, semantic, policy, memo, visiting);
             }
-            inline_synthetic_extent(types, policy, |element| resolve_type_extent(element, semantic, policy, memo, visiting))
+            inline_synthetic_extent(types, policy, |element| type_extent(element, semantic, policy, memo, visiting))
         }
         NyarType::FixedArray { element, length } => {
             let key = LayoutKey::FixedArray { element: Box::new((**element).clone()), length: *length };
             if let Some(layout) = semantic.synthetic_layouts.get(&key).copied() {
-                return resolve_layout_extent(layout, semantic, policy, memo, visiting);
+                return layout_extent(layout, semantic, policy, memo, visiting);
             }
             inline_synthetic_extent(&vec![(**element).clone(); *length], policy, |element| {
-                resolve_type_extent(element, semantic, policy, memo, visiting)
+                type_extent(element, semantic, policy, memo, visiting)
             })
         }
         NyarType::Boolean
@@ -181,21 +235,16 @@ fn align_up(offset: u32, align: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nyar_types::{FieldLayout, LayoutId, NyarType};
+    use nyar_types::{AggregateLayout, FieldLayout};
 
-    fn semantic_layout(id: LayoutId, storage: nyar_types::StorageKind, fields: Vec<(&str, NyarType)>) -> AggregateLayout {
+    fn semantic_layout(id: LayoutId, storage: StorageKind, fields: Vec<(&str, NyarType)>) -> AggregateLayout {
         AggregateLayout {
             id,
             name: format!("L{id}"),
             namespace: String::new(),
             key: None,
             storage,
-            size: 0,
-            align: 1,
-            fields: fields
-                .into_iter()
-                .map(|(name, ty)| FieldLayout { name: name.to_string(), ty, offset: 0, size: 0, align: 1 })
-                .collect(),
+            fields: fields.into_iter().map(|(name, ty)| FieldLayout { name: name.to_string(), ty }).collect(),
         }
     }
 
@@ -205,17 +254,17 @@ mod tests {
 
     #[test]
     fn semantic_layout_becomes_target_physical_layout() {
-        let nested = semantic_layout(2, nyar_types::StorageKind::Value, vec![("a", NyarType::Integer64 { signed: true })]);
+        let nested = semantic_layout(2, StorageKind::Value, vec![("a", NyarType::Integer64 { signed: true })]);
         let outer = semantic_layout(
             1,
-            nyar_types::StorageKind::Value,
-            vec![("x", NyarType::Integer32 { signed: true }), ("nested", NyarType::Nominal {
-                layout: 2,
-                spelling: nyar_types::Identifier::new("Nested"),
-            })],
+            StorageKind::Value,
+            vec![
+                ("x", NyarType::Integer32 { signed: true }),
+                ("nested", NyarType::Nominal { layout: 2, spelling: nyar_types::Identifier::new("Nested") }),
+            ],
         );
         let resolved = resolve_physical_layouts(&plan(vec![nested, outer]), LayoutPolicy::WASM32).expect("physical layout");
-        let outer = resolved.layouts.iter().find(|layout| layout.id == 1).expect("outer");
+        let outer = resolved.layout(1).expect("outer");
         assert_eq!(outer.fields[0].offset, 0);
         assert_eq!(outer.fields[0].size, 4);
         // 嵌套值聚合按真实尺寸内联，不被固定引用槽宽度截断。
@@ -223,17 +272,33 @@ mod tests {
         assert_eq!(outer.size, 16);
     }
 
+    /// 引用存储的名义字段只占引用槽，不展开对象 body；直接自引用必须可解析。
+    #[test]
+    fn reference_storage_field_is_a_slot_not_inlined_body() {
+        let node = semantic_layout(
+            1,
+            StorageKind::Reference,
+            vec![
+                ("next", NyarType::Nominal { layout: 1, spelling: nyar_types::Identifier::new("Node") }),
+                ("value", NyarType::Integer64 { signed: true }),
+            ],
+        );
+        let resolved = resolve_physical_layouts(&plan(vec![node]), LayoutPolicy::WASM32).expect("自引用引用布局必须可解析");
+        let node = resolved.layout(1).expect("node");
+        assert_eq!(node.fields[0].size, 8, "引用字段占引用槽");
+        assert_eq!(node.size, 8);
+    }
+
     #[test]
     fn integer128_requires_explicit_target_split() {
-        let layout = semantic_layout(1, nyar_types::StorageKind::Value, vec![("wide", NyarType::Integer128 { signed: true })]);
+        let layout = semantic_layout(1, StorageKind::Value, vec![("wide", NyarType::Integer128 { signed: true })]);
         assert!(resolve_physical_layouts(&plan(vec![layout]), LayoutPolicy::WASM32).is_err());
     }
 
     #[test]
-    fn zero_field_semantic_identity_is_not_a_physical_claim() {
-        let layout = semantic_layout(1, nyar_types::StorageKind::Reference, Vec::new());
+    fn zero_field_value_identity_gets_minimal_target_carrier() {
+        let layout = semantic_layout(1, StorageKind::Value, Vec::new());
         let resolved = resolve_physical_layouts(&plan(vec![layout]), LayoutPolicy::WASM32).expect("physical layout");
-        assert_eq!(resolved.layouts[0].size, 8);
-        assert_eq!(resolved.layouts[0].align, 8);
+        assert_eq!(resolved.layout(1).expect("layout").size, 1);
     }
 }

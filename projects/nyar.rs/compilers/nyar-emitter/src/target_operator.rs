@@ -1,16 +1,12 @@
-//! 目标 operator 能力绑定的冻结合同。
+//! 目标 operator 能力绑定的**通用配方词汇**。
 //!
-//! `operator` 表示**目标后端能力**，不是语言前端层的 operator。一个 operator
-//! 绑定可以是一条目标指令、多条指令组合、参数重排或常量注入，未来也可以表达
-//! host call、ABI 转换或 allocation/runtime 操作；因此合同用配方
-//! （[`TargetOperatorRecipe`]）描述发射步骤，而不是假定「一条指令」。
+//! 这里只保留与具体 ISA 无关的机械步骤（arity、操作数/结果载体、发射配方）；
+//! 具体编码 `E` 由各 lane 自己的类型参数提供，本模块不得出现囊括多平台的
+//! tagged encoding 枚举。`operator` 表示**目标后端能力**，不是语言前端层的
+//! operator：一个绑定可以是一条指令、多条指令组合、参数重排或常量注入。
 //!
-//! 源码属性只在 [`TargetExecutionPlan`](crate::TargetExecutionPlan) 构造时解析一次，
-//! 助记符必须解析为完整的 arity、操作数发射配方、操作数/结果载体与编码，写入
-//! [`TargetOperatorPlan`]。backend 只编码这里已冻结的配方，不得再从助记符字符串
-//! 推断 arity、操作数改写或结果类型，也不得为未冻结的绑定补默认指令。
-
-use acorn_odin::OdinHeadCode;
+//! 助记符到配方的冻结发生在**各 lane 自己的入口**；共享计划只携带逻辑导入
+//! 链接，不携带任何平台的冻结结果。
 
 /// 目标标量载体。
 ///
@@ -62,30 +58,12 @@ pub enum TargetOperatorRecipe {
     Steps(&'static [TargetOperandStep]),
 }
 
-/// 已冻结的 operator 编码。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TargetOperatorEncoding {
-    /// WASM 标准叶子 opcode（由 `acorn-wasm` 拥有数值身份）。
-    Wasm(acorn_wasm::WasmOpcode),
-    /// OVM 头码。
-    Ovm(OdinHeadCode),
-    /// JVM 冻结码（算术码单指令展开；比较码由 JVM backend 展开为指令序列）。
-    Jvm(crate::lowering::backends::jvm::JvmOperatorCode),
-    /// CLR MSIL opcode（与数值载体无关，载体差异已冻结在配方中）。
-    Clr(crate::transitional::msil::MsilOpcode),
-    /// x86-64 冻结算子码（算术/位/比较；载体差异已冻结在配方中）。
-    ///
-    /// 编码按 ISA 冻结，不按「native」命名：`native` / `node` / `python` 只是同一
-    /// 规范目标四元组上的产物与宿主形态，指令编码由四元组的 `arch` 决定。
-    X86_64(crate::lowering::backends::native::x86_64::X86_64OperatorCode),
-}
-
 /// 一个已冻结的目标 operator 计划。
 ///
 /// 计划冻结调用点所需的全部物理事实：实参个数、操作数载体、结果载体、发射配方与
-/// 编码。backend 不得在此基础上再做任何推断或补全。
+/// 编码。`E` 是该 lane 自己的编码类型；backend 不得在此基础上再做任何推断或补全。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TargetOperatorPlan {
+pub struct TargetOperatorPlan<E> {
     /// 冻结的实参个数；编码前必须与调用实参个数一致。
     pub arity: usize,
     /// 实参的目标标量载体。
@@ -94,8 +72,94 @@ pub struct TargetOperatorPlan {
     pub result_type: TargetOperandType,
     /// 操作数发射配方。
     pub recipe: TargetOperatorRecipe,
-    /// operator 编码。
-    pub encoding: TargetOperatorEncoding,
+    /// operator 编码（lane 私有类型）。
+    pub encoding: E,
+}
+
+/// 声明签名里标量类型对应的目标载体。
+///
+/// 载体事实只由类型身份决定，与本模块无关；各 lane 的冻结入口共用这一判定，
+/// 避免每个后端重复实现同一形状规则。
+pub(crate) fn operand_carrier(ty: &nyar_types::NyarType) -> Option<TargetOperandType> {
+    match ty {
+        nyar_types::NyarType::Integer32 { .. } => Some(TargetOperandType::I32),
+        // `char`（u16 code unit）在这些 lane 的物理载体是 i32（ABI 层 `AbiCarrier::I32` 同构）；
+        // 等值/比较配方按零扩展后的码位判定，不引入截断语义。
+        nyar_types::NyarType::Character => Some(TargetOperandType::I32),
+        nyar_types::NyarType::Integer64 { .. } => Some(TargetOperandType::I64),
+        nyar_types::NyarType::Float32 => Some(TargetOperandType::F32),
+        nyar_types::NyarType::Float64 => Some(TargetOperandType::F64),
+        _ => None,
+    }
+}
+
+/// 返回槽的载体；布尔值在所有当前 lane 都占 `i32` 槽。
+pub(crate) fn result_carrier(ty: &nyar_types::NyarType) -> Option<TargetOperandType> {
+    match ty {
+        nyar_types::NyarType::Boolean => Some(TargetOperandType::I32),
+        _ => operand_carrier(ty),
+    }
+}
+
+/// 校验 lane 冻结的 operator 计划与导入声明签名一致。
+///
+/// 导入声明是 Compiler 已绑定的调用合同，冻结计划是目标 operator 的物理形状；
+/// 二者在 arity、操作数载体、结果槽载体或常量配方载体上不一致时，计划不成立。
+/// 本函数只做平台无关的形状核对，助记符仅用于诊断；具体冻结表由各 lane 拥有。
+pub(crate) fn validate_frozen_operator<E>(
+    mnemonic: &str,
+    instance: nyar_types::ItemInstanceId,
+    function: &str,
+    parameter_types: &[nyar_types::NyarType],
+    return_type: &nyar_types::NyarType,
+    plan: &TargetOperatorPlan<E>,
+) -> crate::Result<()> {
+    if parameter_types.len() != plan.arity {
+        return Err(format!(
+            "目标 operator 绑定 `{mnemonic}` 的声明 arity 与冻结计划不符: function={function} expected={} actual={} instance={instance:?}",
+            plan.arity,
+            parameter_types.len()
+        ));
+    }
+    for (index, ty) in parameter_types.iter().enumerate() {
+        let Some(carrier) = operand_carrier(ty)
+        else {
+            return Err(format!(
+                "目标 operator 绑定 `{mnemonic}` 的参数 {index} 类型没有目标载体: function={function} type={ty:?} instance={instance:?}"
+            ));
+        };
+        if carrier != plan.operand_type {
+            return Err(format!(
+                "目标 operator 绑定 `{mnemonic}` 的参数 {index} 操作数载体与冻结计划不符: function={function} expected={:?} actual={:?} instance={instance:?}",
+                plan.operand_type, carrier
+            ));
+        }
+    }
+    let Some(result) = result_carrier(return_type)
+    else {
+        return Err(format!(
+            "目标 operator 绑定 `{mnemonic}` 的返回类型没有结果槽载体: function={function} type={return_type:?} instance={instance:?}"
+        ));
+    };
+    if result != plan.result_type {
+        return Err(format!(
+            "目标 operator 绑定 `{mnemonic}` 的结果槽载体与冻结计划不符: function={function} expected={:?} actual={:?} instance={instance:?}",
+            plan.result_type, result
+        ));
+    }
+    if let TargetOperatorRecipe::Steps(steps) = plan.recipe {
+        for step in steps {
+            if let TargetOperandStep::IntegerConstant { operand_type, .. } = step {
+                if *operand_type != plan.operand_type {
+                    return Err(format!(
+                        "目标 operator 绑定 `{mnemonic}` 的常量配方载体与冻结操作数载体不符: function={function} expected={:?} actual={:?} instance={instance:?}",
+                        plan.operand_type, operand_type
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// wasm GC 数组目标 operator 的冻结操作。
@@ -124,15 +188,4 @@ pub struct WasmGcArrayOperatorPlan {
     pub arity: usize,
     /// 冻结的数组操作身份。
     pub operation: WasmGcArrayOperation,
-}
-
-/// 计划对目标 operator 绑定的冻结状态。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TargetOperatorBinding {
-    /// 已冻结完整 operator 计划。
-    Frozen(TargetOperatorPlan),
-    /// 已冻结 wasm GC 数组 operator 计划（多步编码，arraytype 编码期解析）。
-    FrozenWasmGcArray(WasmGcArrayOperatorPlan),
-    /// 声明了目标 operator 绑定，但该目标没有可编码配方；emit 必须结构化失败。
-    Unfrozen,
 }

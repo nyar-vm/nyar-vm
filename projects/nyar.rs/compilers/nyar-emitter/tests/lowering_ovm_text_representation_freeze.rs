@@ -34,14 +34,9 @@ fn utf8_layout() -> AggregateLayout {
         namespace: "std.text".to_string(),
         key: None,
         storage: StorageKind::Reference,
-        size: 0,
-        align: 1,
         fields: vec![FieldLayout {
             name: "_repr".to_string(),
             ty: NyarType::Array(Box::new(NyarType::Integer8 { signed: false })),
-            offset: 0,
-            size: 0,
-            align: 1,
         }],
     }
 }

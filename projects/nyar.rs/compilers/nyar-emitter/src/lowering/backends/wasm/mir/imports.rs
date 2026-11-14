@@ -8,12 +8,12 @@ use crate::{
         ExecutableConstant as MirConstant, ExecutableInstruction as MirInstruction, ExecutableInstructionKind as MirInstructionKind,
     },
     nyar_backend_wasi::WasiPreview,
-    target_operator::TargetOperatorBinding,
 };
 use acorn_wasm::{VALTYPE_I32, VALTYPE_I64};
 use nyar_types::{ItemInstanceId, NyarType};
 
 use super::{
+    WasmOperatorBinding, freeze_wasm_operator_binding,
     super::{
         super::{
             executable::ExecutableLoweringContext,
@@ -270,17 +270,21 @@ pub(super) fn build_callee_import_index(submission: &FragmentSubmission, imports
     callee_import_index
 }
 
-pub(super) fn build_callee_wasm_operator_index(submission: &FragmentSubmission) -> BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)> {
+pub(super) fn build_callee_wasm_operator_index(
+    submission: &FragmentSubmission,
+) -> crate::Result<BTreeMap<ItemInstanceId, (String, WasmOperatorBinding)>> {
     let mut callee_wasm_operator = BTreeMap::new();
     for (callee, import) in submission.backend_plan.imports() {
         let Some(mnemonic) = wasm_operator_target(&import.link)
         else {
             continue;
         };
-        let binding = import.target_operator.unwrap_or(TargetOperatorBinding::Unfrozen);
+        let symbol = submission.backend_plan.abi_name_for_instance(*callee).map(|name| name.to_string()).unwrap_or_default();
+        let binding = freeze_wasm_operator_binding(*callee, &symbol, mnemonic, &import.parameter_types, &import.return_type)?
+            .ok_or_else(|| format!("Wasm operator 绑定 `{mnemonic}` 缺少冻结结果: callee={callee:?}"))?;
         callee_wasm_operator.insert(*callee, (mnemonic.to_string(), binding));
     }
-    callee_wasm_operator
+    Ok(callee_wasm_operator)
 }
 
 pub(super) fn build_wasi_callee_import_index(
@@ -342,11 +346,11 @@ mod host_import_signature_tests {
                 link: ExternalImportLink::host(Some(Identifier::new("js_builtin")), vec!["fetch".into()]),
                 parameter_types: vec![NyarType::Integer32 { signed: true }, NyarType::Integer32 { signed: true }],
                 return_type: NyarType::Integer32 { signed: true },
-                target_operator: None,
             },
         );
         let submission = FragmentSubmission::from_backend_plan(plan);
-        let ctx = ExecutableLoweringContext::new(&submission);
+        let ctx = ExecutableLoweringContext::new(&submission, crate::lowering::shared::physical_layout::LayoutPolicy::WASM32)
+            .expect("测试提交的布局必须可解析");
         let signatures = host_import_signature_index(&submission);
         let type_bytes = wasm_import_type_bytes_for_host(&submission, &ctx, false, "env", "fetch", false, &signatures)
             .expect("js_builtin fetch must derive wasm signature from BackendImport");
@@ -368,11 +372,11 @@ mod host_import_signature_tests {
                 link: ExternalImportLink::host(Some(Identifier::new("js_builtin")), vec!["utf8_length".into()]),
                 parameter_types: vec![NyarType::Integer32 { signed: true }, NyarType::Integer32 { signed: true }],
                 return_type: NyarType::Integer64 { signed: true },
-                target_operator: None,
             },
         );
         let submission = FragmentSubmission::from_backend_plan(plan);
-        let ctx = ExecutableLoweringContext::new(&submission);
+        let ctx = ExecutableLoweringContext::new(&submission, crate::lowering::shared::physical_layout::LayoutPolicy::WASM32)
+            .expect("测试提交的布局必须可解析");
         let signatures = host_import_signature_index(&submission);
         assert!(signatures.contains_key(&("env".to_string(), "utf8_length".to_string())), "plan import 必须解析到 env::utf8_length");
         assert_eq!(

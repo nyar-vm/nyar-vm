@@ -85,8 +85,6 @@ fn semantic_field_contract_rejects_wrong_result_and_missing_owner_despite_layout
             namespace: String::new(),
             key: None,
             storage: rusty_valkyrie::compiler::mir::MirStorageKind::Reference,
-            size: 8,
-            align: 8,
             fields: Vec::new(),
         });
     }

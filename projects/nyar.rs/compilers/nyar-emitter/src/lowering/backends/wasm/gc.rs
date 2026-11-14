@@ -94,11 +94,9 @@ pub(crate) fn wasm_js_glue_value_carrier_valtype(ty: &NyarType) -> Option<u8> {
 /// 缺失分支是计划事实缺失：返回结构化错误并点名类型，不退回 i32。
 pub(crate) fn wasm_gc_field_type_byte(ty: &NyarType) -> crate::Result<u8> {
     wasm_gc_value_carrier_valtype(ty).ok_or_else(|| match ty {
-        NyarType::Utf16 => {
-            "WASM GC 字段/元素槽没有 `utf16` 的冻结载体：`utf16` 不得借用 `utf8` 的 i32 宿主句柄（句柄不携带编码身份），\
+        NyarType::Utf16 => "WASM GC 字段/元素槽没有 `utf16` 的冻结载体：`utf16` 不得借用 `utf8` 的 i32 宿主句柄（句柄不携带编码身份），\
              也不能默认落线性内存 i32；需要显式 UTF-16 文本 ABI 契约为该槽提供载体"
-                .to_string()
-        }
+            .to_string(),
         NyarType::Float32 => "WASM GC 字段/元素槽的 `f32` 载体映射缺失：必须返回 `VALTYPE_F32`（`0x7D`），\
             禁止拓宽到 `VALTYPE_F64` 或借用 i32 假载体"
             .to_string(),
@@ -112,20 +110,13 @@ mod tests {
 
     #[test]
     fn utf8_keeps_host_handle_carrier_but_utf16_has_no_frozen_carrier() {
-        assert_eq!(
-            wasm_gc_value_carrier_valtype(&NyarType::Utf8),
-            Some(VALTYPE_I32)
-        );
+        assert_eq!(wasm_gc_value_carrier_valtype(&NyarType::Utf8), Some(VALTYPE_I32));
         assert_eq!(wasm_gc_value_carrier_valtype(&NyarType::Utf16), None);
 
-        let error = wasm_gc_field_type_byte(&NyarType::Utf16)
-            .expect_err("`utf16` 字段/元素槽必须 fail-closed");
+        let error = wasm_gc_field_type_byte(&NyarType::Utf16).expect_err("`utf16` 字段/元素槽必须 fail-closed");
         assert!(error.contains("utf16"), "{error}");
         assert!(!error.contains("缺少类型分支"), "{error}");
-        assert_eq!(
-            wasm_gc_field_type_byte(&NyarType::Utf8).expect("`utf8` 载体未变"),
-            VALTYPE_I32
-        );
+        assert_eq!(wasm_gc_field_type_byte(&NyarType::Utf8).expect("`utf8` 载体未变"), VALTYPE_I32);
     }
 
     #[test]

@@ -31,6 +31,48 @@ pub struct NativeLoweredFragment {
     pub text_len: usize,
 }
 
+/// 适配器可以提交的原生文本 LIR 指令。
+///
+/// 这是语言/平台适配器复用 native 平台编码能力的公开入口：适配器保留自己的
+/// 语言语义与 residual，只把已决定的目标操作交给本 lane 的 LIR/编码器。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeTextInstruction {
+    /// `mov rax, imm64`：整数值进入返回值寄存器。
+    LoadI64(i64),
+    /// 函数返回（含帧还原）；返回值已在 `rax`。
+    Return,
+}
+
+/// 已编码的原生文本函数。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeTextFunction {
+    /// 文本节字节（含帧序言与返回尾声）。
+    pub text: Vec<u8>,
+    /// 直接调用重定位：字段偏移与目标实例身份。
+    pub relocations: Vec<(usize, nyar_types::ItemInstanceId)>,
+}
+
+/// 把适配器提交的文本 LIR 编码为原生函数字节。
+///
+/// 编码统一走 [`x64_lir::encode_x64_function`]：适配器不得自行拼接机器码，
+/// 重定位与帧序言/尾声由本 lane 负责。
+pub fn encode_native_text_function(instructions: &[NativeTextInstruction]) -> Result<NativeTextFunction> {
+    let mut lowered = Vec::with_capacity(instructions.len());
+    for instruction in instructions {
+        match instruction {
+            NativeTextInstruction::LoadI64(value) => {
+                lowered.push(x64_lir::X64Instruction::Load { register: x64_lir::X64Reg::Rax, source: x64_lir::X64Value::Immediate(*value) });
+            }
+            NativeTextInstruction::Return => lowered.push(x64_lir::X64Instruction::Return),
+        }
+    }
+    let function = x64_lir::X64Function { frame_bytes: 0, instructions: lowered };
+    let mut text = Vec::new();
+    let mut relocations = Vec::new();
+    x64_lir::encode_x64_function(&function, &mut text, &mut relocations)?;
+    Ok(NativeTextFunction { text, relocations })
+}
+
 /// 按解析后的规范目标四元组降低为原生镜像。
 ///
 /// 四元组是唯一分派依据；`TargetFamily::Native` 只说明产物形态，不能用来选编码、

@@ -80,11 +80,9 @@ fn array_list_layout() -> AggregateLayout {
         namespace: "core".to_string(),
         key: None,
         storage: StorageKind::Reference,
-        size: 16,
-        align: 8,
         fields: vec![
-            FieldLayout { name: "items".to_string(), ty: array_of_integer64(), offset: 0, size: 8, align: 8 },
-            FieldLayout { name: "length".to_string(), ty: INTEGER32, offset: 8, size: 4, align: 4 },
+            FieldLayout { name: "items".to_string(), ty: array_of_integer64() },
+            FieldLayout { name: "length".to_string(), ty: INTEGER32 },
         ],
     }
 }
@@ -103,7 +101,7 @@ fn lowers_array_list_construction_length_and_index_with_typed_elements() {
     fixture.value_types.insert(ValueRef(3), INTEGER64);
     fixture.blocks[0].instructions.push(instr(
         InstructionKind::ArrayFromElements {
-            layout_id: layout.id,
+            layout_id: None,
             array_type: array_of_integer64(),
             elements: vec![Operand::Constant(Constant::Int(1)), Operand::Constant(Constant::Int(2))],
         },
@@ -193,8 +191,6 @@ fn zero_field_reference_aggregate_copy_does_not_allocate() {
         namespace: "core".to_string(),
         key: None,
         storage: StorageKind::Reference,
-        size: 1,
-        align: 1,
         fields: Vec::new(),
     };
     let nominal_type = NyarType::Nominal { layout: layout.id, spelling: Identifier::new("Marker") };
@@ -237,7 +233,7 @@ fn integer128_array_element_is_rejected_structurally() {
     fixture.value_types.insert(ValueRef(0), array_type.clone());
     fixture.blocks[0].instructions.push(instr(
         InstructionKind::ArrayFromElements {
-            layout_id: 0,
+            layout_id: None,
             array_type,
             elements: vec![Operand::Constant(Constant::Int(1))],
         },

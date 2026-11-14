@@ -16,13 +16,13 @@ use acorn_odin::{
     OdinLayout, OdinModuleData,
 };
 use nyar::{ExternalImportLink, NamePath};
-use nyar_types::{AggregateLayout, ItemInstanceId, LayoutId, NominalInstanceId, VariantId};
+use nyar_types::{ItemInstanceId, LayoutId, NominalInstanceId, VariantId};
 
 use super::executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan};
 use crate::{
     FragmentSubmission, ProgramTextRepresentation, Result, TargetExecutionPlan,
     target_operator::{
-        TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
+        TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe,
     },
 };
 
@@ -72,7 +72,7 @@ const I32_NEGATE_STEPS: &[TargetOperandStep] =
 /// 只覆盖 `NyarHeadCode` 已有的 i32 算术/位运算/比较变体；i64、浮点没有对应
 /// 单指令，必须保持宿主导入路径（由 runtime `parse_host_op` 决定是否存在）。
 /// 映射在 `TargetExecutionPlan` 构造时写入计划；未知助记符返回 `None`，由计划
-/// 冻结为 `TargetOperatorBinding::Unfrozen`，emit 结构化失败，禁止回落到宿主导入
+/// 冻结为 `对应 lane 的 `Unfrozen` 绑定`，emit 结构化失败，禁止回落到宿主导入
 /// 或默认指令。
 ///
 /// 位模式重解释（`i64.reinterpret_f64` / `f64.reinterpret_i64`）登记为
@@ -88,7 +88,7 @@ const I32_NEGATE_STEPS: &[TargetOperandStep] =
 ///    `F64PromoteF32` 单步头码（RNE / 精确）；本表不冻结隐式拓宽。
 /// 3. **运算与位模式**：f32 算术/比较在单精度上做；`i32.reinterpret_f32` /
 ///    `f32.reinterpret_i32` 是 32 位 `i32` 载体的纯位搬运，NaN payload 23 位保位。
-pub(crate) fn freeze_ovm_operator_binding(mnemonic: &str) -> Option<TargetOperatorPlan> {
+pub(crate) fn freeze_ovm_operator_binding(mnemonic: &str) -> Option<TargetOperatorPlan<OdinHeadCode>> {
     // 跨载体助记符显式点名两侧载体；其余既有助记符两侧都是 i32。
     let (operand_type, result_type) = match mnemonic {
         "i64.reinterpret_f64" => (TargetOperandType::F64, TargetOperandType::I64),
@@ -143,7 +143,7 @@ pub(crate) fn freeze_ovm_operator_binding(mnemonic: &str) -> Option<TargetOperat
         "f32.eq" | "f32.lt" => TargetOperandType::I32,
         _ => result_type,
     };
-    Some(TargetOperatorPlan { arity, operand_type, result_type, recipe, encoding: TargetOperatorEncoding::Ovm(code) })
+    Some(TargetOperatorPlan { arity, operand_type, result_type, recipe, encoding: code })
 }
 
 struct BytecodeEmitter<'a> {
@@ -276,17 +276,24 @@ fn lower_fragment_mir_to_nyar_module_impl(
         .iter()
         .map(|(instance, import)| (*instance, import.parameter_types.clone()))
         .collect::<BTreeMap<ItemInstanceId, Vec<NyarType>>>();
-    // `[ovm_operator]` 绑定的冻结配方只从计划读取：助记符仅用于诊断，arity、操作数
-    // 改写与头码全部来自 `TargetExecutionPlan`。
-    let external_opcode_by_instance = submission
-        .backend_plan
-        .imports()
-        .iter()
-        .filter_map(|(instance, import)| {
-            let mnemonic = crate::lowering::shared::interop::ovm_operator_target(&import.link)?;
-            Some((*instance, (mnemonic.to_string(), import.target_operator.unwrap_or(TargetOperatorBinding::Unfrozen))))
-        })
-        .collect::<BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>>();
+    // `[ovm_operator]` 绑定在 OVM 自己的入口按计划导入链接冻结：助记符仅用于诊断，
+    // arity、操作数改写与头码全部来自 OvmOperatorBinding。
+    let external_opcode_by_instance = {
+        let mut operators = BTreeMap::new();
+        for (instance, import) in submission.backend_plan.imports() {
+            let Some(mnemonic) = crate::lowering::shared::interop::ovm_operator_target(&import.link)
+            else {
+                continue;
+            };
+            let symbol = submission.backend_plan.abi_name_for_instance(*instance).map(|name| name.to_string()).unwrap_or_default();
+            let Some(binding) = freeze_ovm_operator(&import.link, *instance, &symbol, &import.parameter_types, &import.return_type)?
+            else {
+                continue;
+            };
+            operators.insert(*instance, (mnemonic.to_string(), binding));
+        }
+        operators
+    };
 
     let export_names = nyar_export_name_map(submission);
     let mut function_index_by_instance = BTreeMap::<ItemInstanceId, i32>::new();
@@ -731,14 +738,14 @@ fn lower_mir_function_to_bytecode(
     param_layouts_by_function_index: &BTreeMap<i32, Vec<Option<LayoutId>>>,
     external_link_by_instance: &BTreeMap<ItemInstanceId, ExternalImportLink>,
     external_param_types_by_instance: &BTreeMap<ItemInstanceId, Vec<NyarType>>,
-    external_opcode_by_instance: &BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
+    external_opcode_by_instance: &BTreeMap<ItemInstanceId, (String, OvmOperatorBinding)>,
     sum_layout_index_by_nominal: &BTreeMap<NominalInstanceId, i32>,
     emitter: &mut BytecodeEmitter<'_>,
     layouts: &mut Vec<OdinLayout>,
     layout_index_by_id: &mut BTreeMap<LayoutId, i32>,
     layout_index_by_field_count: &mut BTreeMap<i32, i32>,
 ) -> crate::Result<()> {
-    let ctx = ExecutableLoweringContext::new_resolved(submission, crate::lowering::shared::physical_layout::LayoutPolicy::OVM)?;
+    let ctx = ExecutableLoweringContext::new(submission, crate::lowering::shared::physical_layout::LayoutPolicy::OVM)?;
     let slots = ExecutableSlotPlan::plan_nyar(mir_fn);
     let block_order = collect_reachable_blocks(mir_fn);
     let value_definitions = build_nyar_value_definitions(mir_fn, &slots);
@@ -790,7 +797,7 @@ struct NyarMirLowerer<'a, 'e> {
     param_layouts_by_function_index: &'a BTreeMap<i32, Vec<Option<LayoutId>>>,
     external_link_by_instance: &'a BTreeMap<ItemInstanceId, ExternalImportLink>,
     external_param_types_by_instance: &'a BTreeMap<ItemInstanceId, Vec<NyarType>>,
-    external_opcode_by_instance: &'a BTreeMap<ItemInstanceId, (String, TargetOperatorBinding)>,
+    external_opcode_by_instance: &'a BTreeMap<ItemInstanceId, (String, OvmOperatorBinding)>,
     sum_layout_index_by_nominal: &'a BTreeMap<NominalInstanceId, i32>,
     layouts: &'a mut Vec<OdinLayout>,
     layout_index_by_id: &'a mut BTreeMap<LayoutId, i32>,
@@ -1411,7 +1418,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         &mut self,
         link: &ExternalImportLink,
         instance: ItemInstanceId,
-        opcode: Option<&(String, TargetOperatorBinding)>,
+        opcode: Option<&(String, OvmOperatorBinding)>,
         arguments: &[MirOperand],
         output: Option<MirValueRef>,
     ) -> crate::Result<()> {
@@ -1423,20 +1430,14 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             .unwrap_or_else(|| format!("{instance:?}"));
 
         if let Some((mnemonic, binding)) = opcode {
-            let TargetOperatorBinding::Frozen(plan) = binding
+            let OvmOperatorBinding::Frozen(plan) = binding
             else {
                 return Err(format!(
                     "Nyar 目标 `ovm_operator` 绑定缺少可编码助记符 `{mnemonic}`: callee=`{callee_name}` function=`{}`",
                     self.mir_fn.symbol
                 ));
             };
-            let TargetOperatorEncoding::Ovm(code) = plan.encoding
-            else {
-                return Err(format!(
-                    "Nyar 目标 `ovm_operator` 绑定 `{mnemonic}` 冻结了非 OVM 编码: callee=`{callee_name}` function=`{}`",
-                    self.mir_fn.symbol
-                ));
-            };
+            let code = plan.encoding;
             if arguments.len() != plan.arity {
                 return Err(format!(
                     "Nyar 目标外部数值调用 `{callee_name}` 实参数量与 `{mnemonic}` 冻结 arity 不符: function=`{}` expected={} actual={}",
@@ -1637,7 +1638,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             .ok_or_else(|| format!("OVM 字段身份缺少布局槽位合同：field={field:?}"))
     }
 
-    fn ensure_nyar_layout(&mut self, aggregate: &AggregateLayout) -> i32 {
+    fn ensure_nyar_layout(&mut self, aggregate: &crate::lowering::shared::physical_layout::ResolvedAggregateLayout) -> i32 {
         if let Some(index) = self.layout_index_by_id.get(&aggregate.id) {
             return *index;
         }
@@ -1936,7 +1937,11 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     }
 
     /// 校验并登记文本布局：唯一冻结配方是单个 `[u8]` 字段槽，返回 OVM 布局下标。
-    fn ensure_text_repr_layout(&mut self, layout: &AggregateLayout, site: &str) -> crate::Result<i32> {
+    fn ensure_text_repr_layout(
+        &mut self,
+        layout: &crate::lowering::shared::physical_layout::ResolvedAggregateLayout,
+        site: &str,
+    ) -> crate::Result<i32> {
         let is_byte_slice = matches!(
             layout.fields.as_slice(),
             [field]
@@ -2240,4 +2245,33 @@ impl BytecodeEmitter<'_> {
         self.constants.push(OdinConstant::Null);
         self.emit_imm1(OdinHeadCode::Constant, index);
     }
+}
+
+/// OVM 平台私有的 operator 绑定。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OvmOperatorBinding {
+    /// 已冻结的 Odin 头码配方。
+    Frozen(TargetOperatorPlan<OdinHeadCode>),
+    /// 声明了 `[ovm_operator]`，但没有 OVM 可编码配方；emit 必须结构化失败。
+    Unfrozen,
+}
+
+/// 按声明的导入签名冻结 OVM operator 绑定。
+pub(crate) fn freeze_ovm_operator(
+    link: &nyar::ExternalImportLink,
+    instance: nyar_types::ItemInstanceId,
+    symbol: &str,
+    parameter_types: &[nyar_types::NyarType],
+    return_type: &nyar_types::NyarType,
+) -> crate::Result<Option<OvmOperatorBinding>> {
+    let Some(mnemonic) = crate::lowering::shared::interop::ovm_operator_target(link)
+    else {
+        return Ok(None);
+    };
+    let Some(plan) = freeze_ovm_operator_binding(mnemonic)
+    else {
+        return Ok(Some(OvmOperatorBinding::Unfrozen));
+    };
+    crate::target_operator::validate_frozen_operator(mnemonic, instance, symbol, parameter_types, return_type, &plan)?;
+    Ok(Some(OvmOperatorBinding::Frozen(plan)))
 }

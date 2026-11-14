@@ -62,9 +62,7 @@ class Holder {
         matches!(&field.ty, NyarType::Nominal { spelling, .. } if spelling.as_str() == "acme::i32"),
         "字段类型必须保留名义布局身份，而不是名字反推出的内建载体: {field:?}"
     );
-    assert_eq!((field.size, field.align), (0, 1), "语言层只登记语义布局，物理 extent 由目标解析: {field:?}");
     assert!(layout(&module, "i32").fields.is_empty(), "零字段值类型的语义布局没有字段");
-    assert_eq!((layout(&module, "i32").size, layout(&module, "i32").align), (0, 1), "语言层不携带零字段值类型的物理尺寸");
 }
 
 /// 标注漂移反例：声明名字是 `i32`，但 `primitive_identity` 是 `std::primitive::u64`。
@@ -108,7 +106,6 @@ fn primitive_identity_overrides_matching_struct_name() {
         NyarType::Integer64 { signed: false },
         "载体必须由 primitive_identity（u64）决定，而不是同名短名 i32: {field:?}"
     );
-    assert_eq!(field.size, 0, "语言层不决定字段字节宽度；载体身份由 primitive_identity 决定: {field:?}");
     assert!(diagnostics.is_empty(), "漂移是身份优先的合法声明，不应产出结构化诊断: {diagnostics:?}");
 }
 
@@ -129,7 +126,6 @@ class Holder {
     );
     let field = holder_field(&module);
     assert_eq!(field.ty, NyarType::Integer64 { signed: false }, "u64 身份必须映射到 u64 载体: {field:?}");
-    assert_eq!(field.size, 0, "语言层不决定字段字节宽度；u64 载体身份必须正确: {field:?}");
 }
 
 /// `usize`/`isize` 不是数值形状表身份：表里必须没有它们，宽度由 std 别名结算。
@@ -167,9 +163,7 @@ class Holder {
     let a = &layout.fields[0];
     let b = &layout.fields[1];
     assert_eq!(a.ty, NyarType::Integer64 { signed: false }, "64 位目标 usize 必须结算成 u64: {a:?}");
-    assert_eq!(a.size, 0, "语言层不决定字段字节宽度: {a:?}");
     assert_eq!(b.ty, NyarType::Integer64 { signed: true }, "64 位目标 isize 必须结算成 i64: {b:?}");
-    assert_eq!(b.size, 0, "语言层不决定字段字节宽度: {b:?}");
 }
 
 /// 无声明的数值短名不得借载体：`structure i32 { }` 没有 `[primitive]` 身份时，
@@ -205,7 +199,6 @@ fn identity_less_numeric_declaration_does_not_borrow_numeric_carrier() {
     let holder_layout = plan.layouts.iter().find(|layout| layout.name == "Holder").expect("Holder 布局");
     let field = &holder_layout.fields[0];
     assert!(matches!(field.ty, NyarType::Nominal { .. }), "无身份声明的数值短名不得经 spelling 桥取载体: {field:?}");
-    assert_eq!(field.size, 0, "零字段值类型的语义布局不携带目标物理尺寸: {field:?}");
 }
 
 /// 编码名桥仍然有效：`Utf8Text`（无 `[primitive]` 身份）仍按编码名映射到 `Utf8`。
@@ -228,7 +221,6 @@ class Holder {
     );
     let field = holder_field(&module);
     assert_eq!(field.ty, NyarType::Utf8, "编码名 `Utf8Text` 仍走编码桥: {field:?}");
-    assert_eq!(field.size, 0, "语言层不决定文本槽宽度；编码载体身份必须正确: {field:?}");
 }
 
 /// 反例（修前观测点）：伪造 `[primitive("std::primitive::usize")]` 声明不再得到 4 字节整数。
@@ -250,6 +242,5 @@ class Holder {
 "#,
     );
     let field = holder_field(&module);
-    assert_eq!(field.size, 0, "语言层不决定字段字节宽度；usize 伪造声明不得得到数值载体: {field:?}");
     assert_ne!(field.ty, NyarType::Integer32 { signed: true }, "usize 不得按拼写降成 i32: {field:?}");
 }

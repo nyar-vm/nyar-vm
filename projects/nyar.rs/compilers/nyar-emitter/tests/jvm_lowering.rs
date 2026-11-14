@@ -14,9 +14,7 @@ use nyar_emitter::{
     BackendImport, FragmentSubmission, TargetExecutionPlan,
     lowering::backends::jvm::JvmOperatorCode,
     nyar_backend_jvm::{JvmClassFile, JvmInstruction, JvmMethodDescriptor, JvmTypeDescriptor, decode_instructions},
-    target_operator::{
-        TargetOperandStep, TargetOperandType, TargetOperatorBinding, TargetOperatorEncoding, TargetOperatorPlan, TargetOperatorRecipe,
-    },
+    target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
     testing::{lower_fragment_to_jvm_class, lower_fragment_to_jvm_managed_surface},
 };
 use nyar_types::{
@@ -64,23 +62,79 @@ fn instr(kind: InstructionKind, results: Vec<ValueRef>) -> Instruction {
     instruction
 }
 
-fn operator_import(plan: TargetOperatorPlan) -> BackendImport {
-    BackendImport {
-        index: ImportIndex::from_index(0).expect("import index"),
-        link: ExternalImportLink::host(Some(Identifier::new("jvm-operator")), vec!["long.divide".to_string()]),
-        parameter_types: vec![LONG, LONG],
-        return_type: LONG,
-        target_operator: Some(TargetOperatorBinding::Frozen(plan)),
+/// JVM 编码对应的规范助记符：lane 冻结入口只从链接助记符派生配方。
+fn mnemonic_of(code: JvmOperatorCode) -> &'static str {
+    match code {
+        JvmOperatorCode::IntegerAdd => "integer.add",
+        JvmOperatorCode::IntegerSubtract => "integer.subtract",
+        JvmOperatorCode::IntegerMultiply => "integer.multiply",
+        JvmOperatorCode::IntegerDivide => "integer.divide",
+        JvmOperatorCode::IntegerRemainder => "integer.remainder",
+        JvmOperatorCode::IntegerNegate => "integer.negate",
+        JvmOperatorCode::IntegerBitAnd => "integer.and",
+        JvmOperatorCode::IntegerBitOr => "integer.or",
+        JvmOperatorCode::IntegerBitXor => "integer.xor",
+        JvmOperatorCode::IntegerShiftLeft => "integer.shift_left",
+        JvmOperatorCode::IntegerShiftRightUnsigned => "integer.shift_right_unsigned",
+        JvmOperatorCode::IntegerDivideUnsigned => "integer.divide_unsigned",
+        JvmOperatorCode::IntegerRemainderUnsigned => "integer.remainder_unsigned",
+        JvmOperatorCode::LongAdd => "long.add",
+        JvmOperatorCode::LongSubtract => "long.subtract",
+        JvmOperatorCode::LongMultiply => "long.multiply",
+        JvmOperatorCode::LongDivide => "long.divide",
+        JvmOperatorCode::LongRemainder => "long.remainder",
+        JvmOperatorCode::LongNegate => "long.negate",
+        JvmOperatorCode::LongBitAnd => "long.and",
+        JvmOperatorCode::LongBitOr => "long.or",
+        JvmOperatorCode::LongBitXor => "long.xor",
+        JvmOperatorCode::LongShiftLeft => "long.shift_left",
+        JvmOperatorCode::LongShiftRight => "long.shift_right",
+        JvmOperatorCode::LongShiftRightUnsigned => "long.shift_right_unsigned",
+        JvmOperatorCode::LongDivideUnsigned => "long.divide_unsigned",
+        JvmOperatorCode::LongRemainderUnsigned => "long.remainder_unsigned",
+        JvmOperatorCode::DoubleAdd => "double.add",
+        JvmOperatorCode::DoubleSubtract => "double.subtract",
+        JvmOperatorCode::DoubleMultiply => "double.multiply",
+        JvmOperatorCode::DoubleDivide => "double.divide",
+        JvmOperatorCode::IntegerCompareEqual => "integer.compare_equal",
+        JvmOperatorCode::IntegerCompareNotEqual => "integer.compare_not_equal",
+        JvmOperatorCode::IntegerCompareLessThan => "integer.compare_less_than",
+        JvmOperatorCode::IntegerCompareLessThanUnsigned => "integer.compare_less_than_unsigned",
+        JvmOperatorCode::IntegerCompareLessOrEqual => "integer.compare_less_or_equal",
+        JvmOperatorCode::IntegerCompareGreaterThan => "integer.compare_greater_than",
+        JvmOperatorCode::IntegerCompareGreaterOrEqual => "integer.compare_greater_or_equal",
+        JvmOperatorCode::LongCompareEqual => "long.compare_equal",
+        JvmOperatorCode::LongCompareNotEqual => "long.compare_not_equal",
+        JvmOperatorCode::LongCompareLessThan => "long.compare_less_than",
+        JvmOperatorCode::LongCompareLessThanUnsigned => "long.compare_less_than_unsigned",
+        JvmOperatorCode::LongCompareLessOrEqual => "long.compare_less_or_equal",
+        JvmOperatorCode::LongCompareGreaterThan => "long.compare_greater_than",
+        JvmOperatorCode::LongCompareGreaterOrEqual => "long.compare_greater_or_equal",
     }
 }
 
-fn operator_plan(code: JvmOperatorCode, operand_type: TargetOperandType, result_type: TargetOperandType) -> TargetOperatorPlan {
+fn operator_import(plan: TargetOperatorPlan<JvmOperatorCode>) -> BackendImport {
+    let return_type = match plan.result_type {
+        TargetOperandType::I32 => BOOLEAN,
+        TargetOperandType::I64 => LONG,
+        TargetOperandType::F32 => NyarType::Float32,
+        TargetOperandType::F64 => NyarType::Float64,
+    };
+    BackendImport {
+        index: ImportIndex::from_index(0).expect("import index"),
+        link: ExternalImportLink::host(Some(Identifier::new("jvm-operator")), vec![mnemonic_of(plan.encoding).to_string()]),
+        parameter_types: vec![LONG, LONG],
+        return_type,
+    }
+}
+
+fn operator_plan(code: JvmOperatorCode, operand_type: TargetOperandType, result_type: TargetOperandType) -> TargetOperatorPlan<JvmOperatorCode> {
     TargetOperatorPlan {
         arity: 2,
         operand_type,
         result_type,
         recipe: TargetOperatorRecipe::Operands,
-        encoding: TargetOperatorEncoding::Jvm(code),
+        encoding: code,
     }
 }
 
@@ -129,10 +183,9 @@ fn lower_i32_operator_call(name: &str, code: JvmOperatorCode) -> JvmClassFile {
         operator,
         BackendImport {
             index: ImportIndex::from_index(0).expect("import index"),
-            link: ExternalImportLink::host(Some(Identifier::new("jvm-operator")), vec!["integer.divide_unsigned".to_string()]),
+            link: ExternalImportLink::host(Some(Identifier::new("jvm-operator")), vec![mnemonic_of(code).to_string()]),
             parameter_types: vec![INTEGER, INTEGER],
             return_type: INTEGER,
-            target_operator: Some(TargetOperatorBinding::Frozen(operator_plan(code, TargetOperandType::I32, TargetOperandType::I32))),
         },
     );
     lower_fragment_to_jvm_class(&FragmentSubmission::from_backend_plan(plan)).expect("frozen operator must lower")
@@ -146,18 +199,18 @@ fn method_code<'a>(class_file: &'a JvmClassFile, name: &str) -> &'a [JvmInstruct
 /// `long` 移位的冻结配方：发射实参后先 `l2i` 截窄位移量，再执行 `lshl`/`lshr`。
 const LONG_SHIFT_STEPS: &[TargetOperandStep] = &[TargetOperandStep::Arguments, TargetOperandStep::NarrowTopI64ToI32];
 
-fn shift_operator_plan(code: JvmOperatorCode) -> TargetOperatorPlan {
+fn shift_operator_plan(code: JvmOperatorCode) -> TargetOperatorPlan<JvmOperatorCode> {
     TargetOperatorPlan {
         arity: 2,
         operand_type: TargetOperandType::I64,
         result_type: TargetOperandType::I64,
         recipe: TargetOperatorRecipe::Steps(LONG_SHIFT_STEPS),
-        encoding: TargetOperatorEncoding::Jvm(code),
+        encoding: code,
     }
 }
 
 /// 构造只调用一个任意冻结配方 operator 的导出函数（结果载体 `I64`），返回降低后的 class。
-fn lower_operator_call_with_plan(name: &str, operator: TargetOperatorPlan) -> JvmClassFile {
+fn lower_operator_call_with_plan(name: &str, operator: TargetOperatorPlan<JvmOperatorCode>) -> JvmClassFile {
     let instance = ItemInstanceId::from_index(1).expect("operator instance");
     let mut fixture = function("jvm.fixture", LONG, vec![LONG, LONG]);
     fixture.value_types.insert(ValueRef(2), LONG);
@@ -193,7 +246,7 @@ fn managed_launcher_for(
     export: &str,
     parameter_types: Vec<NyarType>,
     return_type: NyarType,
-    operator: TargetOperatorPlan,
+    operator: TargetOperatorPlan<JvmOperatorCode>,
     mnemonic: &str,
 ) -> String {
     let instance = ItemInstanceId::from_index(1).expect("operator instance");
@@ -215,7 +268,6 @@ fn managed_launcher_for(
             link: ExternalImportLink::host(Some(Identifier::new("jvm-operator")), vec![mnemonic.to_string()]),
             parameter_types,
             return_type,
-            target_operator: Some(TargetOperatorBinding::Frozen(operator)),
         },
     );
 
@@ -665,7 +717,7 @@ fn unfrozen_operator_binding_is_rejected_structurally() {
     plan.testing_module_name("jvm_lowering").testing_entry_operation(main);
     plan.testing_export_names_mut().insert(ItemInstanceId::from_index(0).expect("function instance"), "add".to_string());
     let mut import = operator_import(operator_plan(JvmOperatorCode::LongAdd, TargetOperandType::I64, TargetOperandType::I64));
-    import.target_operator = Some(TargetOperatorBinding::Unfrozen);
+    import.link = ExternalImportLink::host(Some(Identifier::new("jvm-operator")), vec!["long.not_a_jvm_mnemonic".to_string()]);
     plan.testing_register_import(operator, import);
 
     let error = lower_fragment_to_jvm_class(&FragmentSubmission::from_backend_plan(plan)).expect_err("unfrozen binding must fail");
@@ -730,11 +782,9 @@ fn option_char_layout() -> AggregateLayout {
         namespace: "core".to_string(),
         key: None,
         storage: StorageKind::Reference,
-        size: 8,
-        align: 4,
         fields: vec![
-            FieldLayout { name: "discriminant".to_string(), ty: NyarType::Integer32 { signed: false }, offset: 0, size: 4, align: 4 },
-            FieldLayout { name: "payload".to_string(), ty: NyarType::Character, offset: 4, size: 4, align: 4 },
+            FieldLayout { name: "discriminant".to_string(), ty: NyarType::Integer32 { signed: false } },
+            FieldLayout { name: "payload".to_string(), ty: NyarType::Character },
         ],
     }
 }
@@ -888,9 +938,7 @@ fn nested_value_layout_plan() -> AggregateLayoutPlan {
                 namespace: "demo".to_string(),
                 key: None,
                 storage: StorageKind::Value,
-                size: 4,
-                align: 4,
-                fields: vec![FieldLayout { name: "value".to_string(), ty: INTEGER, offset: 0, size: 4, align: 4 }],
+                fields: vec![FieldLayout { name: "value".to_string(), ty: INTEGER }],
             },
             AggregateLayout {
                 id: 1,
@@ -898,14 +946,9 @@ fn nested_value_layout_plan() -> AggregateLayoutPlan {
                 namespace: "demo".to_string(),
                 key: None,
                 storage: StorageKind::Value,
-                size: 4,
-                align: 4,
                 fields: vec![FieldLayout {
                     name: "inner".to_string(),
                     ty: NyarType::Nominal { layout: 0, spelling: Identifier::new("Inner") },
-                    offset: 0,
-                    size: 4,
-                    align: 4,
                 }],
             },
         ],
