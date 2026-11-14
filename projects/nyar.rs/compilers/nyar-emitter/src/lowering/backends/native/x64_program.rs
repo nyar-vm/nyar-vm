@@ -181,6 +181,31 @@ pub fn encode_native_text_program_with_imports(
                     // `mov qword ptr [rsp + disp8], 0`。
                     text.extend_from_slice(&[0x48, 0xC7, 0x44, 0x24, displacement, 0, 0, 0, 0]);
                 }
+                NativeTextInstruction::LoadSlotAddress(slot) => {
+                    // `lea rax, [rbp + disp32]`。
+                    text.extend_from_slice(&[0x48, 0x8D, 0x85]);
+                    text.extend_from_slice(&frame_disp(*slot).to_le_bytes());
+                }
+                NativeTextInstruction::AddRaxImmediate(value) => {
+                    text.extend_from_slice(&[0x48, 0x81, 0xC0]);
+                    text.extend_from_slice(&value.to_le_bytes());
+                }
+                NativeTextInstruction::SubRaxImmediate(value) => {
+                    text.extend_from_slice(&[0x48, 0x81, 0xE8]);
+                    text.extend_from_slice(&value.to_le_bytes());
+                }
+                NativeTextInstruction::NegateRax => text.extend_from_slice(&[0x48, 0xF7, 0xD8]),
+                NativeTextInstruction::DivideByTen => {
+                    // `xor rdx, rdx; mov rcx, 10; div rcx`。
+                    text.extend_from_slice(&[0x48, 0x31, 0xD2, 0x48, 0xB9]);
+                    text.extend_from_slice(&10u64.to_le_bytes());
+                    text.extend_from_slice(&[0x48, 0xF7, 0xF1]);
+                }
+                NativeTextInstruction::AddRdxImmediate(value) => {
+                    text.extend_from_slice(&[0x48, 0x81, 0xC2]);
+                    text.extend_from_slice(&value.to_le_bytes());
+                }
+                NativeTextInstruction::StoreByteAtRaxFromRdx => text.extend_from_slice(&[0x88, 0x10]),
                 NativeTextInstruction::CallImport { module, field } => {
                     let slot = *table
                         .slot_offsets

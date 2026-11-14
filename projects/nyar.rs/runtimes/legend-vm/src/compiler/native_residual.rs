@@ -842,8 +842,9 @@ enum ProductValueKind {
 /// 产品载体：整数、布尔与**静态字符串描述符**（镜像内只读 `{rel_ptr,len}` + UTF-8，
 /// 由宿主读取、永不释放）。含 `print` 的模块额外声明一个隐藏的首个整数形参作为
 /// effect 通道（宿主提供的可写句柄），`print` 经 `kernel32!WriteFile` 按 guest
-/// 顺序写字节，目前只接受静态字符串实参。对象、运行时解析调用、除法、字符串
-/// 比较/拼接与字符串作为实参都显式失败闭合，不在产品路径里静默吞掉语义。
+/// 顺序写字节；字符串走静态描述符，整数走十进制格式化（负数带 `-`），布尔写
+/// `true`/`false`，`nil` 写空串。对象、运行时解析调用、除法、字符串比较/拼接
+/// 与字符串作为实参都显式失败闭合，不在产品路径里静默吞掉语义。
 pub fn lower_native_residual_to_program(module: &NativeResidualModule) -> Result<NativeTextProgramImage, String> {
     if !module.is_native_bound() {
         return Err("residual is not native-bound".into());
@@ -976,15 +977,20 @@ impl<'a> ResidualFunctionLowering<'a> {
 
     /// 通过 effect 通道写入一段静态字节（`WriteFile(handle, ptr, len, 0, 0)`）。
     fn write_static(&mut self, text: &str) -> Result<(), String> {
-        let handle = self.effect_sink.ok_or_else(|| {
-            format!("residual function `{}` writes effects without an effect sink", self.function.name)
-        })?;
         self.instructions.push(NativeTextInstruction::LoadStringPtr(text.to_string()));
         let pointer = self.alloc_slot();
         self.instructions.push(NativeTextInstruction::StoreSlot(pointer));
         self.instructions.push(NativeTextInstruction::LoadStringLen(text.to_string()));
         let length = self.alloc_slot();
         self.instructions.push(NativeTextInstruction::StoreSlot(length));
+        self.write_bytes(pointer, length)
+    }
+
+    /// 用 `(pointer, length)` 两个帧槽调用宿主 effect 写入。
+    fn write_bytes(&mut self, pointer: u16, length: u16) -> Result<(), String> {
+        let handle = self.effect_sink.ok_or_else(|| {
+            format!("residual function `{}` writes effects without an effect sink", self.function.name)
+        })?;
         self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: handle, index: 0 });
         self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: pointer, index: 1 });
         self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: length, index: 2 });
@@ -997,6 +1003,121 @@ impl<'a> ResidualFunctionLowering<'a> {
             module: "kernel32".to_string(),
             field: "WriteFile".to_string(),
         });
+        Ok(())
+    }
+
+    fn store_immediate(&mut self, value: i64) -> u16 {
+        self.instructions.push(NativeTextInstruction::LoadI64(value));
+        let slot = self.alloc_slot();
+        self.instructions.push(NativeTextInstruction::StoreSlot(slot));
+        slot
+    }
+
+    /// 把整数槽按 guest 十进制格式写入 effect 通道（负数带 `-`）。
+    fn write_integer(&mut self, value_slot: u16) -> Result<(), String> {
+        let zero = self.store_immediate(0);
+        let nonzero = self.fresh_label();
+        let positive = self.fresh_label();
+        let done = self.fresh_label();
+        // `value == 0` 直接写 "0"。
+        self.instructions.push(NativeTextInstruction::LoadSlot(value_slot));
+        self.instructions.push(NativeTextInstruction::LoadSlotToRcx(zero));
+        self.instructions.push(NativeTextInstruction::Eq);
+        self.instructions.push(NativeTextInstruction::JumpIfZero(nonzero));
+        self.write_static("0")?;
+        self.instructions.push(NativeTextInstruction::Jump(done));
+        self.instructions.push(NativeTextInstruction::Label(nonzero));
+        // 负数：写 `-` 并取绝对值。
+        self.instructions.push(NativeTextInstruction::LoadSlot(value_slot));
+        self.instructions.push(NativeTextInstruction::LoadSlotToRcx(zero));
+        self.instructions.push(NativeTextInstruction::Lt);
+        self.instructions.push(NativeTextInstruction::JumpIfZero(positive));
+        self.write_static("-")?;
+        self.instructions.push(NativeTextInstruction::LoadSlot(value_slot));
+        self.instructions.push(NativeTextInstruction::NegateRax);
+        self.instructions.push(NativeTextInstruction::StoreSlot(value_slot));
+        self.instructions.push(NativeTextInstruction::Label(positive));
+
+        // 统计位数；用副本避免破坏原值。
+        let digits_left = self.alloc_slot();
+        self.instructions.push(NativeTextInstruction::LoadSlot(value_slot));
+        self.instructions.push(NativeTextInstruction::StoreSlot(digits_left));
+        let count = self.store_immediate(0);
+        let count_loop = self.fresh_label();
+        let count_done = self.fresh_label();
+        self.instructions.push(NativeTextInstruction::Label(count_loop));
+        self.instructions.push(NativeTextInstruction::LoadSlot(digits_left));
+        self.instructions.push(NativeTextInstruction::DivideByTen);
+        self.instructions.push(NativeTextInstruction::StoreSlot(digits_left));
+        self.instructions.push(NativeTextInstruction::LoadSlot(count));
+        self.instructions.push(NativeTextInstruction::AddRaxImmediate(1));
+        self.instructions.push(NativeTextInstruction::StoreSlot(count));
+        self.instructions.push(NativeTextInstruction::LoadSlot(digits_left));
+        self.instructions.push(NativeTextInstruction::JumpIfZero(count_done));
+        self.instructions.push(NativeTextInstruction::Jump(count_loop));
+        self.instructions.push(NativeTextInstruction::Label(count_done));
+
+        // 24 字节连续缓冲区：槽 b0/b1/b2 覆盖 [b2 基址, b0 基址)。
+        let _b0 = self.alloc_slot();
+        let _b1 = self.alloc_slot();
+        let buffer_start = self.alloc_slot();
+        let length = self.alloc_slot();
+        self.instructions.push(NativeTextInstruction::LoadSlot(count));
+        self.instructions.push(NativeTextInstruction::StoreSlot(length));
+        let pointer = self.alloc_slot();
+        // pointer = buffer_start + (count - 1)
+        self.instructions.push(NativeTextInstruction::LoadSlot(count));
+        self.instructions.push(NativeTextInstruction::SubRaxImmediate(1));
+        let offset = self.alloc_slot();
+        self.instructions.push(NativeTextInstruction::StoreSlot(offset));
+        self.instructions.push(NativeTextInstruction::LoadSlotAddress(buffer_start));
+        self.instructions.push(NativeTextInstruction::LoadSlotToRcx(offset));
+        self.instructions.push(NativeTextInstruction::Add);
+        self.instructions.push(NativeTextInstruction::StoreSlot(pointer));
+
+        // 从低位到高位，逐字节倒着填入缓冲区。
+        let remaining = self.alloc_slot();
+        self.instructions.push(NativeTextInstruction::LoadSlot(value_slot));
+        self.instructions.push(NativeTextInstruction::StoreSlot(remaining));
+        let write_loop = self.fresh_label();
+        let write_done = self.fresh_label();
+        self.instructions.push(NativeTextInstruction::Label(write_loop));
+        self.instructions.push(NativeTextInstruction::LoadSlot(remaining));
+        self.instructions.push(NativeTextInstruction::DivideByTen);
+        self.instructions.push(NativeTextInstruction::StoreSlot(remaining));
+        self.instructions.push(NativeTextInstruction::AddRdxImmediate(i32::from(b'0')));
+        self.instructions.push(NativeTextInstruction::LoadSlot(pointer));
+        self.instructions.push(NativeTextInstruction::StoreByteAtRaxFromRdx);
+        self.instructions.push(NativeTextInstruction::LoadSlot(pointer));
+        self.instructions.push(NativeTextInstruction::SubRaxImmediate(1));
+        self.instructions.push(NativeTextInstruction::StoreSlot(pointer));
+        self.instructions.push(NativeTextInstruction::LoadSlot(count));
+        self.instructions.push(NativeTextInstruction::SubRaxImmediate(1));
+        self.instructions.push(NativeTextInstruction::StoreSlot(count));
+        self.instructions.push(NativeTextInstruction::LoadSlot(count));
+        self.instructions.push(NativeTextInstruction::JumpIfZero(write_done));
+        self.instructions.push(NativeTextInstruction::Jump(write_loop));
+        self.instructions.push(NativeTextInstruction::Label(write_done));
+
+        self.instructions.push(NativeTextInstruction::LoadSlotAddress(buffer_start));
+        let base = self.alloc_slot();
+        self.instructions.push(NativeTextInstruction::StoreSlot(base));
+        self.write_bytes(base, length)?;
+        self.instructions.push(NativeTextInstruction::Label(done));
+        Ok(())
+    }
+
+    /// 布尔按 guest 显示写 `true` / `false`。
+    fn write_boolean(&mut self, value_slot: u16) -> Result<(), String> {
+        let false_label = self.fresh_label();
+        let done = self.fresh_label();
+        self.instructions.push(NativeTextInstruction::LoadSlot(value_slot));
+        self.instructions.push(NativeTextInstruction::JumpIfZero(false_label));
+        self.write_static("true")?;
+        self.instructions.push(NativeTextInstruction::Jump(done));
+        self.instructions.push(NativeTextInstruction::Label(false_label));
+        self.write_static("false")?;
+        self.instructions.push(NativeTextInstruction::Label(done));
         Ok(())
     }
 }
@@ -1231,18 +1352,17 @@ fn lower_residual_function(
                 }
                 // 栈顶是最后一个实参；恢复从左到右的可观察顺序。
                 arguments.reverse();
-                for (index, (_, kind)) in arguments.iter().enumerate() {
-                    let ProductValueKind::Str(text) = kind
-                    else {
-                        return Err(format!(
-                            "residual function `{}` prints a non-static-string value; integer formatting is not implemented at the product boundary",
-                            function.name
-                        ));
-                    };
+                for (index, (slot, kind)) in arguments.iter().enumerate() {
                     if index > 0 {
                         lowering.write_static("\t")?;
                     }
-                    lowering.write_static(text)?;
+                    match kind {
+                        ProductValueKind::Str(text) => lowering.write_static(text)?,
+                        ProductValueKind::Int => lowering.write_integer(*slot)?,
+                        ProductValueKind::Bool => lowering.write_boolean(*slot)?,
+                        // guest 把 `nil` 显示为空串。
+                        ProductValueKind::Nil => {}
+                    }
                 }
                 lowering.write_static("\n")?;
                 if let Some((slot, kind)) = arguments.last() {

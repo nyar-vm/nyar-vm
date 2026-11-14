@@ -113,6 +113,20 @@ pub enum NativeTextInstruction {
     ///
     /// 用于第 5 个及以后的整数实参（前 4 个走 rcx/rdx/r8/r9）。
     ZeroStackArg(u8),
+    /// `lea rax, [rbp - 8*(slot+1)]`：取帧槽地址（例如字节缓冲区起点）。
+    LoadSlotAddress(u16),
+    /// `add rax, imm32`。
+    AddRaxImmediate(i32),
+    /// `sub rax, imm32`。
+    SubRaxImmediate(i32),
+    /// `neg rax`。
+    NegateRax,
+    /// `rax = rax / 10`，余数进入 `rdx`（无符号除法；调用方保证非负）。
+    DivideByTen,
+    /// `add rdx, imm32`（例如把余数转成 ASCII）。
+    AddRdxImmediate(i32),
+    /// `mov [rax], dl`：把 `rdx` 的低字节写入 `rax` 指向的缓冲区。
+    StoreByteAtRaxFromRdx,
 }
 
 /// 多函数文本程序中的一个函数。

@@ -537,10 +537,33 @@ mod exported_abi {
     }
 
     #[test]
+    fn exported_residual_formats_numbers_booleans_and_nil() {
+        let dir = std::env::temp_dir().join(format!("legend-residual-format-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("out.txt");
+
+        let runner = legend_vm::LegendVmRunner::new();
+        let source = "print(42)\nprint(-7, true, false)\nprint()\nprint(nil)\nreturn 0\n";
+        let residual = runner.specialize_native("lua", source, "lua_pe").expect("specialize");
+        let dll = emit_native_pe_library(&residual).expect("emit residual dll");
+        let library = load(&dll, "format");
+        {
+            let file = std::fs::File::create(&path).expect("create capture file");
+            let handle = std::os::windows::io::AsRawHandle::as_raw_handle(&file) as i64;
+            let _ = call(library.module, "main", &[handle]);
+        }
+        let observed = std::fs::read_to_string(&path).expect("read captured effects");
+        assert_eq!(observed, "42\n-7\ttrue\tfalse\n\n\n", "guest formatting must match the interpreter");
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
     fn exported_residual_fails_closed_for_unsupported_effects_and_objects() {
         let runner = legend_vm::LegendVmRunner::new();
         for (source, needle) in [
-            ("print(1)\nreturn 0\n", "non-static-string"),
+            ("function f()\n  print(\"x\")\nend\nf()\nreturn 0\n", "only implemented for `main`"),
             ("local t = { 1 }\nreturn t[1]\n", "TableNew"),
             ("return x / y\n", "Div"),
             ("return x .. \"s\"\n", "Concat"),
