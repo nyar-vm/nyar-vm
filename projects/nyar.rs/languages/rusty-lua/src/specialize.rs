@@ -3,7 +3,7 @@
 //! Residualizes the same match arms as [`super::interpret`] into a [`ResidualSink`],
 //! rather than a hand-written divergent Lua compiler.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use crate::script::{LuaExpr, LuaLValue, LuaScript, LuaStmt};
 
@@ -29,6 +29,30 @@ pub fn specialize_lua_script(script: &LuaScript, sink: &mut dyn ResidualSink) ->
         }
     }
 
+    // 残化函数只绑定自身形参；guest 解释器按调用时的动态作用域读取外层变量。
+    // 两者对自由变量的语义不同，必须在特化期失败闭合，不能静默读成 `nil`。
+    for (name, (params, body)) in &functions {
+        let mut bound: BTreeSet<String> = params.iter().cloned().collect();
+        let mut free = Vec::new();
+        let mut seen = BTreeSet::new();
+        scan_free_block(body, &functions, &mut bound, &mut free, &mut seen);
+        if let Some(variable) = free.first() {
+            return sink.unsupported(&format!(
+                "free variable `{variable}` in function `{name}` (guest functions read outer bindings dynamically)"
+            ));
+        }
+    }
+
+    // 顶层自由变量是编译时未知输入：解释器把它们当作初始环境，残差的 `main`
+    // 必须以同名形参接收，而不是折叠成常量或静默读成 `nil`。
+    let main_inputs = {
+        let mut bound = BTreeSet::new();
+        let mut free = Vec::new();
+        let mut seen = BTreeSet::new();
+        scan_free_block(&top_level, &functions, &mut bound, &mut free, &mut seen);
+        free
+    };
+
     for (name, (params, body)) in &functions {
         sink.begin_function(name);
         for param in params {
@@ -41,6 +65,9 @@ pub fn specialize_lua_script(script: &LuaScript, sink: &mut dyn ResidualSink) ->
     }
 
     sink.begin_function("main");
+    for input in &main_inputs {
+        sink.add_parameter(input);
+    }
     sink.push_nil();
     sink.store("__pe_last");
     residualize_block(&top_level, sink, &functions, None)?;
@@ -48,6 +75,138 @@ pub fn specialize_lua_script(script: &LuaScript, sink: &mut dyn ResidualSink) ->
     sink.ret();
     sink.end_function();
     Ok(())
+}
+
+/// 按首次读取顺序收集一段残化代码里的自由变量。
+///
+/// `bound` 是当前可见的绑定集合（形参、`local`、先前赋值）；扫描会就地扩展它。
+/// 该扫描只描述绑定关系，不特化操作——真正拒绝未知构造仍由
+/// [`residualize_stmt`] / [`residualize_expr`] 决定。
+fn scan_free_block(
+    statements: &[LuaStmt],
+    functions: &HashMap<String, (Vec<String>, Vec<LuaStmt>)>,
+    bound: &mut BTreeSet<String>,
+    free: &mut Vec<String>,
+    seen: &mut BTreeSet<String>,
+) {
+    for stmt in statements {
+        scan_free_stmt(stmt, functions, bound, free, seen);
+    }
+}
+
+fn note_free(free: &mut Vec<String>, seen: &mut BTreeSet<String>, bound: &BTreeSet<String>, name: &str) {
+    if bound.contains(name) || !seen.insert(name.to_string()) {
+        return;
+    }
+    free.push(name.to_string());
+}
+
+fn scan_free_stmt(
+    stmt: &LuaStmt,
+    functions: &HashMap<String, (Vec<String>, Vec<LuaStmt>)>,
+    bound: &mut BTreeSet<String>,
+    free: &mut Vec<String>,
+    seen: &mut BTreeSet<String>,
+) {
+    match stmt {
+        LuaStmt::LocalDecl { names, values } => {
+            for value in values {
+                scan_free_expr(value, functions, bound, free, seen);
+            }
+            for name in names {
+                bound.insert(name.clone());
+            }
+        }
+        LuaStmt::Assign { targets, values } => {
+            for value in values {
+                scan_free_expr(value, functions, bound, free, seen);
+            }
+            for target in targets {
+                match target {
+                    LuaLValue::Name(name) => {
+                        bound.insert(name.clone());
+                    }
+                    LuaLValue::Field { table, .. } | LuaLValue::Index { table, .. } => {
+                        scan_free_expr(table, functions, bound, free, seen);
+                    }
+                }
+            }
+        }
+        LuaStmt::If { condition, then_block, else_block } => {
+            scan_free_expr(condition, functions, bound, free, seen);
+            // 分支内声明不泄漏到分支外。
+            scan_free_block(then_block, functions, &mut bound.clone(), free, seen);
+            scan_free_block(else_block, functions, &mut bound.clone(), free, seen);
+        }
+        LuaStmt::While { condition, body } => {
+            scan_free_expr(condition, functions, bound, free, seen);
+            scan_free_block(body, functions, &mut bound.clone(), free, seen);
+        }
+        LuaStmt::Repeat { body, condition } => {
+            scan_free_block(body, functions, &mut bound.clone(), free, seen);
+            scan_free_expr(condition, functions, bound, free, seen);
+        }
+        LuaStmt::ForNumeric { name, start, limit, step, body } => {
+            scan_free_expr(start, functions, bound, free, seen);
+            scan_free_expr(limit, functions, bound, free, seen);
+            if let Some(step) = step {
+                scan_free_expr(step, functions, bound, free, seen);
+            }
+            let mut inner = bound.clone();
+            inner.insert(name.clone());
+            scan_free_block(body, functions, &mut inner, free, seen);
+        }
+        LuaStmt::Return(value) => {
+            if let Some(expr) = value {
+                scan_free_expr(expr, functions, bound, free, seen);
+            }
+        }
+        LuaStmt::ExprStmt(expr) => scan_free_expr(expr, functions, bound, free, seen),
+        LuaStmt::Break | LuaStmt::FunctionDef { .. } => {}
+        LuaStmt::Block(statements) => scan_free_block(statements, functions, &mut bound.clone(), free, seen),
+    }
+}
+
+fn scan_free_expr(
+    expr: &LuaExpr,
+    functions: &HashMap<String, (Vec<String>, Vec<LuaStmt>)>,
+    bound: &BTreeSet<String>,
+    free: &mut Vec<String>,
+    seen: &mut BTreeSet<String>,
+) {
+    match expr {
+        LuaExpr::Number(_) | LuaExpr::String(_) | LuaExpr::Bool(_) | LuaExpr::Nil => {}
+        LuaExpr::Ident(name) => note_free(free, seen, bound, name),
+        LuaExpr::Table { fields } => {
+            for field in fields {
+                use crate::script::LuaTableField;
+                match field {
+                    LuaTableField::Array(value) => scan_free_expr(value, functions, bound, free, seen),
+                    LuaTableField::Record { value, .. } => scan_free_expr(value, functions, bound, free, seen),
+                    LuaTableField::Indexed { key, value } => {
+                        scan_free_expr(key, functions, bound, free, seen);
+                        scan_free_expr(value, functions, bound, free, seen);
+                    }
+                }
+            }
+        }
+        LuaExpr::Index { table, key } => {
+            scan_free_expr(table, functions, bound, free, seen);
+            scan_free_expr(key, functions, bound, free, seen);
+        }
+        LuaExpr::Field { table, .. } => scan_free_expr(table, functions, bound, free, seen),
+        LuaExpr::Binary { left, right, .. } => {
+            scan_free_expr(left, functions, bound, free, seen);
+            scan_free_expr(right, functions, bound, free, seen);
+        }
+        LuaExpr::Unary { operand, .. } => scan_free_expr(operand, functions, bound, free, seen),
+        // 被调用名不是值读取：残化按函数表/`print` 分派，未知调用由残化本身拒绝。
+        LuaExpr::Call { args, .. } => {
+            for arg in args {
+                scan_free_expr(arg, functions, bound, free, seen);
+            }
+        }
+    }
 }
 
 fn residualize_block(

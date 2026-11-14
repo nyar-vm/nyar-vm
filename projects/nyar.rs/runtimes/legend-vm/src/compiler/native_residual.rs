@@ -351,11 +351,23 @@ impl ResidualValue {
 ///
 /// 该解释器是残差语义的**诊断/对照**工具，不是产品路径：编译期 lowering 只允许
 /// 在残差已证明无副作用时折叠常量，并且受步数预算约束，不能把原程序完整执行后
-/// 丢掉 effect。
+/// 丢掉 effect。`main` 的形参是编译时未知输入，由调用方按名提供。
 pub fn eval_native_residual(module: &NativeResidualModule) -> Result<ResidualValue, String> {
+    eval_native_residual_with_inputs(module, &HashMap::new())
+}
+
+/// 以显式未知输入求值残差 `main`；缺省输入为 `nil`，与 guest 解释器读取
+/// 未绑定环境变量的语义一致。
+pub fn eval_native_residual_with_inputs(
+    module: &NativeResidualModule,
+    inputs: &HashMap<String, ResidualValue>,
+) -> Result<ResidualValue, String> {
+    let main = module.function("main").ok_or_else(|| "native residual has no `main` function".to_string())?;
+    let args: Vec<ResidualValue> =
+        main.parameters.iter().map(|parameter| inputs.get(parameter).cloned().unwrap_or(ResidualValue::Nil)).collect();
     let mut frames = Vec::new();
     let mut steps = 0usize;
-    call_function(module, "main", Vec::new(), &mut frames, &mut steps)
+    call_function(module, "main", args, &mut frames, &mut steps)
 }
 
 /// 编译期常量折叠的执行步数上限；防止残差中的无限循环把编译器挂死。
@@ -529,6 +541,15 @@ fn display_value(value: &ResidualValue) -> String {
 pub fn lower_native_residual_to_x64(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
     if !module.is_native_bound() {
         return Err("residual is not native-bound".into());
+    }
+    // 编译时未知输入无法常量折叠：参数化残差必须走真实代码生成，该 lowering
+    // 尚未接入，禁止用任何固定答案或空函数体冒充产品。
+    let main = module.function("main").ok_or_else(|| "native residual has no `main` function".to_string())?;
+    if !main.parameters.is_empty() {
+        return Err(format!(
+            "native x64 lowering for parameterized residuals is not implemented (unknown inputs: `{}`)",
+            main.parameters.join("`, `")
+        ));
     }
     ensure_effect_free_for_constant_folding(module)?;
     match eval_native_residual(module) {
