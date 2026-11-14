@@ -116,9 +116,33 @@ fn minimal_entry_runs_on_clr() {
     compile_and_run_on_host("clr", Some("dotnet"));
 }
 
+/// native lane 当前只闭合 `x86_64` + Windows + PE。
+///
+/// 宿主是 Windows 时真实执行产物；其它宿主必须给出结构化「无该容器实现」失败，
+/// 不能借用其它平台的镜像格式，也不能用跳过冒充通过。
 #[test]
 fn minimal_entry_runs_on_native() {
-    compile_and_run_on_host("native", None);
+    if cfg!(windows) {
+        compile_and_run_on_host("native", None);
+        return;
+    }
+    use nyar::ClrSuspendStrategy;
+    use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
+    use rusty_valkyrie::compiler::emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts};
+
+    let groups = vec![rusty_valkyrie::CompilerSourceGroup::single_source("smoke", "smoke", "[main] micro main() { }").as_entry()];
+    let input = rusty_valkyrie::compiler::hir::lowering::CompilerSourceInput::application(groups);
+    let context = CompilerBuildContext::new(
+        "native",
+        nyar::CanonicalTarget::parse("native").expect("host native target"),
+        ClrSuspendStrategy::from_runtime_async_flag(false),
+        WasmPackageKind::Binary,
+    );
+    let dir = tempfile::tempdir().expect("temp dir");
+    let error = compile_source_groups_to_artifacts(&ValkyrieCompiler::default(), &input, &context, dir.path(), "smoke", false, true)
+        .expect_err("非 Windows 宿主的 native lane 必须结构化拒绝");
+    let message = error.to_string();
+    assert!(message.contains("容器实现") || message.contains("尚未实现"), "unexpected native error: {message}");
 }
 
 /// WASI lane 真实装载：源码 → `.wasi` component → `wasmtime run`。
