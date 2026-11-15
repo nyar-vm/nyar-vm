@@ -360,6 +360,27 @@ pub fn encode_native_text_program_with_dependencies(
                     text.extend_from_slice(&value.to_le_bytes());
                 }
                 NativeTextInstruction::StoreByteAtRaxFromRdx => text.extend_from_slice(&[0x88, 0x10]),
+                NativeTextInstruction::LoadFromRax => text.extend_from_slice(&[0x48, 0x8B, 0x00]),
+                NativeTextInstruction::StoreRcxToRax => text.extend_from_slice(&[0x48, 0x89, 0x08]),
+                NativeTextInstruction::StoreRaxToRcx => text.extend_from_slice(&[0x48, 0x89, 0x01]),
+                NativeTextInstruction::StoreDwordImmediateToRax(value) => {
+                    text.extend_from_slice(&[0xC7, 0x00]);
+                    text.extend_from_slice(&value.to_le_bytes());
+                }
+                NativeTextInstruction::StoreDwordRcxToRax => text.extend_from_slice(&[0x89, 0x08]),
+                NativeTextInstruction::LoadSlotToRdx(slot) => {
+                    // `mov rdx, [rbp-disp32]`。
+                    text.extend_from_slice(&[0x48, 0x8B, 0x95]);
+                    text.extend_from_slice(&frame_disp(*slot).to_le_bytes());
+                }
+                NativeTextInstruction::CopyBytes => {
+                    // `push rdi; push rsi; mov rdi, rax; mov rsi, rcx; mov rcx, rdx;
+                    // rep movsb; pop rsi; pop rdi`。方向标志由 ABI 保证为 0。
+                    text.extend_from_slice(&[
+                        0x57, 0x56, 0x48, 0x89, 0xC7, 0x48, 0x89, 0xCE, 0x48, 0x89, 0xD1, 0xF3, 0xA4, 0x5E, 0x5F,
+                    ]);
+                }
+                NativeTextInstruction::Trap => text.extend_from_slice(&[0x0F, 0x0B]),
                 NativeTextInstruction::SyscallWrite => {
                     if abi != NativeAbi::SystemV64 {
                         return Err(format!(

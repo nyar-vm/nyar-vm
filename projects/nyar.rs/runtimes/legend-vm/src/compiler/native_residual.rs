@@ -17,7 +17,7 @@ use miette::{Result, miette};
 use nyar_analyzer::residual::ResidualSink;
 use nyar_emitter::nyar_backend_native::{
     NativeAbi, NativeDataTarget, NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage, encode_native_text_function,
-    encode_native_text_program_with_data, encode_native_text_program_with_dependencies, encode_native_text_program_with_imports,
+    encode_native_text_program_with_dependencies, encode_native_text_program_with_imports,
 };
 
 use super::PeCompiler;
@@ -949,22 +949,30 @@ enum ProductValueKind {
     Int,
     Bool,
     Nil,
-    /// 静态字符串描述符地址；携带字面量以支持无分配的 effect 写入。
-    Str(String),
+    /// 字符串描述符地址。
+    ///
+    /// `Some(text)` 是编译期已知的字面量（描述符在 `.text`），`None` 是运行期在
+    /// 镜像 arena 里构造的值；两者布局相同，宿主读取方式不区分来源。
+    Str(Option<String>),
 }
 
 /// 把残差模块降低为多函数文本程序（导出函数 ABI），平台显式给出。
 ///
 /// 未知输入通过该平台的整数形参进入（Win64 4 个 / SysV64 6 个），残差函数按名导出。
 ///
-/// 产品载体：整数、布尔与**静态字符串描述符**（镜像内只读 `{rel_ptr,len}` + UTF-8，
-/// 由宿主读取、永不释放）。含 `print` 的模块额外声明一个隐藏的首个整数形参作为
+/// 产品载体：整数、布尔与**字符串描述符**（`{i32 self_relative_ptr; u32 len}` + UTF-8）。
+/// 字面量描述符内联在 `.text`；运行期构造的字符串分配在 `.data` 的镜像文本 arena，
+/// 两者都由镜像拥有、永不单独释放。扩展模块的入口包装体在每次宿主调用开始时把
+/// arena 游标归零，宿主在同一次调用内复制所需内容，因此所有权不跨 CRT 转移、
+/// 也不需要跨边界释放。arena 预算耗尽按陷入失败闭合。
+///
+/// 含 `print` 的模块额外声明一个隐藏的首个整数形参作为
 /// effect 通道（宿主提供的可写句柄/fd，作为**每个**残差函数的首个隐藏整数形参），
 /// `print` 按目标 OS 的写入原语输出：Windows 经 `kernel32!WriteFile`（IAT），
-/// Linux 经 `write(2)` 系统调用；两者都保持 guest 顺序。字符串走静态描述符，
+/// Linux 经 `write(2)` 系统调用；两者都保持 guest 顺序。字符串走描述符，
 /// 整数走十进制格式化（负数带 `-`），布尔写 `true`/`false`，`nil` 写空串。
-/// 对象、运行时解析调用、除法、字符串比较/拼接与字符串作为实参都显式失败
-/// 闭合，不在产品路径里静默吞掉语义。
+/// 混合载体拼接（字符串 + 数字）、字符串比较/排序、字符串作为调用实参、
+/// 对象与运行时解析调用都显式失败闭合，不在产品路径里静默吞掉语义。
 pub fn lower_native_residual_to_program(
     module: &NativeResidualModule,
     target: NativeProductTarget,
@@ -999,55 +1007,68 @@ pub fn lower_native_residual_to_program(
     // 普通库的 effect 通道由宿主传入；扩展模块自己写 stdout。
     let sink_from_parameter = has_print && target.sink_from_parameter();
 
-    let mut lowered = Vec::with_capacity(module.functions.len());
-    for function in &module.functions {
-        lowered.push(lower_residual_function(function, has_print, sink_from_parameter, &target)?);
-    }
-    // 调用结果当前按整数载体传播；字符串返回值的残差函数不能作为调用目标，
-    // 否则调用方会按错误载体继续使用 `rax`。
-    let string_returners: Vec<&str> = lowered
-        .iter()
-        .filter(|(_, return_kind)| matches!(return_kind, Some(ProductValueKind::Str(_))))
-        .map(|(function, _)| function.name.as_str())
-        .collect();
-    for (function, _) in &lowered {
-        for op in &function.instructions {
-            if let NativeTextInstruction::Call(name) = op
-                && string_returners.contains(&name.as_str())
-            {
-                return Err(format!(
-                    "residual function `{}` calls `{name}` which returns a string descriptor; string-valued calls are not implemented at the product boundary",
-                    function.name
-                ));
+    // 调用结果的载体必须与已降低的被调用函数一致；先做不动点迭代收敛返回载体，
+    // 让跨函数的前向引用（先调用、后定义）也能得到正确类别，而不是默认整数。
+    //
+    // 运行期文本 arena 的偏移取决于适配器数据（模块定义/符号名）的实际长度，
+    // 而方法集合又由函数降低结果决定；因此先用占位偏移收敛返回载体与方法集合，
+    // 数据布局确定后再按真实偏移重新降低函数体。
+    let probe_arena = if host.is_some() { Some(0u32) } else { None };
+    let mut known_returns: HashMap<String, ProductValueKind> = HashMap::new();
+    let mut probe_lowered = Vec::with_capacity(module.functions.len());
+    for _ in 0..=module.functions.len() {
+        probe_lowered = module
+            .functions
+            .iter()
+            .map(|function| lower_residual_function(function, has_print, sink_from_parameter, &target, &known_returns, probe_arena))
+            .collect::<Result<Vec<_>, String>>()?;
+        let mut changed = false;
+        for (function, return_kind) in &probe_lowered {
+            if let Some(kind) = return_kind {
+                // 运行期内容未知：调用方只能把它当作描述符地址。
+                let normalized = match kind {
+                    ProductValueKind::Str(_) => ProductValueKind::Str(None),
+                    other => other.clone(),
+                };
+                if known_returns.get(&function.name) != Some(&normalized) {
+                    known_returns.insert(function.name.clone(), normalized);
+                    changed = true;
+                }
             }
         }
+        if !changed {
+            break;
+        }
     }
-    let mut functions: Vec<NativeTextProgramFunction> = lowered.iter().map(|(function, _)| function.clone()).collect();
     // 数据段属于适配器：CPython 的 `PyModuleDef` 与符号名必须随镜像布局，其他
     // 目标的产物不需要可写数据。
     let mut data = Vec::new();
     let mut data_relocations: Vec<(u32, NativeDataTarget)> = Vec::new();
     let mut string_methods = false;
+    let mut functions: Vec<NativeTextProgramFunction>;
     match host {
         Some(NativeHostModule::Node) => {
-            require_extension_main("Node addon", module, &lowered)?;
+            require_extension_main("Node addon", module, &probe_lowered)?;
             let methods = extension_methods(
                 module,
-                &lowered,
+                &probe_lowered,
                 "Node 扩展",
                 "Node-API 回调的 `argv` 窗口最多解析整数实参",
                 target.method_parameter_limit(),
             )?;
             let (node_data, value_name_offset, method_name_offsets, error_message_offset) = node_module_data(&methods);
             data = node_data;
+            let arena_offset = Some(append_text_arena(&mut data));
             string_methods = methods.iter().any(|method| method.returns_string);
+            let lowered = lower_all(module, has_print, sink_from_parameter, &target, &known_returns, arena_offset)?;
+            functions = lowered.iter().map(|(function, _)| function.clone()).collect();
             for method in &methods {
-                functions.push(node_method_wrapper(method, error_message_offset, target.os(), &host_library));
+                functions.push(node_method_wrapper(method, error_message_offset, target.os(), &host_library, arena_offset));
             }
-            functions.push(node_addon_registration(&methods, value_name_offset, &method_name_offsets, target.os(), &host_library));
+            functions.push(node_addon_registration(&methods, value_name_offset, &method_name_offsets, target.os(), &host_library, arena_offset));
         }
         Some(NativeHostModule::Python) => {
-            require_extension_main("CPython extension", module, &lowered)?;
+            require_extension_main("CPython extension", module, &probe_lowered)?;
             if !is_c_identifier(&module.name) {
                 return Err(format!(
                     "CPython 扩展模块名 `{}` 不是合法 C 标识符：`PyInit_<module>` 必须能在 C 中声明",
@@ -1056,7 +1077,7 @@ pub fn lower_native_residual_to_program(
             }
             let methods = extension_methods(
                 module,
-                &lowered,
+                &probe_lowered,
                 "CPython 扩展",
                 "`PyArg_ParseTuple` 包装最多闭合整数实参",
                 target.method_parameter_limit(),
@@ -1064,7 +1085,10 @@ pub fn lower_native_residual_to_program(
             let (definition, relocations, value_offset, format_offsets) = python_module_data(&module.name, &methods);
             data = definition;
             data_relocations = relocations;
+            let arena_offset = Some(append_text_arena(&mut data));
             string_methods = methods.iter().any(|method| method.returns_string);
+            let lowered = lower_all(module, has_print, sink_from_parameter, &target, &known_returns, arena_offset)?;
+            functions = lowered.iter().map(|(function, _)| function.clone()).collect();
             for (method, format_offset) in methods.iter().zip(format_offsets) {
                 functions.push(python_method_wrapper(
                     &method.name,
@@ -1072,12 +1096,15 @@ pub fn lower_native_residual_to_program(
                     format_offset,
                     &host_library,
                     method.returns_string,
+                    arena_offset,
                 ));
             }
-            functions.push(python_module_exec(value_offset, &host_library));
+            functions.push(python_module_exec(value_offset, &host_library, arena_offset));
             functions.push(python_module_registration(&module.name, &host_library));
         }
-        None => {}
+        None => {
+            functions = probe_lowered.iter().map(|(function, _)| function.clone()).collect();
+        }
     }
     // 导入面：OS 决定 effect 原语与导入 DLL，模块类型决定宿主 API。
     let mut imports: Vec<(String, String)> = Vec::new();
@@ -1186,6 +1213,36 @@ const PY_METHOD_MAX_PARAMETERS: usize = 4;
 /// Node-API 回调最多 6 个整数形参：与 SysV64 的整数实参寄存器数一致，
 /// `napi_get_cb_info` 的 `argv` 数组按该容量预置。
 const NODE_METHOD_MAX_PARAMETERS: usize = 6;
+
+/// 镜像文本 arena 容量：运行期构造的字符串存放在 `.data` 的这段载荷里。
+///
+/// 所有权归镜像；扩展模块的入口包装体在每次宿主调用开始时把游标归零，
+/// 因此单个镜像的峰值占用有界。预算耗尽按 `ud2` 陷入失败闭合。
+const NATIVE_TEXT_ARENA_CAPACITY: u32 = 64 * 1024;
+
+/// 在 `.data` 末尾追加文本 arena：8 字节游标 + [`NATIVE_TEXT_ARENA_CAPACITY`] 字节载荷。
+///
+/// 返回游标偏移；`arena_offset + 8` 是载荷起点，游标值按载荷起点相对编码。
+fn append_text_arena(data: &mut Vec<u8>) -> u32 {
+    let offset = u32::try_from(data.len()).expect("native 数据段长度超出 u32");
+    data.extend_from_slice(&0u64.to_le_bytes());
+    data.resize(data.len() + NATIVE_TEXT_ARENA_CAPACITY as usize, 0);
+    offset
+}
+
+/// 入口处重置 arena 游标：`[arena_offset] = 0`。
+///
+/// `reset_slot` 是包装体可用的临时帧槽；必须在调用任何残差函数之前执行。
+fn reset_text_arena(reset_slot: u16, arena_offset: u32) -> Vec<NativeTextInstruction> {
+    use NativeTextInstruction as Lir;
+    vec![
+        Lir::LoadDataAddress(arena_offset),
+        Lir::StoreSlot(reset_slot),
+        Lir::LoadI64(0),
+        Lir::LoadSlotToRcx(reset_slot),
+        Lir::StoreRaxToRcx,
+    ]
+}
 
 /// 一个可暴露给宿主扩展模块的方法。
 struct ExtensionMethod {
@@ -1331,6 +1388,7 @@ fn python_method_wrapper(
     format_offset: u32,
     dll: &str,
     returns_string: bool,
+    arena: Option<u32>,
 ) -> NativeTextProgramFunction {
     use NativeTextInstruction as Lir;
     const ARGS_SLOT: u16 = 0;
@@ -1343,14 +1401,18 @@ fn python_method_wrapper(
     let pointer_slot = descriptor_slot + 1;
     let length_slot = descriptor_slot + 2;
 
-    let mut instructions = vec![
+    let mut instructions = Vec::new();
+    if let Some(arena) = arena {
+        instructions.extend(reset_text_arena(TEMP_SLOT, arena));
+    }
+    instructions.extend([
         // 保存 `args`（self 不参与残差语义）。
         Lir::LoadParam { index: 1, slot: ARGS_SLOT },
         Lir::LoadSlotToArg { slot: ARGS_SLOT, index: 0 },
         Lir::LoadDataAddress(format_offset),
         Lir::StoreSlot(FORMAT_SLOT),
         Lir::LoadSlotToArg { slot: FORMAT_SLOT, index: 1 },
-    ];
+    ]);
     for index in 0..parameters {
         // `PyArg_ParseTuple` 把第 index 个 `long` 写入该帧槽的地址。
         instructions.push(Lir::LoadSlotAddress(argument_slot(index)));
@@ -1423,41 +1485,42 @@ fn python_module_registration(module_name: &str, dll: &str) -> NativeTextProgram
 /// 模块实例由宿主创建；这里安装残差 `main` 的结果常量 `value`（方法表由
 /// `_PyModule_ExecDef` 依据 `m_methods` 先行安装）。成功返回 0，失败返回 -1，
 /// 不吞掉宿主错误。
-fn python_module_exec(value_offset: u32, dll: &str) -> NativeTextProgramFunction {
+fn python_module_exec(value_offset: u32, dll: &str, arena: Option<u32>) -> NativeTextProgramFunction {
     use NativeTextInstruction as Lir;
     const MODULE_SLOT: u16 = 0;
     const VALUE_SLOT: u16 = 1;
     const RESULT_SLOT: u16 = 2;
     const ZERO_SLOT: u16 = 3;
     const TEMP_SLOT: u16 = 4;
-    NativeTextProgramFunction {
-        name: PYTHON_EXEC_NAME.to_string(),
-        slot_count: 5,
-        instructions: vec![
-            Lir::LoadParam { index: 0, slot: MODULE_SLOT },
-            Lir::Call("main".to_string()),
-            Lir::StoreSlot(VALUE_SLOT),
-            Lir::LoadI64(0),
-            Lir::StoreSlot(ZERO_SLOT),
-            // `PyModule_AddIntConstant(module, "value", value)`。
-            Lir::LoadSlotToArg { slot: MODULE_SLOT, index: 0 },
-            Lir::LoadDataAddress(value_offset),
-            Lir::StoreSlot(TEMP_SLOT),
-            Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 1 },
-            Lir::LoadSlotToArg { slot: VALUE_SLOT, index: 2 },
-            Lir::CallImport { module: dll.to_string(), field: "PyModule_AddIntConstant".to_string() },
-            Lir::StoreSlot(RESULT_SLOT),
-            Lir::LoadSlot(RESULT_SLOT),
-            Lir::LoadSlotToRcx(ZERO_SLOT),
-            Lir::Eq,
-            Lir::JumpIfZero(1),
-            Lir::LoadI64(0),
-            Lir::Return,
-            Lir::Label(1),
-            Lir::LoadI64(-1),
-            Lir::Return,
-        ],
+    let mut instructions = vec![Lir::LoadParam { index: 0, slot: MODULE_SLOT }];
+    if let Some(arena) = arena {
+        // 入口实参已落槽：重置使用 rax/rcx 不会破坏 Win64 的 rcx 形参。
+        instructions.extend(reset_text_arena(TEMP_SLOT, arena));
     }
+    instructions.extend([
+        Lir::Call("main".to_string()),
+        Lir::StoreSlot(VALUE_SLOT),
+        Lir::LoadI64(0),
+        Lir::StoreSlot(ZERO_SLOT),
+        // `PyModule_AddIntConstant(module, "value", value)`。
+        Lir::LoadSlotToArg { slot: MODULE_SLOT, index: 0 },
+        Lir::LoadDataAddress(value_offset),
+        Lir::StoreSlot(TEMP_SLOT),
+        Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 1 },
+        Lir::LoadSlotToArg { slot: VALUE_SLOT, index: 2 },
+        Lir::CallImport { module: dll.to_string(), field: "PyModule_AddIntConstant".to_string() },
+        Lir::StoreSlot(RESULT_SLOT),
+        Lir::LoadSlot(RESULT_SLOT),
+        Lir::LoadSlotToRcx(ZERO_SLOT),
+        Lir::Eq,
+        Lir::JumpIfZero(1),
+        Lir::LoadI64(0),
+        Lir::Return,
+        Lir::Label(1),
+        Lir::LoadI64(-1),
+        Lir::Return,
+    ]);
+    NativeTextProgramFunction { name: PYTHON_EXEC_NAME.to_string(), slot_count: 5, instructions }
 }
 
 /// `napi_register_module_v1(env, exports)` 入口：把残差 `main` 的整数值写成
@@ -1470,6 +1533,7 @@ fn node_addon_registration(
     method_name_offsets: &[u32],
     os: NativeProductOs,
     dll: &str,
+    arena: Option<u32>,
 ) -> NativeTextProgramFunction {
     use NativeTextInstruction as Lir;
     const ENV_SLOT: u16 = 0;
@@ -1485,6 +1549,11 @@ fn node_addon_registration(
         Lir::LoadParam { index: 1, slot: EXPORTS_SLOT },
         Lir::LoadI64(0),
         Lir::StoreSlot(ZERO_SLOT),
+    ];
+    if let Some(arena) = arena {
+        instructions.extend(reset_text_arena(TEMP_SLOT, arena));
+    }
+    instructions.extend([
         Lir::Call("main".to_string()),
         Lir::StoreSlot(VALUE_SLOT),
         // `napi_create_int64(env, value, &out)`。
@@ -1502,7 +1571,7 @@ fn node_addon_registration(
         Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
         Lir::LoadSlotToArg { slot: OUT_SLOT, index: 3 },
         Lir::CallImport { module: dll.to_string(), field: "napi_set_named_property".to_string() },
-    ];
+    ]);
     for (method, name_offset) in methods.iter().zip(method_name_offsets) {
         // `napi_create_function(env, name, len, wrapper, data, &fn)`。
         instructions.extend([
@@ -1574,6 +1643,7 @@ fn node_method_wrapper(
     error_message_offset: u32,
     os: NativeProductOs,
     dll: &str,
+    arena: Option<u32>,
 ) -> NativeTextProgramFunction {
     use NativeTextInstruction as Lir;
     const ENV_SLOT: u16 = 0;
@@ -1605,6 +1675,11 @@ fn node_method_wrapper(
         Lir::StoreSlot(ARGC_SLOT),
         Lir::LoadI64(0),
         Lir::StoreSlot(ZERO_SLOT),
+    ];
+    if let Some(arena) = arena {
+        instructions.extend(reset_text_arena(TEMP_SLOT, arena));
+    }
+    instructions.extend([
         // `napi_get_cb_info(env, info, &argc, argv, NULL, NULL)`。
         Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
         Lir::LoadSlotToArg { slot: INFO_SLOT, index: 1 },
@@ -1614,7 +1689,7 @@ fn node_method_wrapper(
         Lir::LoadSlotAddress(ARGV_FIRST_SLOT + NODE_METHOD_MAX_PARAMETERS as u16 - 1),
         Lir::StoreSlot(TEMP_SLOT),
         Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 3 },
-    ];
+    ]);
     // `napi_get_cb_info` 的第 5、6 个实参是 `this` 与 `data`，恒为 `NULL`。
     if os == NativeProductOs::Windows {
         instructions.push(Lir::ZeroStackArg(0));
@@ -1780,10 +1855,12 @@ struct ResidualFunctionLowering<'a> {
     sink_from_parameter: bool,
     /// 目标 OS：决定 effect 写入原语与导入面。
     target: NativeProductTarget,
+    /// 运行期文本 arena 的游标偏移；`None` 表示该产物没有入口重置合同（普通库）。
+    text_arena: Option<u32>,
 }
 
 impl<'a> ResidualFunctionLowering<'a> {
-    fn new(function: &'a NativeResidualFunction, target: NativeProductTarget) -> Self {
+    fn new(function: &'a NativeResidualFunction, target: NativeProductTarget, text_arena: Option<u32>) -> Self {
         Self {
             function,
             locals: HashMap::new(),
@@ -1796,6 +1873,7 @@ impl<'a> ResidualFunctionLowering<'a> {
             effect_sink: None,
             sink_from_parameter: false,
             target,
+            text_arena,
         }
     }
 
@@ -2032,6 +2110,152 @@ impl<'a> ResidualFunctionLowering<'a> {
         self.instructions.push(NativeTextInstruction::Label(done));
         Ok(())
     }
+
+    /// 在镜像 arena 里分配一个 `{i32 self_relative_ptr = 8; u32 len}` 描述符，
+    /// 返回描述符所在帧槽；描述符共 8 字节，载荷起点是描述符 + 8，由调用方写入。
+    ///
+    /// `total` 是载荷字节数的帧槽。分配按游标单调推进，越界以 `ud2` 陷入失败闭合；
+    /// 扩展模块的入口包装体在每次宿主调用开始时把游标归零。
+    fn allocate_text(&mut self, total: u16) -> Result<u16, String> {
+        use NativeTextInstruction as Lir;
+        let arena = self.text_arena.ok_or_else(|| {
+            format!(
+                "residual function `{}` constructs a runtime string, but this product has no entry-reset text arena contract",
+                self.function.name
+            )
+        })?;
+        // cursor_address = &[arena]
+        self.instructions.push(Lir::LoadDataAddress(arena));
+        let cursor_address = self.alloc_slot();
+        self.instructions.push(Lir::StoreSlot(cursor_address));
+        // old = [cursor_address]
+        self.instructions.push(Lir::LoadSlot(cursor_address));
+        self.instructions.push(Lir::LoadFromRax);
+        let old = self.alloc_slot();
+        self.instructions.push(Lir::StoreSlot(old));
+        // need = total + 8（描述符本身 8 字节）
+        self.instructions.push(Lir::LoadSlot(total));
+        self.instructions.push(Lir::AddRaxImmediate(8));
+        let need = self.alloc_slot();
+        self.instructions.push(Lir::StoreSlot(need));
+        // new = old + need
+        self.instructions.push(Lir::LoadSlot(old));
+        self.instructions.push(Lir::LoadSlotToRcx(need));
+        self.instructions.push(Lir::Add);
+        let new = self.alloc_slot();
+        self.instructions.push(Lir::StoreSlot(new));
+        // new > capacity → trap（预算耗尽不能返回伪造的空字符串）。
+        let capacity = self.store_immediate(i64::from(NATIVE_TEXT_ARENA_CAPACITY));
+        let within_budget = self.fresh_label();
+        self.instructions.push(Lir::LoadSlot(new));
+        self.instructions.push(Lir::LoadSlotToRcx(capacity));
+        self.instructions.push(Lir::Gt);
+        self.instructions.push(Lir::JumpIfZero(within_budget));
+        self.instructions.push(Lir::Trap);
+        self.instructions.push(Lir::Label(within_budget));
+        // [cursor_address] = new
+        self.instructions.push(Lir::LoadSlot(cursor_address));
+        self.instructions.push(Lir::LoadSlotToRcx(new));
+        self.instructions.push(Lir::StoreRcxToRax);
+        // descriptor = payload_base + old
+        self.instructions.push(Lir::LoadDataAddress(arena.saturating_add(8)));
+        self.instructions.push(Lir::LoadSlotToRcx(old));
+        self.instructions.push(Lir::Add);
+        let descriptor = self.alloc_slot();
+        self.instructions.push(Lir::StoreSlot(descriptor));
+        // 描述符字段：自相对指针常量 8，长度 `u32`。
+        self.instructions.push(Lir::LoadSlot(descriptor));
+        self.instructions.push(Lir::StoreDwordImmediateToRax(8));
+        self.instructions.push(Lir::LoadSlot(descriptor));
+        self.instructions.push(Lir::AddRaxImmediate(4));
+        self.instructions.push(Lir::LoadSlotToRcx(total));
+        self.instructions.push(Lir::StoreDwordRcxToRax);
+        Ok(descriptor)
+    }
+
+    /// 字符串拼接：两个描述符的长度在运行期读取，结果写入 arena。
+    fn concat_text(&mut self) -> Result<(), String> {
+        use NativeTextInstruction as Lir;
+        let (right, right_kind) = self.pop()?;
+        let (left, left_kind) = self.pop()?;
+        if !matches!(left_kind, ProductValueKind::Str(_)) || !matches!(right_kind, ProductValueKind::Str(_)) {
+            return Err(format!(
+                "residual function `{}` concatenates mixed carriers; guest number-to-string coercion is not implemented at the product boundary",
+                self.function.name
+            ));
+        }
+        self.instructions.push(Lir::LoadSlot(left));
+        self.instructions.push(Lir::LoadDescriptorLength);
+        let left_length = self.alloc_slot();
+        self.instructions.push(Lir::StoreSlot(left_length));
+        self.instructions.push(Lir::LoadSlot(right));
+        self.instructions.push(Lir::LoadDescriptorLength);
+        let right_length = self.alloc_slot();
+        self.instructions.push(Lir::StoreSlot(right_length));
+        self.instructions.push(Lir::LoadSlot(left_length));
+        self.instructions.push(Lir::LoadSlotToRcx(right_length));
+        self.instructions.push(Lir::Add);
+        let total = self.alloc_slot();
+        self.instructions.push(Lir::StoreSlot(total));
+        let descriptor = self.allocate_text(total)?;
+        // destination = descriptor + 8
+        self.instructions.push(Lir::LoadSlot(descriptor));
+        self.instructions.push(Lir::AddRaxImmediate(8));
+        let destination = self.alloc_slot();
+        self.instructions.push(Lir::StoreSlot(destination));
+        // 左字节区起点 = left + 8。
+        self.instructions.push(Lir::LoadSlot(left));
+        self.instructions.push(Lir::AddRaxImmediate(8));
+        let left_bytes = self.alloc_slot();
+        self.instructions.push(Lir::StoreSlot(left_bytes));
+        self.instructions.push(Lir::LoadSlot(destination));
+        self.instructions.push(Lir::LoadSlotToRcx(left_bytes));
+        self.instructions.push(Lir::LoadSlotToRdx(left_length));
+        self.instructions.push(Lir::CopyBytes);
+        // 右字节区起点 = right + 8，目标 = destination + left_length。
+        self.instructions.push(Lir::LoadSlot(right));
+        self.instructions.push(Lir::AddRaxImmediate(8));
+        let right_bytes = self.alloc_slot();
+        self.instructions.push(Lir::StoreSlot(right_bytes));
+        self.instructions.push(Lir::LoadSlot(destination));
+        self.instructions.push(Lir::LoadSlotToRcx(left_length));
+        self.instructions.push(Lir::Add);
+        self.instructions.push(Lir::LoadSlotToRcx(right_bytes));
+        self.instructions.push(Lir::LoadSlotToRdx(right_length));
+        self.instructions.push(Lir::CopyBytes);
+        self.instructions.push(Lir::LoadSlot(descriptor));
+        self.push_stack_value(ProductValueKind::Str(None));
+        Ok(())
+    }
+
+    /// 通过 effect 通道写入一个运行期文本描述符指向的字节。
+    fn write_text(&mut self, slot: u16) -> Result<(), String> {
+        use NativeTextInstruction as Lir;
+        self.instructions.push(Lir::LoadSlot(slot));
+        self.instructions.push(Lir::LoadDescriptorLength);
+        let length = self.alloc_slot();
+        self.instructions.push(Lir::StoreSlot(length));
+        self.instructions.push(Lir::LoadSlot(slot));
+        self.instructions.push(Lir::AddRaxImmediate(8));
+        let pointer = self.alloc_slot();
+        self.instructions.push(Lir::StoreSlot(pointer));
+        self.write_bytes(pointer, length)
+    }
+}
+
+fn lower_all(
+    module: &NativeResidualModule,
+    with_effect_sink: bool,
+    sink_from_parameter: bool,
+    target: &NativeProductTarget,
+    known_returns: &HashMap<String, ProductValueKind>,
+    text_arena: Option<u32>,
+) -> Result<Vec<(NativeTextProgramFunction, Option<ProductValueKind>)>, String> {
+    module
+        .functions
+        .iter()
+        .map(|function| lower_residual_function(function, with_effect_sink, sink_from_parameter, target, known_returns, text_arena))
+        .collect()
 }
 
 fn lower_residual_function(
@@ -2039,6 +2263,8 @@ fn lower_residual_function(
     with_effect_sink: bool,
     sink_from_parameter: bool,
     target: &NativeProductTarget,
+    known_returns: &HashMap<String, ProductValueKind>,
+    text_arena: Option<u32>,
 ) -> Result<(NativeTextProgramFunction, Option<ProductValueKind>), String> {
     // 该平台寄存器实参上限，减去隐藏 effect 通道占用（仅当通道来自宿主形参）。
     let total = target.abi().integer_argument_limit();
@@ -2052,7 +2278,7 @@ fn lower_residual_function(
             if sink_from_parameter { " alongside the effect sink" } else { "" }
         ));
     }
-    let mut lowering = ResidualFunctionLowering::new(function, target.clone());
+    let mut lowering = ResidualFunctionLowering::new(function, target.clone(), text_arena);
     lowering.sink_from_parameter = sink_from_parameter;
     let mut return_kind: Option<ProductValueKind> = None;
     if with_effect_sink {
@@ -2087,7 +2313,7 @@ fn lower_residual_function(
             }
             NativeResidualOp::PushString(text) => {
                 lowering.instructions.push(NativeTextInstruction::LoadString(text.clone()));
-                lowering.push_stack_value(ProductValueKind::Str(text.clone()));
+                lowering.push_stack_value(ProductValueKind::Str(Some(text.clone())));
             }
             NativeResidualOp::PushNil => {
                 lowering.instructions.push(NativeTextInstruction::LoadI64(0));
@@ -2102,10 +2328,21 @@ fn lower_residual_function(
             }
             NativeResidualOp::Store(name) => {
                 let (slot, kind) = lowering.pop()?;
-                let destination = lowering.alloc_slot();
+                // 变量槽是**绑定身份**，不是一次性 SSA 值：循环回边必须能看到
+                // 上一轮写入的值，因此重绑定复用首个分配到的槽，只更新载体类别。
+                let destination = match lowering.locals.get(name) {
+                    Some((existing, _)) => *existing,
+                    None => {
+                        let allocated = lowering.alloc_slot();
+                        lowering.locals.insert(name.clone(), (allocated, kind.clone()));
+                        allocated
+                    }
+                };
                 lowering.instructions.push(NativeTextInstruction::LoadSlot(slot));
                 lowering.instructions.push(NativeTextInstruction::StoreSlot(destination));
-                lowering.locals.insert(name.clone(), (destination, kind));
+                if let Some((_, existing_kind)) = lowering.locals.get_mut(name) {
+                    *existing_kind = kind;
+                }
             }
             NativeResidualOp::Pop => {
                 lowering.pop()?;
@@ -2113,6 +2350,7 @@ fn lower_residual_function(
             NativeResidualOp::Add => lowering.binary_numeric(NativeTextInstruction::Add, ProductValueKind::Int)?,
             NativeResidualOp::Sub => lowering.binary_numeric(NativeTextInstruction::Sub, ProductValueKind::Int)?,
             NativeResidualOp::Mul => lowering.binary_numeric(NativeTextInstruction::Mul, ProductValueKind::Int)?,
+            NativeResidualOp::Concat => lowering.concat_text()?,
             NativeResidualOp::Eq | NativeResidualOp::Ne => {
                 let (right, right_kind) = lowering.pop()?;
                 let (left, left_kind) = lowering.pop()?;
@@ -2248,14 +2486,15 @@ fn lower_residual_function(
                     lowering.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: *slot, index: index as u8 + shift });
                 }
                 lowering.instructions.push(NativeTextInstruction::Call(name.clone()));
-                // 导出函数 ABI 以整数返回；布尔按 0/1 载体。
-                lowering.push_stack_value(ProductValueKind::Int);
+                // 调用结果的载体来自已降低的被调用函数（不动点收敛）。
+                let result_kind = known_returns.get(name).cloned().unwrap_or(ProductValueKind::Int);
+                lowering.push_stack_value(result_kind);
             }
             NativeResidualOp::Ret => {
                 let (slot, kind) = lowering.pop()?;
                 if matches!(kind, ProductValueKind::Nil) {
                     return Err(format!(
-                        "residual function `{}` returns `nil`; the product ABI carries integers, booleans and static strings",
+                        "residual function `{}` returns `nil`; the product ABI carries integers, booleans and strings",
                         function.name
                     ));
                 }
@@ -2280,7 +2519,8 @@ fn lower_residual_function(
                         lowering.write_static("\t")?;
                     }
                     match kind {
-                        ProductValueKind::Str(text) => lowering.write_static(text)?,
+                        ProductValueKind::Str(Some(text)) => lowering.write_static(text)?,
+                        ProductValueKind::Str(None) => lowering.write_text(*slot)?,
                         ProductValueKind::Int => lowering.write_integer(*slot)?,
                         ProductValueKind::Bool => lowering.write_boolean(*slot)?,
                         // guest 把 `nil` 显示为空串。
@@ -2297,8 +2537,7 @@ fn lower_residual_function(
                     lowering.push_stack_value(ProductValueKind::Nil);
                 }
             }
-            NativeResidualOp::Concat
-            | NativeResidualOp::Div
+            NativeResidualOp::Div
             | NativeResidualOp::Rem
             | NativeResidualOp::Length
             | NativeResidualOp::TableNew

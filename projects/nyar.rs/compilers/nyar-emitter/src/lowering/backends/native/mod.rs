@@ -235,6 +235,28 @@ pub enum NativeTextInstruction {
     AddRdxImmediate(i32),
     /// `mov [rax], dl`：把 `rdx` 的低字节写入 `rax` 指向的缓冲区。
     StoreByteAtRaxFromRdx,
+    /// `mov rax, [rax]`：读取 `rax` 指向的机器字（例如数据段的 arena 游标）。
+    LoadFromRax,
+    /// `mov [rax], rcx`：把 `rcx` 写入 `rax` 指向的机器字（arena 游标更新）。
+    StoreRcxToRax,
+    /// `mov [rcx], rax`：把 `rax` 写入 `rcx` 指向的机器字（入口处重置游标）。
+    StoreRaxToRcx,
+    /// `mov dword ptr [rax], imm32`：写描述符里的自相对指针字段。
+    StoreDwordImmediateToRax(u32),
+    /// `mov [rax], ecx`：写描述符里的 `u32` 长度字段。
+    StoreDwordRcxToRax,
+    /// `mov rdx, [slot]`：把帧槽装入 `rdx`（`CopyBytes` 的长度实参）。
+    LoadSlotToRdx(u16),
+    /// 复制字节：`rax` = 目标、`rcx` = 源、`rdx` = 长度。
+    ///
+    /// 编码器负责保存/恢复被 SysV64 与 Win64 共同视为被调用者保存的
+    /// `rdi`/`rsi`，并用 `rep movsb` 完成复制；`rcx`/`rdx` 按调用约定属于
+    /// 调用者保存，复制后内容不再保证。
+    CopyBytes,
+    /// `ud2`：以陷入方式失败闭合（例如镜像文本 arena 预算耗尽）。
+    ///
+    /// 产品 ABI 没有异常通道；资源预算耗尽必须显式终止，不能返回伪造的空值。
+    Trap,
 }
 
 /// 多函数文本程序中的一个函数。

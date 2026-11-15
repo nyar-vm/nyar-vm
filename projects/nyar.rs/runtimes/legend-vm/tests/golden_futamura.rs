@@ -589,7 +589,9 @@ mod exported_abi {
             ("function f(s)\n  return 0\nend\nf(\"x\")\nreturn 0\n", "passes a string descriptor"),
             ("local t = { 1 }\nreturn t[1]\n", "TableNew"),
             ("return x / y\n", "Div"),
-            ("return x .. \"s\"\n", "Concat"),
+            ("return x .. \"s\"\n", "mixed carriers"),
+            // 普通库产物没有宿主入口重置 arena；运行期拼接必须显式失败闭合。
+            ("return \"a\" .. \"b\"\n", "entry-reset text arena contract"),
             ("return \"a\" == \"b\"\n", "byte-wise comparison"),
         ] {
             let residual = runner.specialize_native("lua", source, "lua_pe").expect("specialize");
@@ -978,6 +980,14 @@ mod python_extension_abi {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// 字符串拼接：运行期在镜像 arena 构造描述符，宿主复制成 `str`。
+    #[test]
+    fn python_method_returns_runtime_concatenated_strings() {
+        let dir = extension_dir("function join()\n  return \"a\" .. \"b\"\nend\nreturn 42\n", "concat");
+        assert_eq!(run_python(&dir, "print(demo.join()); print(demo.join())"), "ab\nab", "每次调用必须从 arena 起点重新分配");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// 模块绑定：`DT_NEEDED` 指向宿主真实 libpython 时，`import` 正常。
     #[test]
     fn python_extension_binds_the_host_library() {
@@ -1041,8 +1051,9 @@ mod windows_extension_abi {
         let output = std::process::Command::new(command).args(args).output().unwrap_or_else(|error| panic!("spawn {command}: {error}"));
         assert!(
             output.status.success(),
-            "{command} failed: status={:?} stderr={}",
+            "{command} failed: status={:?} stdout={} stderr={}",
             output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
         String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n").trim_end().to_string()
@@ -1084,6 +1095,79 @@ mod windows_extension_abi {
         let bytes = emit_native_python_extension(&residual, NativeProductOs::Windows, Some(&library)).expect("emit pyd");
         std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
         assert_eq!(run_python(&dir, "print(demo.value)"), "hello\n7", "Windows effect 必须写入真实 stdout");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn windows_python_extension_returns_runtime_concatenated_strings() {
+        let dir = extension_dir("concat");
+        let runner = legend_vm::LegendVmRunner::new();
+        let residual = runner
+            .specialize_native("lua", "function join()\n  return \"a\" .. \"b\"\nend\nreturn 42\n", MODULE_NAME)
+            .expect("specialize");
+        let library = python_library();
+        let bytes = emit_native_python_extension(&residual, NativeProductOs::Windows, Some(&library)).expect("emit pyd");
+        std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
+        // 两次调用验证入口重置 arena：第二次结果不能叠加第一次的分配。
+        assert_eq!(run_python(&dir, "print(demo.join())\nprint(demo.join())"), "ab\nab", "运行期拼接必须由镜像 arena 承载");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn windows_python_extension_grows_strings_in_a_loop() {
+        let dir = extension_dir("concat-loop");
+        let runner = legend_vm::LegendVmRunner::new();
+        let source = "function grow()\n  local s = \"\"\n  for i = 1, 3 do\n    s = s .. \"x\"\n  end\n  return s\nend\nreturn 42\n";
+        let residual = runner.specialize_native("lua", source, MODULE_NAME).expect("specialize");
+        let library = python_library();
+        let bytes = emit_native_python_extension(&residual, NativeProductOs::Windows, Some(&library)).expect("emit pyd");
+        std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
+        assert_eq!(run_python(&dir, "print(demo.grow())"), "xxx", "循环内逐步拼接必须共享同一次调用的 arena");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 循环携带的整数状态：产品路径的变量槽必须是绑定身份，回边可见上一轮写入。
+    #[test]
+    fn windows_python_extension_accumulates_integers_in_a_loop() {
+        let dir = extension_dir("sum-loop");
+        let runner = legend_vm::LegendVmRunner::new();
+        let source = "function sum()\n  local total = 0\n  for i = 1, 3 do\n    total = total + i\n  end\n  return total\nend\nreturn 42\n";
+        let residual = runner.specialize_native("lua", source, MODULE_NAME).expect("specialize");
+        let library = python_library();
+        let bytes = emit_native_python_extension(&residual, NativeProductOs::Windows, Some(&library)).expect("emit pyd");
+        std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
+        assert_eq!(run_python(&dir, "print(demo.sum())"), "6", "循环回边必须读到上一轮的变量值");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn windows_python_extension_prints_runtime_concatenated_strings() {
+        let dir = extension_dir("concat-print");
+        let runner = legend_vm::LegendVmRunner::new();
+        let residual = runner.specialize_native("lua", "print(\"a\" .. \"b\")\nreturn 7\n", MODULE_NAME).expect("specialize");
+        let library = python_library();
+        let bytes = emit_native_python_extension(&residual, NativeProductOs::Windows, Some(&library)).expect("emit pyd");
+        std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
+        assert_eq!(run_python(&dir, "print(demo.value)"), "ab\n7", "动态字符串必须按 guest 顺序写入 stdout");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn windows_node_addon_exports_runtime_concatenated_strings() {
+        let dir = extension_dir("node-concat");
+        let runner = legend_vm::LegendVmRunner::new();
+        let residual = runner
+            .specialize_native(
+                "lua",
+                "function greet()\n  return \"hi\"\nend\nfunction join()\n  return \"a\" .. \"b\"\nend\nreturn 42\n",
+                MODULE_NAME,
+            )
+            .expect("specialize");
+        let bytes = emit_native_node_addon(&residual, NativeProductOs::Windows).expect("emit node dll");
+        let path = dir.join("addon.node");
+        std::fs::write(&path, bytes).expect("write .node");
+        let script = format!("const m = require(String.raw`{}`); console.log(m.join()); console.log(m.join());", path.display());
+        assert_eq!(run("node", &["-e", &script]), "ab\nab", "Node 回调返回的镜像 arena 字符串必须逐次复位");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
