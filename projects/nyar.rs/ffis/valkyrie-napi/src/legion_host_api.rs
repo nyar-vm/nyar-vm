@@ -7,10 +7,10 @@ use napi_derive::napi;
 use acorn_odin::{OvmAbiSidecar, ovm_abi_sidecar_file};
 use odin_vm::{OdinVm, json_bridge};
 use rusty_valkyrie::legion::{
-    CanonicalTarget,
     cmds::error::LegionResult,
     cmds::run::{ManifestVerificationContext, ManifestVerificationLevel, ManifestVerdict, collect_execution_input_digests, expected_resolver_compile_evidence},
     cmds::test::{TestArgs, run as run_test},
+    resolve_platform_target,
     workspace::planner::{BuildRequest, WorkspaceResolver},
 };
 
@@ -152,7 +152,7 @@ pub fn legion_check_artifact_fresh(output_dir: String, expected_target: String, 
     }
     let verdict = match &project_dir {
         Some(dir) => {
-            let target = match CanonicalTarget::parse(&expected_target) {
+            let target = match resolve_platform_target(&expected_target) {
                 Ok(parsed) => parsed,
                 Err(error) => return stale_freshness(format!("invalid expected target `{expected_target}`: {error}")),
             };
@@ -196,7 +196,7 @@ pub fn legion_check_artifact_fresh(output_dir: String, expected_target: String, 
 #[napi]
 pub fn legion_test(project_dir: String, target: Option<String>) -> LegionTestOutcome {
     let target_label = target.unwrap_or_else(|| "wasm-node".into());
-    let parsed_target = match CanonicalTarget::parse(&target_label) {
+    let parsed_target = match resolve_platform_target(&target_label) {
         Ok(t) => t.to_string(),
         Err(error) => {
             return LegionTestOutcome { ok: false, error: Some(error.to_string()), passed: 0, failed: 0, skipped: 0 };

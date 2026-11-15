@@ -1,8 +1,5 @@
 //! 测试目标解析。
-use crate::legion::{
-    CanonicalTarget,
-    cmds::error::{LegionError, LegionResult},
-};
+use crate::legion::{CanonicalTarget, cmds::error::LegionResult};
 
 /// 解析 `--target` 参数（默认 `legion`，`all` 展开为 legion/clr/jvm/wasm-node）。
 pub fn resolve_test_targets(target: Option<&str>) -> Vec<String> {
@@ -27,7 +24,10 @@ fn product_target_alias(label: &str) -> Option<&'static str> {
 }
 
 /// 将短标签解析为 `CanonicalTarget`。
+///
+/// 产品别名先归一，再交给统一的作者面目标解析服务；`native` / `node` / `python`
+/// 占位符不会被再次各写一套展开规则。
 pub fn parse_target_label(label: &str) -> LegionResult<CanonicalTarget> {
     let canonical = product_target_alias(label).unwrap_or(label);
-    canonical.parse::<CanonicalTarget>().map_err(|error| LegionError::msg(report!("无法解析目标 '{label}': {error}")))
+    crate::legion::targets::resolve_platform_target(canonical)
 }

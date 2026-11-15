@@ -6,6 +6,7 @@ pub mod artifact_formats;
 pub mod cache;
 pub mod cmds;
 pub mod forward;
+pub mod targets;
 pub mod unity_export;
 pub mod von;
 pub mod workspace;
@@ -44,9 +45,11 @@ fn no_entry_aliases(_: &str) -> &'static [&'static str] {
 }
 
 pub use nyar::{
-    ArtifactPolicy, CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget, CanonicalTargetParseError, CanonicalVendor,
-    EntryPolicy, PublishFormat, RunnerFamily, RunnerSelector, TargetHostKind, TargetMode, TargetProfile, WrapStrategy,
+    ArtifactContract, ArtifactPolicy, CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget, CanonicalTargetParseError,
+    CanonicalVendor, EntryPolicy, PublishFormat, ResolvedTarget, RunnerFamily, RunnerSelector, TargetHostKind, TargetMode, TargetProfile,
+    TargetRequest, TargetResolver, WrapStrategy,
 };
+pub use targets::{resolve_authoring_target, resolve_platform_target};
 pub use nyar_format::printer::{to_string as write_von, to_string_indented as write_von_indented};
 pub use von::{VonError, VonParser, VonValue, from_str as parse_von, from_value as parse_von_value};
 pub use workspace::{
