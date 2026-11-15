@@ -2,6 +2,8 @@ use std::cell::RefCell;
 
 use nyar_types::{DiagnosticSource, DiagnosticSpan};
 
+use crate::compiler::valkyrie_mir::pipeline::StructuredDiagnosticSet;
+
 use crate::compiler::{
     hir::lowering::errors::{DiscriminatorFailure, HirError, IndexSpace},
     types::{SourceSpan, hir::HirCompileWarning},
@@ -49,7 +51,7 @@ pub(crate) fn take_compile_warnings() -> Vec<HirCompileWarning> {
 }
 
 /// 把下游 pipeline 的结构化诊断转发为 HIR facade 失败，不重新拼装失败文本。
-pub(crate) fn pipeline_rejected(diagnostics: nyar_types::StructuredDiagnosticSet) -> HirError {
+pub(crate) fn pipeline_rejected(diagnostics: StructuredDiagnosticSet) -> HirError {
     HirError::PipelineRejected {
         codes: diagnostics.records.iter().map(|record| record.code.clone()).collect(),
         module: diagnostics.records.first().map(|record| record.module.clone()).unwrap_or_default(),

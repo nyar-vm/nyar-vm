@@ -4,8 +4,8 @@
 
 pub use self::{
     diagnostics::{
-        CompileResult, CompileStage, DiagnosticArg, DiagnosticOwner, DiagnosticOwnerClass, DiagnosticPhase, DiagnosticRecord, DiagnosticRow,
-        DiagnosticSeverity, DiagnosticSource, DiagnosticSpan, StageResult, StructuredDiagnosticSet,
+        DiagnosticArg, DiagnosticOwner, DiagnosticOwnerClass, DiagnosticPhase, DiagnosticRow, DiagnosticSeverity, DiagnosticSource,
+        DiagnosticSpan,
     },
     linked::{
         CanonicalCallEdge, CanonicalExternalCallEdge, CanonicalFragment, CanonicalPrimitiveType, CanonicalTypeKind, EntryRecord,

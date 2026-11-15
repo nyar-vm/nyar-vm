@@ -35,8 +35,6 @@ pub enum PlanningError {
     SemanticContract {
         /// 当前模块。
         module: String,
-        /// 失败阶段。
-        stage: nyar_types::CompileStage,
         /// 结构化诊断摘要。
         detail: String,
     },
@@ -54,8 +52,8 @@ pub enum PlanningError {
 impl std::fmt::Display for PlanningError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::SemanticContract { module, stage, detail } => {
-                write!(f, "planning failed in stage `{stage:?}` of module `{module}`: {detail}")
+            Self::SemanticContract { module, detail } => {
+                write!(f, "planning failed for module `{module}`: {detail}")
             }
             Self::MissingBackendInterpreter { fragment, projection_family, host_boundary } => {
                 write!(f, "no backend interpreter for fragment `{fragment}` (family={projection_family:?}, host={host_boundary:?})")
@@ -269,7 +267,6 @@ impl ArtifactPartitionPlan {
         if semantic_fragments.is_empty() {
             return Err(PlanningError::SemanticContract {
                 module: module_name.to_string(),
-                stage: nyar_types::CompileStage::RepresentationPlan,
                 detail: "缺少 Compiler 已验证的 semantic fragment；禁止回退到 ObjectAlgebraicProgram".to_owned(),
             });
         }
@@ -318,7 +315,6 @@ fn canonical_optimizer_input(
     let callable_name = |instance: nyar_types::ItemInstanceId| {
         linked.callable_names.get(&instance).cloned().ok_or_else(|| PlanningError::SemanticContract {
             module: linked.module_name.clone(),
-            stage: nyar_types::CompileStage::RepresentationPlan,
             detail: format!("Canonical callable `{instance:?}` 缺少限定名称"),
         })
     };
@@ -445,7 +441,6 @@ fn build_fragment_views(
                 .find(|fragment| fragment.id == dimension.name)
                 .ok_or_else(|| PlanningError::SemanticContract {
                     module: module_name.to_string(),
-                    stage: nyar_types::CompileStage::RepresentationPlan,
                     detail: format!("优化维度 `{}` 没有对应的 Compiler semantic fragment", dimension.name),
                 })?
                 .rewrite_theory
@@ -562,7 +557,6 @@ fn canonical_fragment<'program>(
 ) -> Result<&'program nyar_types::CanonicalFragment, PlanningError> {
     fragments.get(identity).ok_or_else(|| PlanningError::SemanticContract {
         module: module_name.to_string(),
-        stage: nyar_types::CompileStage::RepresentationPlan,
         detail: format!("优化维度 `{identity}` 缺少 Canonical 片段合同"),
     })
 }

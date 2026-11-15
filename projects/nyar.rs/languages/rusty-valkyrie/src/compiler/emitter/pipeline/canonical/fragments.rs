@@ -2,8 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use nyar_types::{
     CanonicalCallEdge, CanonicalExternalCallEdge, CanonicalFragment, Identifier, ItemInstanceId, LinkedSemanticProgram,
-    StructuredDiagnosticSet,
 };
+
+use crate::compiler::valkyrie_mir::pipeline::StructuredDiagnosticSet;
 
 use crate::compiler::valkyrie_mir::{ValkyrieMirCallee, ValkyrieMirConstant, ValkyrieMirFunction, ValkyrieMirOperation};
 

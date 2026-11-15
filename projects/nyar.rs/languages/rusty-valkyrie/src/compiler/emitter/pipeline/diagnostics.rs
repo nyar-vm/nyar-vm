@@ -1,6 +1,6 @@
 //! Structured diagnostic helpers for pipeline stages.
 
-use nyar_types::{CompileStage, DiagnosticRecord, StageResult, StructuredDiagnosticSet};
+use crate::compiler::valkyrie_mir::pipeline::{CompileStage, DiagnosticRecord, StageResult, StructuredDiagnosticSet};
 
 /// Build one diagnostic record with a deterministic sort key.
 pub fn diagnostic(stage: CompileStage, code: &str, module: &str, message: impl Into<String>) -> DiagnosticRecord {

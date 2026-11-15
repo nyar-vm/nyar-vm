@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use nyar_types::{InstructionId, ItemId, ItemInstanceId, MirValueId, StructuredDiagnosticSet, TypeId};
+use nyar_types::{InstructionId, ItemId, ItemInstanceId, MirValueId, TypeId};
+
+use crate::compiler::valkyrie_mir::pipeline::{CompileStage, StructuredDiagnosticSet};
 
 use crate::compiler::valkyrie_mir::{ValkyrieMirError, ValkyrieMirOperation, ValkyrieMirProgram};
 
@@ -47,10 +49,10 @@ fn item_id(index: u32) -> ItemId {
     ItemId::from_index(index).expect("item identity overflow")
 }
 pub(crate) fn error_without_module(code: &'static str, message: impl Into<String>) -> StructuredDiagnosticSet {
-    fail_stage::<()>(nyar_types::CompileStage::SemanticMir, code, "", message).err().unwrap()
+    fail_stage::<()>(CompileStage::SemanticMir, code, "", message).err().unwrap()
 }
 pub(crate) fn error(module: &MirModule, code: &'static str, message: impl Into<String>) -> StructuredDiagnosticSet {
-    fail_stage::<()>(nyar_types::CompileStage::SemanticMir, code, &module.name, message).err().unwrap()
+    fail_stage::<()>(CompileStage::SemanticMir, code, &module.name, message).err().unwrap()
 }
 pub(crate) fn canonical_error(module: &MirModule, program: &ValkyrieMirProgram, error: ValkyrieMirError) -> StructuredDiagnosticSet {
     let detail = match &error {
@@ -62,7 +64,7 @@ pub(crate) fn canonical_error(module: &MirModule, program: &ValkyrieMirProgram, 
         }
         _ => format!("canonical MIR 校验失败: {error:?}"),
     };
-    fail_stage::<()>(nyar_types::CompileStage::ValidateMir, "CAN015", &module.name, detail).err().unwrap()
+    fail_stage::<()>(CompileStage::ValidateMir, "CAN015", &module.name, detail).err().unwrap()
 }
 
 fn describe_call_result_mismatch(

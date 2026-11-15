@@ -39,7 +39,7 @@ pub(crate) use host_bindings::{enforce_resolved_host_contract_bindings, host_pro
 pub use link::{link_reachable_dependency_mir, link_reachable_dependency_mir_with_hir, merge_aggregate_layouts, merge_entry_group_surface};
 pub use representation::CanonicalRepresentationPlanner;
 
-use nyar_types::CompileStage;
+use crate::compiler::valkyrie_mir::pipeline::CompileStage;
 
 /// Which half of the one-way stream a stage belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

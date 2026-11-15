@@ -94,49 +94,6 @@ fn diagnostic_row_empty_optional_fields_are_omitted_from_json() {
 }
 
 #[test]
-fn compile_result_success_vs_failure_separate() {
-    let success: nyar_types::CompileResult<String> = nyar_types::CompileResult::Success("hello artifact".into());
-    let failure: nyar_types::CompileResult<String> = nyar_types::CompileResult::Failure(vec![
-        DiagnosticRow::new(
-            "backend.contract.missing_carrier",
-            DiagnosticSeverity::Error,
-            DiagnosticPhase::Backend,
-            DiagnosticOwner::backend("backend"),
-            DiagnosticSource { id: "wasm.wasm".into(), revision: None },
-            DiagnosticSpan { start: 0, end: 0 },
-        )
-        .with_arg("type", DiagnosticArg::TypeName("SwissTableEntry".into()))
-        .with_arg("missing_carrier", DiagnosticArg::String("i64".into())),
-    ]);
-
-    let success_json = serde_json::to_string(&success).unwrap();
-    let failure_json = serde_json::to_string(&failure).unwrap();
-
-    assert!(success.is_success(), "Success 必须 is_success");
-    assert!(failure.is_failure(), "Failure 必须 is_failure");
-    assert!(success.diagnostics().is_none(), "Success 无 diagnostics");
-    assert_eq!(failure.diagnostics().unwrap().len(), 1, "Failure 有 1 条诊断");
-
-    // Success 载荷必须可序列化，载荷内容正确
-    assert!(success_json.contains("hello artifact"));
-    assert!(failure_json.contains("backend.contract.missing_carrier"));
-
-    // Failure 载荷必须能反序列化回来且 code / args 完整
-    let restored: nyar_types::CompileResult<String> = serde_json::from_str(&failure_json).unwrap();
-    match restored {
-        nyar_types::CompileResult::Failure(rows) => {
-            let row = &rows[0];
-            assert_eq!(row.code, "backend.contract.missing_carrier");
-            assert_eq!(row.owner, DiagnosticOwner::backend("backend"));
-            assert_eq!(row.phase, DiagnosticPhase::Backend);
-            assert!(matches!(row.args.get("type").unwrap(), DiagnosticArg::TypeName(_)));
-            assert!(matches!(row.args.get("missing_carrier").unwrap(), DiagnosticArg::String(_)));
-        }
-        _ => panic!("反序列化后应为 Failure"),
-    }
-}
-
-#[test]
 fn diagnostic_owner_is_honest_and_never_rewritten() {
     // 这条测试确保 owner 字段是诚实的——不同 owner 产出的诊断，即使同一个 code，
     // 也必须在 JSON 里区分开

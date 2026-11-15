@@ -9,6 +9,8 @@ use rusty_valkyrie::compiler::valkyrie_mir::{
     ValkyrieMirTerminator, ValkyrieMirWitness, declared_text_representation, pipeline, validate_named_residues,
 };
 
+use rusty_valkyrie::compiler::valkyrie_mir::pipeline::{CompileStage, StructuredDiagnosticSet};
+
 #[test]
 fn canonical_program_is_success_only() {
     let mut linked = LinkedSemanticProgram::default();

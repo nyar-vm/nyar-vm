@@ -27,9 +27,9 @@ use std::collections::BTreeMap;
 
 /// 诊断所属编译阶段（pipeline phase）。
 ///
-/// 与 [`CompileStage`]（语义 pipeline 阶段）分离：本类型面向诊断生产入口，
-/// 覆盖 AST parsing、staging（template）、binding、type、HIR、MIR、link、representation、
-/// backend contract、artifact emit。
+/// 本类型面向诊断生产入口，覆盖 AST parsing、staging（template）、binding、type、HIR、MIR、link、
+/// representation、backend contract、artifact emit；语言 pipeline 的语义阶段划分由语言自身拥有，
+/// 不属于中性诊断合同。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum DiagnosticPhase {
@@ -299,126 +299,3 @@ impl DiagnosticRow {
         format!("{}|{}|{}|{}", self.code, self.source.id, self.primary_span.start, self.primary_span.end)
     }
 }
-
-// ---------------------------------------------------------------------------
-// CompileResult：编译器顶层返回类型（语言无关）
-// ---------------------------------------------------------------------------
-
-/// 编译器顶层返回类型。
-///
-/// 成功载荷与失败诊断**分离**——成功时不携带任何诊断（诊断在编译前半段就已放行或被 Compiler 汇总），
-/// 失败时只携带诊断行集合，由 CLI 层（@vmz/commander）选择渲染方式。
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum CompileResult<TArtifact = ()> {
-    /// 成功产出。
-    Success(TArtifact),
-    /// 失败，携带所有结构化诊断行。
-    Failure(Vec<DiagnosticRow>),
-}
-
-impl<T> CompileResult<T> {
-    /// 判断是否成功产出。
-    pub fn is_success(&self) -> bool {
-        matches!(self, Self::Success(_))
-    }
-
-    /// 判断是否因诊断失败而中止。
-    pub fn is_failure(&self) -> bool {
-        matches!(self, Self::Failure(_))
-    }
-
-    /// 失败时返回全部诊断行引用；成功返回 None。
-    pub fn diagnostics(&self) -> Option<&[DiagnosticRow]> {
-        match self {
-            Self::Success(_) => None,
-            Self::Failure(rows) => Some(rows),
-        }
-    }
-
-    /// 映射成功载荷类型（失败诊断保持不变）。
-    pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> CompileResult<U> {
-        match self {
-            Self::Success(t) => CompileResult::Success(f(t)),
-            Self::Failure(rows) => CompileResult::Failure(rows),
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// 遗留类型（保留给现有 Pipeline trait / CanonicalMirError 等使用；待迁移）
-// ---------------------------------------------------------------------------
-
-/// 语义 pipeline 阶段（保留给现有 Pipeline trait 体系；**不要**与 [`DiagnosticPhase`] 混用）。
-///
-/// [`DiagnosticPhase`] 面向诊断生产入口（覆盖 Parsing / Staging 等），而本类型面向 Semantic MIR pipeline 的
-/// 语义阶段划分（M1/M2/Link/Representation 等）。两者并存是渐进式迁移的结果——待所有阶段私有错误类型
-/// 废弃后，本类型应被 [`DiagnosticPhase`] 替换。
-#[deprecated(
-    since = "S1-phase",
-    note = "Use DiagnosticPhase + DiagnosticRow for all new diagnostic production. This type remains for legacy Pipeline trait / CanonicalMirError interop and should be migrated out."
-)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum CompileStage {
-    /// Package AST.
-    Ast,
-    /// HIR elaboration / overload / evidence solving.
-    Hir,
-    /// Package semantic MIR + SPI (M1).
-    SemanticMir,
-    /// Cross-package link with selected std adaptors.
-    LinkTime,
-    /// Validated semantic MIR (M2).
-    ValidateMir,
-    /// Sparse representation / layout planning.
-    RepresentationPlan,
-    /// Target-private plan.
-    TargetExecutionPlan,
-    /// Artifact emit.
-    Emit,
-}
-
-/// 遗留结构化诊断行（使用 String message / severity；待全量迁移到 [`DiagnosticRow`] 后废弃）。
-#[deprecated(
-    since = "S1-phase",
-    note = "Use DiagnosticRow instead. This legacy type is kept for SemanticClosureError / CanonicalMirError interop and should be migrated out."
-)]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DiagnosticRecord {
-    /// 稳定 machine code（如 `SMIR006`）。
-    pub code: String,
-    /// 严重级别字符串（`error` / `warning`）。
-    pub severity: String,
-    /// 遗留 pipeline 阶段身份。
-    pub stage: CompileStage,
-    /// owning module / package symbol。
-    pub module: String,
-    /// 人类可读消息（本类型已弃用，不应依赖此字段）。
-    pub message: String,
-    /// 确定性排序 key。
-    pub stable_sort_key: String,
-}
-
-/// 遗留 structured diagnostics 集合（待全量迁移到 `Vec<DiagnosticRow>` 后废弃）。
-#[deprecated(since = "S1-phase", note = "Use Vec<DiagnosticRow> instead. This legacy type is kept for Pipeline trait interop.")]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StructuredDiagnosticSet {
-    /// 遗留诊断记录列表。
-    pub records: Vec<DiagnosticRecord>,
-}
-
-#[allow(deprecated)]
-impl StructuredDiagnosticSet {
-    /// 从非空 records 构造；空 Vec 返回 None。
-    pub fn from_records(records: Vec<DiagnosticRecord>) -> Option<Self> {
-        if records.is_empty() { None } else { Some(Self { records }) }
-    }
-}
-
-/// 遗留 pipeline 阶段结果别名（待全量迁移到 `Result<T, Vec<DiagnosticRow>>` 后废弃）。
-#[deprecated(
-    since = "S1-phase",
-    note = "Use Result<T, Vec<DiagnosticRow>> instead. This legacy type alias is kept for Pipeline trait interop."
-)]
-#[allow(deprecated)]
-pub type StageResult<T> = Result<T, StructuredDiagnosticSet>;

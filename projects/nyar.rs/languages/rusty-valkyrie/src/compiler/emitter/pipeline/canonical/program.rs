@@ -2,8 +2,10 @@ use std::collections::BTreeMap;
 
 use nyar_types::{
     CanonicalPrimitiveType, EntryRecord, ExportRecord, Identifier, ImportCapability, ImportIndex, ImportRecord, ItemInstanceRecord,
-    LinkedSemanticProgram, NominalInstanceRecord, QualifiedName, StructuredDiagnosticSet, TypeRecord,
+    LinkedSemanticProgram, NominalInstanceRecord, QualifiedName, TypeRecord,
 };
+
+use crate::compiler::valkyrie_mir::pipeline::StructuredDiagnosticSet;
 
 use crate::compiler::valkyrie_mir::{ValkyrieMir, ValkyrieMirProgram};
 

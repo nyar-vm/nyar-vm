@@ -2,7 +2,9 @@
 
 use std::collections::BTreeSet;
 
-use nyar_types::{CanonicalTypeKind, NominalValueSemantics, StageResult, ValueIdentity};
+use nyar_types::{CanonicalTypeKind, NominalValueSemantics, ValueIdentity};
+
+use crate::compiler::valkyrie_mir::pipeline::{CompileStage, StageResult};
 
 use crate::compiler::valkyrie_mir::{
     AdtRepresentation, InvokeLowering, RepresentationPlan, ValueRepresentation, ValkyrieMirOperation, ValkyrieMirProgram,
@@ -19,7 +21,7 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
     fn plan(&self, program: &ValkyrieMirProgram) -> StageResult<RepresentationPlan> {
         program.validate().map_err(|error| {
             fail_stage::<()>(
-                nyar_types::CompileStage::ValidateMir,
+                CompileStage::ValidateMir,
                 "PLAN001",
                 &program.linked.module_name,
                 format!("planner 收到未验证的 ValkyrieMirProgram: {error:?}"),
@@ -54,7 +56,7 @@ impl RepresentationPlanStage for CanonicalRepresentationPlanner {
                 for instruction in &block.instructions {
                     if !instruction_ids.insert(instruction.id) {
                         return fail_stage(
-                            nyar_types::CompileStage::RepresentationPlan,
+                            CompileStage::RepresentationPlan,
                             "PLAN002",
                             &program.linked.module_name,
                             format!("InstructionId 重复: {}", instruction.id.index()),

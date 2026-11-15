@@ -2,8 +2,10 @@ use std::collections::BTreeMap;
 
 use nyar_types::{
     CanonicalPrimitiveType, CanonicalTypeKind, FieldId, FieldRecord, Identifier, LinkedSemanticProgram, NominalInstanceId,
-    NominalInstanceRecord, NominalValueSemantics, StructuredDiagnosticSet, TypeId, VariantId,
+    NominalInstanceRecord, NominalValueSemantics, TypeId, VariantId,
 };
+
+use crate::compiler::valkyrie_mir::pipeline::StructuredDiagnosticSet;
 
 use crate::compiler::{
     emitter::frontend_contract::concretize_type,

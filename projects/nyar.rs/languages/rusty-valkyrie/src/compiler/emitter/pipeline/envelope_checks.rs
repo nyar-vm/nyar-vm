@@ -3,7 +3,7 @@
 //! 完整 ADT / Invoke / effect 闭包稍后。此处只守信封不变量，
 //! 让分析流有失败关闭钩子。
 
-use nyar_types::{CompileStage, StageResult};
+use crate::compiler::valkyrie_mir::pipeline::{CompileStage, StageResult};
 
 use crate::compiler::mir::{MirFunction, MirInstruction, MirOperation};
 

@@ -1,6 +1,6 @@
 //! Compiler 在依赖闭包完成后生产唯一的已验证成功载荷。
 
-use nyar_types::{CompileStage, StageResult};
+use crate::compiler::valkyrie_mir::pipeline::{CompileStage, StageResult};
 
 use crate::compiler::valkyrie_mir::{CompiledValkyrieProgram, pipeline::RepresentationPlanStage};
 

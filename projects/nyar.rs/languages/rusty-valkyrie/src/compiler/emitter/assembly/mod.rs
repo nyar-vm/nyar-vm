@@ -62,7 +62,6 @@ pub fn plan_artifacts_from_compiled_program(
     let target_profile = target.to_profile(None);
     let projection_policy = projection_policy_for_target_profile(&target_profile).map_err(|error| PlanningError::SemanticContract {
         module: compiled_program.mir_program().linked.module_name.clone(),
-        stage: nyar_types::CompileStage::RepresentationPlan,
         detail: format!("目标 projection 合同失败: {error:?}"),
     })?;
     let linked = &compiled_program.mir_program().linked;

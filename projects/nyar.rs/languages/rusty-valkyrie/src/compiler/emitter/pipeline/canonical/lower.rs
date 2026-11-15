@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
-use nyar_types::{
-    FieldId, FieldRecord, ItemInstanceId, MirValueId, NominalInstanceId, StructuredDiagnosticSet, TypeId, VariantId,
-};
+use nyar_types::{FieldId, FieldRecord, ItemInstanceId, MirValueId, NominalInstanceId, TypeId, VariantId};
+
+use crate::compiler::valkyrie_mir::pipeline::StructuredDiagnosticSet;
 
 use crate::compiler::valkyrie_mir::{
     ValkyrieMirArrayInitialization, ValkyrieMirBlock, ValkyrieMirBlockId, ValkyrieMirCallee, ValkyrieMirConstant, ValkyrieMirEffectKind,
