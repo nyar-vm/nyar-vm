@@ -507,11 +507,6 @@ impl ObjectHeap {
         self.free_list.len()
     }
 
-    /// Legacy alias for slot count.
-    pub fn len(&self) -> usize {
-        self.slot_count()
-    }
-
     /// Drops unmarked objects after a collection pass and returns ids to the free list.
     pub(crate) fn sweep(&mut self, marked: &[bool]) {
         for (index, slot) in self.objects.iter_mut().enumerate() {
