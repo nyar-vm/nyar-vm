@@ -49,7 +49,6 @@ fn lua_pe_specializes_to_native_residual_not_nyar() {
     else {
         panic!("Lua PE must be Native residual, not bytecode / OVM");
     };
-    assert!(module.is_native_bound());
     assert!(module.op_count() > 0);
     assert!(module.function("main").is_some());
 }
@@ -68,7 +67,6 @@ print(x)
 "#;
     let runner = LegendVmRunner::new();
     let residual = runner.specialize_native("lua", source, "lua_pe").expect("specialize");
-    assert!(residual.is_native_bound(), "残差仍应保留 Print 操作");
     // 诊断解释可以对照语义；产品 lowering 必须失败闭合，不能执行后丢弃 effect。
     let specialized = eval_native_residual(&residual).expect("diagnostic eval");
     assert!(matches!(specialized, ResidualValue::Int(3)), "unexpected residual value: {specialized:?}");
@@ -127,7 +125,6 @@ return "n:" .. total
 fn lua_pe_emits_windows_pe_from_native_residual() {
     let runner = LegendVmRunner::new();
     let residual = runner.specialize_native("lua", "return 1 + 2", "lua_pe").expect("specialize");
-    assert!(residual.is_native_bound());
 
     let dir = std::env::temp_dir().join("legend-vm-lua-pe-native");
     let _ = std::fs::create_dir_all(&dir);
@@ -143,7 +140,6 @@ fn assert_native_pe_matches_interpret(source: &str, residual_ok: impl FnOnce(&Re
     let interpreted = runner.run("lua", source, &mut env).expect("interpret");
 
     let residual = runner.specialize_native("lua", source, "lua_pe").expect("specialize → native");
-    assert!(residual.is_native_bound(), "Lua PE residual must be native-bound");
     assert!(residual.op_count() > 0, "specialize must residualize ops");
 
     let specialized = eval_native_residual(&residual).expect("eval native residual");

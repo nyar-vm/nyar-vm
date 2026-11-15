@@ -24,14 +24,6 @@ use nyar_emitter::nyar_backend_native::{
 
 use super::PeCompiler;
 
-/// Target lane for host-script native residuals (product path).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum NativeResidualTarget {
-    /// x86-64 native frames (legend-vm endpoint).
-    #[default]
-    Native,
-}
-
 /// 容器写入器：由平台身份的 specification 决定。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeContainer {
@@ -324,8 +316,6 @@ pub struct NativeResidualFunction {
 pub struct NativeResidualModule {
     /// Module name.
     pub name: String,
-    /// Product target (always [`NativeResidualTarget::Native`] on this path).
-    pub target: NativeResidualTarget,
     /// Residual functions (includes `main`).
     pub functions: Vec<NativeResidualFunction>,
 }
@@ -334,11 +324,6 @@ impl NativeResidualModule {
     /// Total residual ops across all functions (proves specialize ran).
     pub fn op_count(&self) -> usize {
         self.functions.iter().map(|function| function.ops.len()).sum()
-    }
-
-    /// Whether this residual is bound to the native product lane.
-    pub fn is_native_bound(&self) -> bool {
-        self.target == NativeResidualTarget::Native
     }
 
     /// Look up a function by name.
@@ -366,7 +351,7 @@ impl NativeResidualSink {
         if self.current.is_some() {
             self.end_function();
         }
-        NativeResidualModule { name: self.module_name, target: NativeResidualTarget::Native, functions: self.functions }
+        NativeResidualModule { name: self.module_name, functions: self.functions }
     }
 
     fn push_op(&mut self, op: NativeResidualOp) {
@@ -1051,9 +1036,6 @@ pub fn lower_native_residual_to_program(
     module: &NativeResidualModule,
     target: NativeProductTarget,
 ) -> Result<NativeTextProgramImage, String> {
-    if !module.is_native_bound() {
-        return Err("residual is not native-bound".into());
-    }
     // 产品级 effect：`print` 可出现在任意残差函数；含 effect 的模块给每个函数
     // 增加同一个隐藏的首个整数形参（宿主 effect 通道），调用时逐层传递。
     let has_print = module.functions.iter().any(|function| function.ops.iter().any(|op| matches!(op, NativeResidualOp::Print(_))));
@@ -2793,9 +2775,6 @@ fn lower_residual_function(
 /// 机器码不在这里手写：residual 适配器只提交本 lane 的文本 LIR，帧序言/尾声、
 /// 指令编码与重定位统一由 native 平台服务产出。
 pub fn lower_native_residual_to_x64(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
-    if !module.is_native_bound() {
-        return Err("residual is not native-bound".into());
-    }
     // 编译时未知输入无法常量折叠：参数化残差必须走真实代码生成，该 lowering
     // 尚未接入，禁止用任何固定答案或空函数体冒充产品。
     let main = module.function("main").ok_or_else(|| "native residual has no `main` function".to_string())?;
@@ -2884,7 +2863,6 @@ mod tests {
     fn residual_main(ops: Vec<NativeResidualOp>) -> NativeResidualModule {
         NativeResidualModule {
             name: "t".into(),
-            target: NativeResidualTarget::Native,
             functions: vec![NativeResidualFunction { name: "main".into(), parameters: Vec::new(), ops }],
         }
     }
