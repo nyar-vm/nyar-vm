@@ -28,7 +28,3 @@ Wadler-style document algebra: `text`, `trivia`, `append`, `nest`, `line`, `soft
 
 Language plugins implement `FormatSyntax::format_document(&self, options)` (CST) and `ToDocument::to_document` (model
 printer; trait lives in the frontend crate under orphan rules).
-
-## Legacy
-
-`FormatBuffer` is deprecated and kept only for V/AWSL transition; remove after migration.

@@ -59,22 +59,6 @@ impl GenerateConstantPool {
         self.entries.push(GenerateConstant::String(value.into()));
         index
     }
-
-    /// Legacy accessor used by older stubs.
-    pub fn int64s(&self) -> impl Iterator<Item = i64> + '_ {
-        self.entries.iter().filter_map(|entry| match entry {
-            GenerateConstant::Int64(value) => Some(*value),
-            _ => None,
-        })
-    }
-
-    /// Legacy accessor used by older stubs.
-    pub fn strings(&self) -> impl Iterator<Item = &str> + '_ {
-        self.entries.iter().filter_map(|entry| match entry {
-            GenerateConstant::String(value) => Some(value.as_str()),
-            _ => None,
-        })
-    }
 }
 
 /// Import kind for generate-time modules.

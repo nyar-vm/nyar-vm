@@ -286,25 +286,6 @@ impl WasmAbiType {
             _ => None,
         }
     }
-
-    /// 降级为 JSON section 使用的简化字符串名（仅限标量和 Unit）。
-    ///
-    /// 供 `WasmAbiType::from_legacy_str` 解析旧版 `{"params": ["i64"]}` JSON
-    /// 时做 round-trip 测试。**新 ABI schema 不消费本方法**。
-    #[doc(hidden)]
-    pub fn legacy_scalar_name(&self) -> Option<&'static str> {
-        match self {
-            WasmAbiType::Unit => Some("unit"),
-            WasmAbiType::I32 => Some("i32"),
-            WasmAbiType::I64 => Some("i64"),
-            WasmAbiType::F32 => Some("f32"),
-            WasmAbiType::F64 => Some("f64"),
-            WasmAbiType::Bool => Some("bool"),
-            WasmAbiType::Char => Some("char"),
-            WasmAbiType::Utf8 => Some("utf8"),
-            _ => None,
-        }
-    }
 }
 
 /// 将 `NyarType` 映射为结构化的 `WasmAbiType`。

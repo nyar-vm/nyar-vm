@@ -8,14 +8,7 @@ export const NODE_WASM_TARGET = 'wasm32-node-unknown-wasm';
 /** OVM/Nyar 产物 manifest 里的 target 字段以 canonical triple 为准；freshness 以 manifest 为准。 */
 export const OVM_BUILD_TARGET = 'ovm';
 
-/** @deprecated 矩阵历史名；新鲜度请用 {@link isArtifactCacheFreshForBuild}。 */
-export const NYAR_VM_TARGET = OVM_BUILD_TARGET;
-
 export type FreshnessResult = {fresh: boolean; reason?: string};
-
-export function resolveArtifactDir(buildOutputDir: string, _target: string): string {
-    return buildOutputDir;
-}
 
 /**
  * 读取产物 execution manifest 摘要（pinned runner 消费合同）。
