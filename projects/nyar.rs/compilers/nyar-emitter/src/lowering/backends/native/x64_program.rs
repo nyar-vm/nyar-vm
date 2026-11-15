@@ -360,6 +360,7 @@ pub fn encode_native_text_program_with_dependencies(
                     text.extend_from_slice(&value.to_le_bytes());
                 }
                 NativeTextInstruction::StoreByteAtRaxFromRdx => text.extend_from_slice(&[0x88, 0x10]),
+                NativeTextInstruction::LoadByteFromRax => text.extend_from_slice(&[0x0F, 0xB6, 0x00]),
                 NativeTextInstruction::LoadFromRax => text.extend_from_slice(&[0x48, 0x8B, 0x00]),
                 NativeTextInstruction::StoreRcxToRax => text.extend_from_slice(&[0x48, 0x89, 0x08]),
                 NativeTextInstruction::StoreRaxToRcx => text.extend_from_slice(&[0x48, 0x89, 0x01]),

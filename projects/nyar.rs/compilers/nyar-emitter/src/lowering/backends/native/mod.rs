@@ -235,6 +235,10 @@ pub enum NativeTextInstruction {
     AddRdxImmediate(i32),
     /// `mov [rax], dl`：把 `rdx` 的低字节写入 `rax` 指向的缓冲区。
     StoreByteAtRaxFromRdx,
+    /// `movzx eax, byte [rax]`：读取 `rax` 指向的单字节（零扩展到 64 位）。
+    ///
+    /// 用于字符串的字节序比较；描述符里的 UTF-8 字节由适配器负责定位。
+    LoadByteFromRax,
     /// `mov rax, [rax]`：读取 `rax` 指向的机器字（例如数据段的 arena 游标）。
     LoadFromRax,
     /// `mov [rax], rcx`：把 `rcx` 写入 `rax` 指向的机器字（arena 游标更新）。

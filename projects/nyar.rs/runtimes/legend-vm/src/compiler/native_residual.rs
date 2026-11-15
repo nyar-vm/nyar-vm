@@ -971,8 +971,9 @@ enum ProductValueKind {
 /// `print` 按目标 OS 的写入原语输出：Windows 经 `kernel32!WriteFile`（IAT），
 /// Linux 经 `write(2)` 系统调用；两者都保持 guest 顺序。字符串走描述符，
 /// 整数走十进制格式化（负数带 `-`），布尔写 `true`/`false`，`nil` 写空串。
-/// 混合载体拼接（字符串 + 数字）、字符串比较/排序、字符串作为调用实参、
-/// 对象与运行时解析调用都显式失败闭合，不在产品路径里静默吞掉语义。
+/// 混合载体拼接（字符串 + 数字）、字符串作为调用实参、对象与运行时解析调用
+/// 都显式失败闭合，不在产品路径里静默吞掉语义。字符串的相等与排序按 UTF-8
+/// 字节序（lexicographic）比较内容，与描述符地址无关。
 pub fn lower_native_residual_to_program(
     module: &NativeResidualModule,
     target: NativeProductTarget,
@@ -2241,6 +2242,133 @@ impl<'a> ResidualFunctionLowering<'a> {
         self.instructions.push(Lir::StoreSlot(pointer));
         self.write_bytes(pointer, length)
     }
+
+    /// 把字符串描述符的运行期长度读入新槽。
+    fn text_length(&mut self, descriptor: u16) -> u16 {
+        use NativeTextInstruction as Lir;
+        self.instructions.push(Lir::LoadSlot(descriptor));
+        self.instructions.push(Lir::LoadDescriptorLength);
+        let length = self.alloc_slot();
+        self.instructions.push(Lir::StoreSlot(length));
+        length
+    }
+
+    /// 字符串按字节序（lexicographic）比较：先逐字节比较公共前缀，再按长度定序，
+    /// 得到 `-1 / 0 / 1` 后应用谓词得到布尔。
+    ///
+    /// 描述符地址不参与比较；字面量与运行期 arena 文本使用同一布局与同一路径。
+    fn compare_text_values(
+        &mut self,
+        left: u16,
+        left_kind: ProductValueKind,
+        right: u16,
+        right_kind: ProductValueKind,
+        predicate: NativeTextInstruction,
+    ) -> Result<(), String> {
+        use NativeTextInstruction as Lir;
+        if !matches!(left_kind, ProductValueKind::Str(_)) || !matches!(right_kind, ProductValueKind::Str(_)) {
+            return Err(format!(
+                "residual function `{}` orders mixed carriers at the product boundary",
+                self.function.name
+            ));
+        }
+        let left_length = self.text_length(left);
+        let right_length = self.text_length(right);
+        // 字节区起点 = 描述符 + 8。
+        self.instructions.push(Lir::LoadSlot(left));
+        self.instructions.push(Lir::AddRaxImmediate(8));
+        let left_bytes = self.alloc_slot();
+        self.instructions.push(Lir::StoreSlot(left_bytes));
+        self.instructions.push(Lir::LoadSlot(right));
+        self.instructions.push(Lir::AddRaxImmediate(8));
+        let right_bytes = self.alloc_slot();
+        self.instructions.push(Lir::StoreSlot(right_bytes));
+
+        let index = self.store_immediate(0);
+        let comparison = self.alloc_slot();
+        let left_byte = self.alloc_slot();
+        let right_byte = self.alloc_slot();
+        let address = self.alloc_slot();
+        let head = self.fresh_label();
+        let tail = self.fresh_label();
+        let bytes_differ = self.fresh_label();
+        let greater_byte = self.fresh_label();
+        let shorter = self.fresh_label();
+        let done = self.fresh_label();
+
+        self.instructions.push(Lir::Label(head));
+        // index < len(left) && index < len(right)，否则进入尾部长度比较。
+        self.instructions.push(Lir::LoadSlot(index));
+        self.instructions.push(Lir::LoadSlotToRcx(left_length));
+        self.instructions.push(Lir::Lt);
+        self.instructions.push(Lir::JumpIfZero(tail));
+        self.instructions.push(Lir::LoadSlot(index));
+        self.instructions.push(Lir::LoadSlotToRcx(right_length));
+        self.instructions.push(Lir::Lt);
+        self.instructions.push(Lir::JumpIfZero(tail));
+        // 取两侧同一下标的字节。
+        self.instructions.push(Lir::LoadSlot(left_bytes));
+        self.instructions.push(Lir::LoadSlotToRcx(index));
+        self.instructions.push(Lir::Add);
+        self.instructions.push(Lir::StoreSlot(address));
+        self.instructions.push(Lir::LoadSlot(address));
+        self.instructions.push(Lir::LoadByteFromRax);
+        self.instructions.push(Lir::StoreSlot(left_byte));
+        self.instructions.push(Lir::LoadSlot(right_bytes));
+        self.instructions.push(Lir::LoadSlotToRcx(index));
+        self.instructions.push(Lir::Add);
+        self.instructions.push(Lir::StoreSlot(address));
+        self.instructions.push(Lir::LoadSlot(address));
+        self.instructions.push(Lir::LoadByteFromRax);
+        self.instructions.push(Lir::StoreSlot(right_byte));
+        // 相同则推进下标；不同则按字节定序。
+        self.instructions.push(Lir::LoadSlot(left_byte));
+        self.instructions.push(Lir::LoadSlotToRcx(right_byte));
+        self.instructions.push(Lir::Eq);
+        self.instructions.push(Lir::JumpIfZero(bytes_differ));
+        self.instructions.push(Lir::LoadSlot(index));
+        self.instructions.push(Lir::AddRaxImmediate(1));
+        self.instructions.push(Lir::StoreSlot(index));
+        self.instructions.push(Lir::Jump(head));
+        self.instructions.push(Lir::Label(bytes_differ));
+        self.instructions.push(Lir::LoadSlot(left_byte));
+        self.instructions.push(Lir::LoadSlotToRcx(right_byte));
+        self.instructions.push(Lir::Lt);
+        self.instructions.push(Lir::JumpIfZero(greater_byte));
+        self.instructions.push(Lir::LoadI64(-1));
+        self.instructions.push(Lir::StoreSlot(comparison));
+        self.instructions.push(Lir::Jump(done));
+        self.instructions.push(Lir::Label(greater_byte));
+        self.instructions.push(Lir::LoadI64(1));
+        self.instructions.push(Lir::StoreSlot(comparison));
+        self.instructions.push(Lir::Jump(done));
+        // 公共前缀相同：短者在前。
+        self.instructions.push(Lir::Label(tail));
+        self.instructions.push(Lir::LoadI64(0));
+        self.instructions.push(Lir::StoreSlot(comparison));
+        self.instructions.push(Lir::LoadSlot(left_length));
+        self.instructions.push(Lir::LoadSlotToRcx(right_length));
+        self.instructions.push(Lir::Lt);
+        self.instructions.push(Lir::JumpIfZero(shorter));
+        self.instructions.push(Lir::LoadI64(-1));
+        self.instructions.push(Lir::StoreSlot(comparison));
+        self.instructions.push(Lir::Jump(done));
+        self.instructions.push(Lir::Label(shorter));
+        self.instructions.push(Lir::LoadSlot(left_length));
+        self.instructions.push(Lir::LoadSlotToRcx(right_length));
+        self.instructions.push(Lir::Gt);
+        self.instructions.push(Lir::JumpIfZero(done));
+        self.instructions.push(Lir::LoadI64(1));
+        self.instructions.push(Lir::StoreSlot(comparison));
+        // 谓词应用到 `-1 / 0 / 1`。
+        self.instructions.push(Lir::Label(done));
+        let zero = self.store_immediate(0);
+        self.instructions.push(Lir::LoadSlot(comparison));
+        self.instructions.push(Lir::LoadSlotToRcx(zero));
+        self.instructions.push(predicate);
+        self.push_stack_value(ProductValueKind::Bool);
+        Ok(())
+    }
 }
 
 fn lower_all(
@@ -2354,12 +2482,12 @@ fn lower_residual_function(
             NativeResidualOp::Eq | NativeResidualOp::Ne => {
                 let (right, right_kind) = lowering.pop()?;
                 let (left, left_kind) = lowering.pop()?;
-                // guest 的相等是结构化比较；不同载体不能按数值比较。
+                // guest 的字符串相等是内容比较；不同载体的结构化比较仍失败闭合。
                 if matches!(left_kind, ProductValueKind::Str(_)) || matches!(right_kind, ProductValueKind::Str(_)) {
-                    return Err(format!(
-                        "residual function `{}` compares string values; byte-wise comparison is not implemented at the product boundary",
-                        function.name
-                    ));
+                    let predicate =
+                        if matches!(op, NativeResidualOp::Eq) { NativeTextInstruction::Eq } else { NativeTextInstruction::Ne };
+                    lowering.compare_text_values(left, left_kind, right, right_kind, predicate)?;
+                    continue;
                 }
                 if left_kind != right_kind || left_kind == ProductValueKind::Nil {
                     return Err(format!(
@@ -2387,11 +2515,16 @@ fn lower_residual_function(
                         function.name
                     ));
                 }
+                // 字符串按字节序比较（与 guest 的字典序一致），其它载体按有符号整数比较。
                 if matches!(left_kind, ProductValueKind::Str(_)) || matches!(right_kind, ProductValueKind::Str(_)) {
-                    return Err(format!(
-                        "residual function `{}` orders strings; byte-wise ordering is not implemented at the product boundary",
-                        function.name
-                    ));
+                    let predicate = match op {
+                        NativeResidualOp::Lt => NativeTextInstruction::Lt,
+                        NativeResidualOp::Le => NativeTextInstruction::Le,
+                        NativeResidualOp::Gt => NativeTextInstruction::Gt,
+                        _ => NativeTextInstruction::Ge,
+                    };
+                    lowering.compare_text_values(left, left_kind, right, right_kind, predicate)?;
+                    continue;
                 }
                 let instruction = match op {
                     NativeResidualOp::Lt => NativeTextInstruction::Lt,

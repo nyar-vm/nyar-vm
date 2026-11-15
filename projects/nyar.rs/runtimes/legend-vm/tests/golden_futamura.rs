@@ -592,7 +592,6 @@ mod exported_abi {
             ("return x .. \"s\"\n", "mixed carriers"),
             // 普通库产物没有宿主入口重置 arena；运行期拼接必须显式失败闭合。
             ("return \"a\" .. \"b\"\n", "entry-reset text arena contract"),
-            ("return \"a\" == \"b\"\n", "byte-wise comparison"),
         ] {
             let residual = runner.specialize_native("lua", source, "lua_pe").expect("specialize");
             let error = emit_native_pe_library(&residual).expect_err("unsupported residual must fail closed");
@@ -988,6 +987,15 @@ mod python_extension_abi {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// 字符串比较：相等与排序按内容字节序，描述符地址不参与。
+    #[test]
+    fn python_method_compares_runtime_strings() {
+        let source = "function equal()\n  return (\"a\" .. \"b\") == \"ab\"\nend\nfunction less()\n  return (\"ab\" .. \"c\") < \"abd\"\nend\nfunction longer()\n  return (\"ab\" .. \"c\") < \"ab\"\nend\nreturn 42\n";
+        let dir = extension_dir(source, "compare");
+        assert_eq!(run_python(&dir, "print(demo.equal()); print(demo.less()); print(demo.longer())"), "1\n1\n0");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// 模块绑定：`DT_NEEDED` 指向宿主真实 libpython 时，`import` 正常。
     #[test]
     fn python_extension_binds_the_host_library() {
@@ -1140,6 +1148,20 @@ mod windows_extension_abi {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// 字符串比较：相等与排序按内容字节序，描述符地址不参与。
+    #[test]
+    fn windows_python_extension_compares_runtime_strings() {
+        let dir = extension_dir("compare");
+        let runner = legend_vm::LegendVmRunner::new();
+        let source = "function equal()\n  return (\"a\" .. \"b\") == \"ab\"\nend\nfunction less()\n  return (\"ab\" .. \"c\") < \"abd\"\nend\nfunction longer()\n  return (\"ab\" .. \"c\") < \"ab\"\nend\nreturn 42\n";
+        let residual = runner.specialize_native("lua", source, MODULE_NAME).expect("specialize");
+        let library = python_library();
+        let bytes = emit_native_python_extension(&residual, NativeProductOs::Windows, Some(&library)).expect("emit pyd");
+        std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
+        assert_eq!(run_python(&dir, "print(demo.equal()); print(demo.less()); print(demo.longer())"), "1\n1\n0", "字符串比较必须按内容字节序");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn windows_python_extension_prints_runtime_concatenated_strings() {
         let dir = extension_dir("concat-print");
@@ -1168,6 +1190,19 @@ mod windows_extension_abi {
         std::fs::write(&path, bytes).expect("write .node");
         let script = format!("const m = require(String.raw`{}`); console.log(m.join()); console.log(m.join());", path.display());
         assert_eq!(run("node", &["-e", &script]), "ab\nab", "Node 回调返回的镜像 arena 字符串必须逐次复位");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn windows_node_addon_prints_runtime_concatenated_strings() {
+        let dir = extension_dir("node-concat-print");
+        let runner = legend_vm::LegendVmRunner::new();
+        let residual = runner.specialize_native("lua", "print(\"a\" .. \"b\")\nreturn 7\n", MODULE_NAME).expect("specialize");
+        let bytes = emit_native_node_addon(&residual, NativeProductOs::Windows).expect("emit node dll");
+        let path = dir.join("addon.node");
+        std::fs::write(&path, bytes).expect("write .node");
+        let script = format!("require(String.raw`{}`);", path.display());
+        assert_eq!(run("node", &["-e", &script]), "ab", "Node effect 必须按 guest 顺序写出动态字符串");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
