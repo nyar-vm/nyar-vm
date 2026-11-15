@@ -25,7 +25,7 @@ fn main() {
     let plan = workspace
         .build_plan(&BuildRequest {
             project_dir: project,
-            target: rusty_valkyrie::legion::CanonicalTarget::parse("node").expect("node"),
+            target: rusty_valkyrie::legion::CanonicalTarget::parse("wasm-node").expect("wasm-node"),
             output_dir: None,
         })
         .expect("plan");

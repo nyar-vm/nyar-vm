@@ -15,6 +15,6 @@ fn transport_channel_does_not_rewrite_publish_target() {
 #[test]
 fn missing_dist_errors_with_hint() {
     let dir = TempDir::new().expect("temp");
-    let error = resolve_publish_artifact(dir.path(), "node").expect_err("missing dist");
+    let error = resolve_publish_artifact(dir.path(), "wasm-node").expect_err("missing dist");
     assert!(error.to_string().contains("build --target"));
 }

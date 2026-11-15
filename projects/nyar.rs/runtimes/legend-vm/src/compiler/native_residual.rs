@@ -14,6 +14,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use miette::{Result, miette};
+use nyar::abstractions::{CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget};
+use nyar::target_resolution::{ArtifactContract, ResolvedTarget};
 use nyar_analyzer::residual::ResidualSink;
 use nyar_emitter::nyar_backend_native::{
     NativeAbi, NativeDataTarget, NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage, encode_native_text_function,
@@ -30,30 +32,81 @@ pub enum NativeResidualTarget {
     Native,
 }
 
-/// 产物 OS：决定容器与调用约定，与「宿主扩展模块类型」正交。
+/// 容器写入器：由平台身份的 specification 决定。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NativeProductOs {
-    /// `PE32+` + Win64。
-    Windows,
-    /// `ELF64 ET_DYN` + SysV64。
-    Linux,
+enum NativeContainer {
+    /// `PE32+`。
+    Pe,
+    /// `ELF64 ET_DYN`。
+    Elf,
 }
 
-impl NativeProductOs {
-    /// 该 OS 的整数调用约定。
-    fn abi(self) -> NativeAbi {
-        match self {
-            Self::Windows => NativeAbi::Win64,
-            Self::Linux => NativeAbi::SystemV64,
-        }
+/// 已冻结的原生平台身份。
+///
+/// 架构、OS 规格与 ABI 一起决定容器和调用约定，而不是由「OS 枚举」再反推 ABI。
+/// 只接受当前文本 LIR 真正闭合的组合；其余平台在构造时明确失败，不降级成最近的
+/// 可用平台。完整身份（[`Self::canonical`]）保留给缓存与产物记录。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativePlatform {
+    target: CanonicalTarget,
+    /// 文本 LIR 实际消费的整数调用约定。
+    native_abi: NativeAbi,
+    container: NativeContainer,
+}
+
+impl NativePlatform {
+    /// 从已解析的平台身份构造；未实现的能力在这里结构化失败。
+    pub fn from_canonical(target: CanonicalTarget) -> Result<Self, String> {
+        let abi = target.abi.unwrap_or_else(|| target.resolved_abi());
+        let target = CanonicalTarget { abi: Some(abi), ..target };
+        let (native_abi, container) = match (target.arch, target.specification, abi) {
+            // x86-64 Windows 的 MSVC 与 GNU 目标共用 Win64 与 PE 容器。
+            (CanonicalArch::X86_64, CanonicalSpecification::Windows, CanonicalAbi::Msvc | CanonicalAbi::Gnu) => {
+                (NativeAbi::Win64, NativeContainer::Pe)
+            }
+            (CanonicalArch::X86_64, CanonicalSpecification::Linux, CanonicalAbi::Gnu | CanonicalAbi::SystemV) => {
+                (NativeAbi::SystemV64, NativeContainer::Elf)
+            }
+            (arch, specification, abi) => {
+                return Err(format!(
+                    "原生残差产品尚不支持平台身份 `{}-unknown-{}-{}`：文本 LIR 只闭合 x86-64 的 Win64 / SysV64 调用约定",
+                    arch.as_str(),
+                    specification.as_str(),
+                    abi.as_str()
+                ));
+            }
+        };
+        Ok(Self { target, native_abi, container })
     }
 
-    /// OS 名称，用于结构化错误。
-    fn name(self) -> &'static str {
-        match self {
-            Self::Windows => "Windows",
-            Self::Linux => "Linux",
-        }
+    /// x86-64 Windows 平台（`x86_64-pc-windows-msvc`）。
+    pub fn windows_x64() -> Self {
+        Self::from_canonical(CanonicalTarget::parse("x86_64-pc-windows-msvc").expect("canonical windows x64 target")).expect("windows x64 is supported")
+    }
+
+    /// x86-64 Linux 平台（`x86_64-unknown-linux-gnu`）。
+    pub fn linux_x64() -> Self {
+        Self::from_canonical(CanonicalTarget::parse("x86_64-unknown-linux-gnu").expect("canonical linux x64 target")).expect("linux x64 is supported")
+    }
+
+    /// 完整平台身份（含冻结 ABI），用于缓存与产物记录。
+    pub fn canonical(self) -> CanonicalTarget {
+        self.target
+    }
+
+    /// 文本 LIR 的整数调用约定。
+    fn abi(self) -> NativeAbi {
+        self.native_abi
+    }
+
+    /// 是否为 `PE32+` / Win64 平台。
+    fn is_windows(self) -> bool {
+        self.container == NativeContainer::Pe
+    }
+
+    /// 平台名称，用于结构化错误。
+    fn name(self) -> String {
+        self.target.to_string()
     }
 }
 
@@ -76,15 +129,15 @@ impl NativeHostModule {
     }
 }
 
-/// 原生产物目标：OS 与宿主模块类型分开表达，不再用「Node/Python 等于 Linux」。
+/// 原生产物目标：已冻结的平台身份与宿主模块类型正交，不再用「Node/Python 等于 Linux」。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NativeProductTarget {
     /// 普通共享库：宿主按导出函数 ABI 直接调用（`dlopen` / `LoadLibrary`）。
-    Library(NativeProductOs),
-    /// 宿主扩展模块：`os` 决定容器与调用约定，`module` 决定入口与导入面。
+    Library(NativePlatform),
+    /// 宿主扩展模块：`platform` 决定容器与调用约定，`module` 决定入口与导入面。
     Extension {
-        /// 目标 OS。
-        os: NativeProductOs,
+        /// 已冻结的平台身份。
+        platform: NativePlatform,
         /// 宿主模块类型。
         module: NativeHostModule,
         /// Windows CPython 扩展的导入 DLL 名（版本相关，由构建环境提供）。
@@ -93,15 +146,30 @@ pub enum NativeProductTarget {
 }
 
 impl NativeProductTarget {
-    /// 便捷构造：无双阶段/版本参数的扩展目标。
-    fn extension(os: NativeProductOs, module: NativeHostModule) -> Self {
-        Self::Extension { os, module, library: None }
+    /// 从统一解析服务的结果构造产物目标。
+    ///
+    /// 平台能力不足（非 x86-64 / 未支持 OS）与平台 lane 合同都在这里结构化失败。
+    pub fn from_resolved(resolved: &ResolvedTarget) -> Result<Self, String> {
+        let platform = NativePlatform::from_canonical(resolved.platform)?;
+        match &resolved.contract {
+            ArtifactContract::Native => Ok(Self::Library(platform)),
+            ArtifactContract::NodeApi => Ok(Self::Extension { platform, module: NativeHostModule::Node, library: None }),
+            ArtifactContract::Cpython(config) => {
+                Ok(Self::Extension { platform, module: NativeHostModule::Python, library: config.import_library.clone() })
+            }
+            ArtifactContract::Platform => Err(format!("目标 `{}` 是平台 lane 产物，不是原生宿主产物", resolved.identity())),
+        }
     }
 
-    /// 产物 OS。
-    fn os(&self) -> NativeProductOs {
+    /// 便捷构造：无双阶段/版本参数的扩展目标。
+    fn extension(platform: NativePlatform, module: NativeHostModule) -> Self {
+        Self::Extension { platform, module, library: None }
+    }
+
+    /// 产物平台身份。
+    fn platform(&self) -> NativePlatform {
         match self {
-            Self::Library(os) | Self::Extension { os, .. } => *os,
+            Self::Library(platform) | Self::Extension { platform, .. } => *platform,
         }
     }
 
@@ -115,7 +183,7 @@ impl NativeProductTarget {
 
     /// 对应的文本 LIR 调用约定。
     fn abi(&self) -> NativeAbi {
-        self.os().abi()
+        self.platform().abi()
     }
 
     /// effect 通道是否由宿主作为隐藏首个整数形参传入。
@@ -125,11 +193,16 @@ impl NativeProductTarget {
         self.host_module().is_none()
     }
 
+    /// 是否为 Windows 平台。
+    fn is_windows(&self) -> bool {
+        self.platform().is_windows()
+    }
+
     /// 目标名称，用于结构化错误。
     fn name(&self) -> String {
         match self {
-            Self::Library(os) => format!("{} shared library", os.name()),
-            Self::Extension { os, module, .. } => format!("{} {} extension", os.name(), module.name()),
+            Self::Library(platform) => format!("{} shared library", platform.name()),
+            Self::Extension { platform, module, .. } => format!("{} {} extension", platform.name(), module.name()),
         }
     }
 
@@ -138,11 +211,11 @@ impl NativeProductTarget {
     /// 由宿主的固定实参占用与目标 ABI 的寄存器形参共同决定。
     fn method_parameter_limit(&self) -> usize {
         match self {
-            Self::Library(os) => os.abi().integer_argument_limit(),
-            Self::Extension { os, module: NativeHostModule::Node, .. } => os.abi().integer_argument_limit(),
+            Self::Library(platform) => platform.abi().integer_argument_limit(),
+            Self::Extension { platform, module: NativeHostModule::Node, .. } => platform.abi().integer_argument_limit(),
             // `PyArg_ParseTuple(args, fmt, &a…)` 占两个固定实参。
-            Self::Extension { os, module: NativeHostModule::Python, .. } => {
-                os.abi().integer_argument_limit().saturating_sub(2)
+            Self::Extension { platform, module: NativeHostModule::Python, .. } => {
+                platform.abi().integer_argument_limit().saturating_sub(2)
             }
         }
     }
@@ -989,8 +1062,8 @@ pub fn lower_native_residual_to_program(
     // Windows 的 IAT 必须指明提供符号的宿主模块：Node 的符号由 `node.exe` 导出，
     // CPython 的在版本化的 `pythonNNN.dll` 里（由构建环境提供，不能猜）。
     let host_library = match (&target, host) {
-        (_, Some(NativeHostModule::Node)) if target.os() == NativeProductOs::Windows => "node.exe".to_string(),
-        (NativeProductTarget::Extension { os: NativeProductOs::Windows, library, .. }, Some(NativeHostModule::Python)) => {
+        (_, Some(NativeHostModule::Node)) if target.is_windows() => "node.exe".to_string(),
+        (NativeProductTarget::Extension { library, .. }, Some(NativeHostModule::Python)) if target.is_windows() => {
             library.clone().ok_or_else(|| {
                 "Windows CPython 扩展必须提供宿主导入 DLL 名（例如 `python312.dll`）：版本相关名不能由编译器猜".to_string()
             })?
@@ -999,10 +1072,9 @@ pub fn lower_native_residual_to_program(
     };
     // `ELF` 没有 IAT：宿主库以 `DT_NEEDED` 显式声明，避免依赖「碰巧在全局作用域」。
     let native_dependencies: Vec<String> = match (&target, host) {
-        (
-            NativeProductTarget::Extension { os: NativeProductOs::Linux, library: Some(library), .. },
-            Some(NativeHostModule::Python),
-        ) => vec![library.clone()],
+        (NativeProductTarget::Extension { library: Some(library), .. }, Some(NativeHostModule::Python)) if !target.is_windows() => {
+            vec![library.clone()]
+        }
         _ => Vec::new(),
     };
     // 普通库的 effect 通道由宿主传入；扩展模块自己写 stdout。
@@ -1064,9 +1136,9 @@ pub fn lower_native_residual_to_program(
             let lowered = lower_all(module, has_print, sink_from_parameter, &target, &known_returns, arena_offset)?;
             functions = lowered.iter().map(|(function, _)| function.clone()).collect();
             for method in &methods {
-                functions.push(node_method_wrapper(method, error_message_offset, target.os(), &host_library, arena_offset));
+                functions.push(node_method_wrapper(method, error_message_offset, target.platform(), &host_library, arena_offset));
             }
-            functions.push(node_addon_registration(&methods, value_name_offset, &method_name_offsets, target.os(), &host_library, arena_offset));
+            functions.push(node_addon_registration(&methods, value_name_offset, &method_name_offsets, target.platform(), &host_library, arena_offset));
         }
         Some(NativeHostModule::Python) => {
             require_extension_main("CPython extension", module, &probe_lowered)?;
@@ -1109,7 +1181,7 @@ pub fn lower_native_residual_to_program(
     }
     // 导入面：OS 决定 effect 原语与导入 DLL，模块类型决定宿主 API。
     let mut imports: Vec<(String, String)> = Vec::new();
-    if has_print && target.os() == NativeProductOs::Windows {
+    if has_print && target.is_windows() {
         imports.push(("kernel32".to_string(), "WriteFile".to_string()));
         if host.is_some() {
             // 扩展模块没有宿主传入的句柄：自己取 stdout 句柄。
@@ -1532,7 +1604,7 @@ fn node_addon_registration(
     methods: &[ExtensionMethod],
     value_name_offset: u32,
     method_name_offsets: &[u32],
-    os: NativeProductOs,
+    platform: NativePlatform,
     dll: &str,
     arena: Option<u32>,
 ) -> NativeTextProgramFunction {
@@ -1587,7 +1659,7 @@ fn node_addon_registration(
             Lir::StoreSlot(TEMP_SLOT),
             Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 3 },
         ]);
-        if os == NativeProductOs::Windows {
+        if platform.is_windows() {
             // 第 5、6 个实参走 Win64 栈：`data = NULL`、`result = &fn`。
             instructions.push(Lir::ZeroStackArg(0));
             instructions.push(Lir::StoreSlotAddressToStackArg { slot: FUNCTION_SLOT, index: 1 });
@@ -1642,7 +1714,7 @@ fn node_module_data(methods: &[ExtensionMethod]) -> (Vec<u8>, u32, Vec<u32>, u32
 fn node_method_wrapper(
     method: &ExtensionMethod,
     error_message_offset: u32,
-    os: NativeProductOs,
+    platform: NativePlatform,
     dll: &str,
     arena: Option<u32>,
 ) -> NativeTextProgramFunction {
@@ -1692,7 +1764,7 @@ fn node_method_wrapper(
         Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 3 },
     ]);
     // `napi_get_cb_info` 的第 5、6 个实参是 `this` 与 `data`，恒为 `NULL`。
-    if os == NativeProductOs::Windows {
+    if platform.is_windows() {
         instructions.push(Lir::ZeroStackArg(0));
         instructions.push(Lir::ZeroStackArg(1));
     }
@@ -1790,7 +1862,7 @@ fn node_method_wrapper(
 
 /// 以导出函数 ABI 发射 `PE` DLL（宿主按 Win64 调用约定调用残差函数）。
 pub fn emit_native_pe_library(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
-    let image = lower_native_residual_to_program(module, NativeProductTarget::Library(NativeProductOs::Windows))?;
+    let image = lower_native_residual_to_program(module, NativeProductTarget::Library(NativePlatform::windows_x64()))?;
     PeCompiler.compile_library(&image).map_err(|error| error.to_string())
 }
 
@@ -1799,7 +1871,7 @@ pub fn emit_native_pe_library(module: &NativeResidualModule) -> Result<Vec<u8>, 
 /// 与 `PE` DLL 对称：残差函数按名导出，未知输入走 SysV64 整数形参；含 `print`
 /// 的模块用隐藏的首个整数形参作为 fd，调用 `write(2)`。
 pub fn emit_native_elf_library(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
-    let image = lower_native_residual_to_program(module, NativeProductTarget::Library(NativeProductOs::Linux))?;
+    let image = lower_native_residual_to_program(module, NativeProductTarget::Library(NativePlatform::linux_x64()))?;
     super::ElfCompiler.compile_library(&image).map_err(|error| error.to_string())
 }
 
@@ -1808,9 +1880,9 @@ pub fn emit_native_elf_library(module: &NativeResidualModule) -> Result<Vec<u8>,
 /// 宿主 `require()` 时由 Node 的 Node-API 装载器调用注册函数；`main` 的整数值
 /// 通过 `napi_create_int64` 写成 `exports.value`，残差函数注册为同名回调。
 /// Linux 产物是 `ET_DYN`，Windows 产物是 `PE32+` DLL（`.data` + 基址重定位）。
-pub fn emit_native_node_addon(module: &NativeResidualModule, os: NativeProductOs) -> Result<Vec<u8>, String> {
-    let image = lower_native_residual_to_program(module, NativeProductTarget::extension(os, NativeHostModule::Node))?;
-    compile_extension_container(os, &image)
+pub fn emit_native_node_addon(module: &NativeResidualModule, platform: NativePlatform) -> Result<Vec<u8>, String> {
+    let image = lower_native_residual_to_program(module, NativeProductTarget::extension(platform, NativeHostModule::Node))?;
+    compile_extension_container(platform, &image)
 }
 
 /// 发射 CPython 扩展模块（Linux `.so` / Windows `.pyd`）。
@@ -1820,23 +1892,23 @@ pub fn emit_native_node_addon(module: &NativeResidualModule, os: NativeProductOs
 /// DLL 名（例如 `python312.dll`）必须由调用方提供——版本相关的名字不能由编译器猜。
 pub fn emit_native_python_extension(
     module: &NativeResidualModule,
-    os: NativeProductOs,
+    platform: NativePlatform,
     python_library: Option<&str>,
 ) -> Result<Vec<u8>, String> {
     let target = NativeProductTarget::Extension {
-        os,
+        platform,
         module: NativeHostModule::Python,
         library: python_library.map(str::to_string),
     };
     let image = lower_native_residual_to_program(module, target)?;
-    compile_extension_container(os, &image)
+    compile_extension_container(platform, &image)
 }
 
-/// 按产物 OS 选择容器：Windows 写 `PE32+` DLL，Linux 写 `ET_DYN`。
-fn compile_extension_container(os: NativeProductOs, image: &NativeTextProgramImage) -> Result<Vec<u8>, String> {
-    match os {
-        NativeProductOs::Windows => PeCompiler.compile_library(image).map_err(|error| error.to_string()),
-        NativeProductOs::Linux => super::ElfCompiler.compile_library(image).map_err(|error| error.to_string()),
+/// 按已冻结的平台身份选择容器：Windows 写 `PE32+` DLL，Linux 写 `ET_DYN`。
+fn compile_extension_container(platform: NativePlatform, image: &NativeTextProgramImage) -> Result<Vec<u8>, String> {
+    match platform.container {
+        NativeContainer::Pe => PeCompiler.compile_library(image).map_err(|error| error.to_string()),
+        NativeContainer::Elf => super::ElfCompiler.compile_library(image).map_err(|error| error.to_string()),
     }
 }
 
@@ -1950,7 +2022,7 @@ impl<'a> ResidualFunctionLowering<'a> {
         self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: handle, index: 0 });
         self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: pointer, index: 1 });
         self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: length, index: 2 });
-        if self.target.os() == NativeProductOs::Windows {
+        if self.target.is_windows() {
             self.instructions.push(NativeTextInstruction::LoadI64(0));
             let written_out = self.alloc_slot();
             self.instructions.push(NativeTextInstruction::StoreSlot(written_out));
@@ -1978,7 +2050,7 @@ impl<'a> ResidualFunctionLowering<'a> {
             self.effect_sink = Some(slot);
             return Ok(());
         }
-        if self.target.os() == NativeProductOs::Windows {
+        if self.target.is_windows() {
             // `STD_OUTPUT_HANDLE = -11`。
             self.instructions.push(NativeTextInstruction::LoadI64(-11));
             let constant = self.alloc_slot();
@@ -2860,7 +2932,7 @@ mod tests {
         use nyar_emitter::nyar_backend_native::{NativeExecutableKind, classify_native_image};
 
         let module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
-        let bytes = emit_native_node_addon(&module, NativeProductOs::Linux).expect("emit node addon");
+        let bytes = emit_native_node_addon(&module, NativePlatform::linux_x64()).expect("emit node addon");
         let facts = classify_native_image(&bytes).expect("addon must be a parseable image");
         assert_eq!(facts.kind, NativeExecutableKind::ElfShared, "Node 扩展是 ET_DYN");
         let haystack = String::from_utf8_lossy(&bytes);
@@ -2884,13 +2956,13 @@ mod tests {
                 NativeResidualOp::Ret,
             ],
         });
-        let image = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativeProductOs::Linux, NativeHostModule::Node)).expect("lower node methods");
+        let image = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativePlatform::linux_x64(), NativeHostModule::Node)).expect("lower node methods");
         assert!(image.symbols.iter().any(|(name, _)| name == "__nyar_node_wrap_add"), "必须生成 Node 回调包装体");
         for symbol in ["napi_create_function", "napi_get_cb_info", "napi_get_value_int64", "napi_throw_type_error"] {
             assert!(image.elf_imports.iter().any(|import| import == symbol), "缺少方法原语导入 `{symbol}`");
         }
         assert!(image.data.windows(4).any(|window| window == b"add\0"), "方法名必须进入数据段");
-        let bytes = emit_native_node_addon(&module, NativeProductOs::Linux).expect("emit node methods addon");
+        let bytes = emit_native_node_addon(&module, NativePlatform::linux_x64()).expect("emit node methods addon");
         assert!(String::from_utf8_lossy(&bytes).contains("__nyar_node_wrap_add"));
     }
 
@@ -2903,7 +2975,7 @@ mod tests {
             NativeResidualOp::PushI64(0),
             NativeResidualOp::Ret,
         ]);
-        let image = lower_native_residual_to_program(&module, NativeProductTarget::Library(NativeProductOs::Linux)).expect("lower linux print residual");
+        let image = lower_native_residual_to_program(&module, NativeProductTarget::Library(NativePlatform::linux_x64())).expect("lower linux print residual");
         assert!(image.imports.is_empty(), "Linux 产品不得声明 PE 导入");
         assert!(image.idata.is_empty(), "Linux 产品不得生成 `.idata`");
         assert!(
@@ -2918,7 +2990,7 @@ mod tests {
     fn python_extension_exposes_pyinit_and_module_def() {
         let mut module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
         module.name = "demo".into();
-        let image = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativeProductOs::Linux, NativeHostModule::Python)).expect("lower python extension");
+        let image = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativePlatform::linux_x64(), NativeHostModule::Python)).expect("lower python extension");
         assert!(image.symbols.iter().any(|(name, _)| name == "PyInit_demo"), "必须导出 `PyInit_demo`");
         assert!(image.symbols.iter().any(|(name, _)| name == "__nyar_py_exec"), "必须导出多阶段执行钩子");
         assert!(
@@ -2930,7 +3002,7 @@ mod tests {
         // 模块名、`m_slots` 与槽位函数指针各一条自相对重定位。
         assert_eq!(image.data_relocations.len(), 3, "模块名 / m_slots / 槽位函数指针");
         assert!(image.data_references.iter().any(|(_, data_offset)| *data_offset == 0), "入口必须取 `PyModuleDef` 地址");
-        let bytes = emit_native_python_extension(&module, NativeProductOs::Linux, None).expect("emit python extension");
+        let bytes = emit_native_python_extension(&module, NativePlatform::linux_x64(), None).expect("emit python extension");
         let haystack = String::from_utf8_lossy(&bytes);
         assert!(haystack.contains("PyInit_demo"));
         assert!(haystack.contains("__nyar_py_exec"));
@@ -2940,7 +3012,7 @@ mod tests {
     fn python_extension_rejects_invalid_module_names() {
         let mut module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
         module.name = "not-an-identifier".into();
-        let error = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativeProductOs::Linux, NativeHostModule::Python)).expect_err("非法模块名必须失败闭合");
+        let error = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativePlatform::linux_x64(), NativeHostModule::Python)).expect_err("非法模块名必须失败闭合");
         assert!(error.contains("C 标识符"), "unexpected error: {error}");
     }
 
@@ -2965,7 +3037,7 @@ mod tests {
                 NativeResidualOp::Ret,
             ],
         });
-        let image = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativeProductOs::Linux, NativeHostModule::Python)).expect("lower python methods");
+        let image = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativePlatform::linux_x64(), NativeHostModule::Python)).expect("lower python methods");
         assert!(image.symbols.iter().any(|(name, _)| name == "__nyar_py_wrap_add"), "必须生成方法包装体");
         assert!(image.elf_imports.iter().any(|symbol| symbol == "PyArg_ParseTuple"), "方法实参必须经宿主解析");
         assert!(image.elf_imports.iter().any(|symbol| symbol == "PyLong_FromLong"), "返回值必须包成 Python int");
@@ -2978,7 +3050,7 @@ mod tests {
             "命名函数重定位必须在编码阶段解析为节内偏移"
         );
         assert_eq!(image.data_relocations.len(), 6, "模块名 / m_methods / 方法名 / ml_meth / m_slots / 槽位函数指针");
-        let bytes = emit_native_python_extension(&module, NativeProductOs::Linux, None).expect("emit python methods extension");
+        let bytes = emit_native_python_extension(&module, NativePlatform::linux_x64(), None).expect("emit python methods extension");
         let haystack = String::from_utf8_lossy(&bytes);
         assert!(haystack.contains("__nyar_py_wrap_add"));
         assert!(haystack.contains("PyArg_ParseTuple"));
@@ -2991,7 +3063,7 @@ mod tests {
             parameters: vec!["a".into(), "b".into(), "c".into(), "d".into(), "e".into()],
             ops: vec![NativeResidualOp::Load("a".into()), NativeResidualOp::Ret],
         });
-        let error = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativeProductOs::Linux, NativeHostModule::Python)).expect_err("超出行参窗口必须失败闭合");
+        let error = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativePlatform::linux_x64(), NativeHostModule::Python)).expect_err("超出行参窗口必须失败闭合");
         assert!(error.contains("PyArg_ParseTuple"), "unexpected error: {error}");
         assert!(error.contains("many"), "错误必须指名方法: {error}");
     }
@@ -3006,13 +3078,13 @@ mod tests {
         });
         let image = lower_native_residual_to_program(
             &module,
-            NativeProductTarget::extension(NativeProductOs::Linux, NativeHostModule::Python),
+            NativeProductTarget::extension(NativePlatform::linux_x64(), NativeHostModule::Python),
         )
         .expect("字符串方法必须可暴露");
         assert!(image.elf_imports.iter().any(|symbol| symbol == "PyUnicode_FromStringAndSize"));
         let node = lower_native_residual_to_program(
             &module,
-            NativeProductTarget::extension(NativeProductOs::Linux, NativeHostModule::Node),
+            NativeProductTarget::extension(NativePlatform::linux_x64(), NativeHostModule::Node),
         )
         .expect("Node 也必须支持字符串方法");
         assert!(node.elf_imports.iter().any(|symbol| symbol == "napi_create_string_utf8"));
@@ -3028,7 +3100,7 @@ mod tests {
             ops: vec![NativeResidualOp::Load("a".into()), NativeResidualOp::Ret],
         });
         let windows = NativeProductTarget::Extension {
-            os: NativeProductOs::Windows,
+            platform: NativePlatform::windows_x64(),
             module: NativeHostModule::Python,
             library: Some("python312.dll".into()),
         };
@@ -3038,10 +3110,30 @@ mod tests {
     }
 
     #[test]
+    fn resolved_target_keeps_platform_and_contract() {
+        let resolver = nyar::TargetResolver::with_host(NativePlatform::linux_x64().canonical());
+        let resolved = resolver
+            .resolve_with_platform(nyar::TargetRequest::Node, NativePlatform::windows_x64().canonical())
+            .expect("node on windows resolves");
+        let target = NativeProductTarget::from_resolved(&resolved).expect("product target");
+        assert!(target.is_windows(), "显式目标必须覆盖宿主平台");
+        assert_eq!(target.host_module(), Some(NativeHostModule::Node));
+        assert_eq!(target.platform().canonical(), resolved.platform, "产物目标必须保留冻结的平台身份");
+    }
+
+    #[test]
+    fn resolved_target_rejects_unimplemented_platform() {
+        let resolver = nyar::TargetResolver::with_host(NativePlatform::linux_x64().canonical());
+        let resolved = resolver.resolve_label("aarch64-apple-macos").expect("macos resolves as a platform");
+        let error = NativeProductTarget::from_resolved(&resolved).expect_err("macOS 容器尚未实现");
+        assert!(error.contains("尚不支持"), "unexpected error: {error}");
+    }
+
+    #[test]
     fn windows_python_extension_requires_the_host_library() {
         let mut module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
         module.name = "demo".into();
-        let target = NativeProductTarget::extension(NativeProductOs::Windows, NativeHostModule::Python);
+        let target = NativeProductTarget::extension(NativePlatform::windows_x64(), NativeHostModule::Python);
         let error = lower_native_residual_to_program(&module, target).expect_err("缺 DLL 名必须失败闭合");
         assert!(error.contains("python312.dll"), "unexpected error: {error}");
     }

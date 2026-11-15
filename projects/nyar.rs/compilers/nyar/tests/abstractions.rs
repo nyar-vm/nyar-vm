@@ -25,6 +25,14 @@ fn parses_full_canonical_targets() {
 }
 
 #[test]
+fn node_is_a_host_contract_not_a_platform_identity() {
+    assert!(CanonicalTarget::parse("node").is_err(), "`node` 是宿主扩展占位符，不能当平台身份");
+    assert!(CanonicalTarget::parse("python").is_err(), "`python` 是宿主扩展占位符，不能当平台身份");
+    assert_eq!(CanonicalTarget::parse("wasm-node").unwrap().to_string(), "wasm32-node-unknown-wasm");
+    assert_eq!(CanonicalTarget::parse("node-wasm").unwrap().to_string(), "wasm32-node-unknown-wasm");
+}
+
+#[test]
 #[cfg(target_os = "windows")]
 fn native_alias_resolves_to_host_canonical_target() {
     let target = CanonicalTarget::parse("native").unwrap();

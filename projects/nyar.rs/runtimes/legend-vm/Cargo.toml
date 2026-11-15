@@ -13,6 +13,7 @@ path = "src/lib.rs"
 [dependencies]
 acorn-pe = { workspace = true }
 miette = { workspace = true }
+nyar = { workspace = true }
 nyar-analyzer = { workspace = true }
 nyar-emitter = { workspace = true }
 acorn-odin = { workspace = true }

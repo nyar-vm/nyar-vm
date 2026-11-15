@@ -136,7 +136,7 @@ mod tests {
 
     #[test]
     fn vendor_node_matches_js_runtimes() {
-        let node = CanonicalTarget::node();
+        let node = CanonicalTarget::node_wasm();
         let deno: CanonicalTarget = "wasm32-deno-unknown-wasm".parse().unwrap();
         let browser = CanonicalTarget::browser();
         let vendor_node = WhenPredicate { key: "vendor".into(), value: "node".into() };

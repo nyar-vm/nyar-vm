@@ -4,12 +4,12 @@ use crate::legion::{
     cmds::error::{LegionError, LegionResult},
 };
 
-/// 解析 `--target` 参数（默认 `legion`，`all` 展开为 legion/clr/jvm/node）。
+/// 解析 `--target` 参数（默认 `legion`，`all` 展开为 legion/clr/jvm/wasm-node）。
 pub fn resolve_test_targets(target: Option<&str>) -> Vec<String> {
     match target {
         None | Some("") => vec!["legion".into()],
         Some(value) if value.eq_ignore_ascii_case("all") => {
-            vec!["legion".into(), "clr".into(), "jvm".into(), "node".into()]
+            vec!["legion".into(), "clr".into(), "jvm".into(), "wasm-node".into()]
         }
         Some(value) => value.split(',').map(str::trim).filter(|item| !item.is_empty()).map(|item| item.to_ascii_lowercase()).collect(),
     }

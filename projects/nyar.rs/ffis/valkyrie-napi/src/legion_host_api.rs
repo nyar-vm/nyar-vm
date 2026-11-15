@@ -195,7 +195,7 @@ pub fn legion_check_artifact_fresh(output_dir: String, expected_target: String, 
 /// 运行 `legion test`（结构化；不经 argv）。
 #[napi]
 pub fn legion_test(project_dir: String, target: Option<String>) -> LegionTestOutcome {
-    let target_label = target.unwrap_or_else(|| "node".into());
+    let target_label = target.unwrap_or_else(|| "wasm-node".into());
     let parsed_target = match CanonicalTarget::parse(&target_label) {
         Ok(t) => t.to_string(),
         Err(error) => {

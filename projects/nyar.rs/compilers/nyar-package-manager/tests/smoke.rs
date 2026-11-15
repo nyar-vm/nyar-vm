@@ -82,7 +82,7 @@ fn write_publish_target_fixture(dir: &Path) {
     version: "workspace",
     publish: [
         {
-            target: "node",
+            target: "wasm-node",
             type: "npm",
             package_id: "@scope/demo-cli",
             version: "2020.0.0"

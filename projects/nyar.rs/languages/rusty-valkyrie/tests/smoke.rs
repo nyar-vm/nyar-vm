@@ -244,7 +244,7 @@ fn minimal_entry_emits_wasm_artifact() {
     let input = rusty_valkyrie::compiler::hir::lowering::CompilerSourceInput::application(groups);
     let context = CompilerBuildContext::new(
         "wasm32",
-        nyar::CanonicalTarget::parse("node").expect("node target"),
+        nyar::CanonicalTarget::parse("wasm-node").expect("wasm-node target"),
         ClrSuspendStrategy::from_runtime_async_flag(false),
         WasmPackageKind::Binary,
     );

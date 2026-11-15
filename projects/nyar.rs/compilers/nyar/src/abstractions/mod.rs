@@ -342,7 +342,8 @@ impl CanonicalSpecification {
         }
     }
 
-    fn as_str(self) -> &'static str {
+    /// 返回规格的字符串表示。
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Unknown => "unknown",
             Self::Browser => "browser",
@@ -398,7 +399,8 @@ impl CanonicalAbi {
         }
     }
 
-    fn as_str(self) -> &'static str {
+    /// 返回 ABI 的字符串表示。
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Managed => "managed",
             Self::Clr => "clr",
@@ -485,8 +487,13 @@ impl CanonicalTarget {
         Self::new(CanonicalArch::Wasm32, CanonicalVendor::Unknown, CanonicalSpecification::Browser, Some(CanonicalAbi::WebAssembly))
     }
 
-    /// 创建 Node.js WASM 宿主目标。
-    pub const fn node() -> Self {
+    /// 创建 **Node 承载的 core Wasm** 宿主目标。
+    ///
+    /// 这是 `Wasm32 + Node vendor + WebAssembly ABI`，与作者面的 `node` 占位符
+    /// （宿主平台 + Node-API 扩展）不是同一个执行体系。`node` 占位符必须经
+    /// [`crate::target_resolution::TargetResolver`] 展开；本目标用
+    /// `wasm-node` 别名或 [`crate::target_resolution::TargetRequest::Platform`] 表达。
+    pub const fn node_wasm() -> Self {
         Self::new(CanonicalArch::Wasm32, CanonicalVendor::Node, CanonicalSpecification::Unknown, Some(CanonicalAbi::WebAssembly))
     }
 
@@ -545,48 +552,38 @@ impl CanonicalTarget {
         self.to_string()
     }
 
-    fn parse_alias(value: &str) -> Option<Self> {
-        match value.to_ascii_lowercase().as_str() {
-            "clr" => Some(Self::clr()),
-            "jvm" => Some(Self::jvm()),
+    fn parse_alias(value: &str) -> Result<Option<Self>, CanonicalTargetParseError> {
+        let alias = match value.to_ascii_lowercase().as_str() {
+            "clr" => Self::clr(),
+            "jvm" => Self::jvm(),
             // 中性 WASM：不声明任何 JS/Node/WASI 宿主
-            "wasm" | "unknown" => Some(Self::neutral_wasm()),
+            "wasm" | "unknown" => Self::neutral_wasm(),
             // 显式浏览器宿主 alias
-            "browser" | "browser-wasm" | "web-wasm" => Some(Self::browser()),
+            "browser" | "browser-wasm" | "web-wasm" => Self::browser(),
             "wasi" | "wasip1" | "wasip2" => {
-                Some(Self::new(CanonicalArch::Wasm32, CanonicalVendor::Unknown, CanonicalSpecification::Wasi, Some(CanonicalAbi::Wasi)))
+                Self::new(CanonicalArch::Wasm32, CanonicalVendor::Unknown, CanonicalSpecification::Wasi, Some(CanonicalAbi::Wasi))
             }
-            "wasip3" => {
-                Some(Self::new(CanonicalArch::Wasm32, CanonicalVendor::Unknown, CanonicalSpecification::Wasi, Some(CanonicalAbi::WasiP3)))
+            "wasip3" => Self::new(CanonicalArch::Wasm32, CanonicalVendor::Unknown, CanonicalSpecification::Wasi, Some(CanonicalAbi::WasiP3)),
+            // Node 承载的 core Wasm：必须显式带上 `wasm`，不能与 `node` 原生扩展占位符混用。
+            "wasm-node" | "node-wasm" => Self::node_wasm(),
+            "deno" => Self::new(CanonicalArch::Wasm32, CanonicalVendor::Deno, CanonicalSpecification::Unknown, Some(CanonicalAbi::WebAssembly)),
+            "bun" => Self::new(CanonicalArch::Wasm32, CanonicalVendor::Bun, CanonicalSpecification::Unknown, Some(CanonicalAbi::WebAssembly)),
+            "wechat" => Self::wechat(),
+            "ovm" | "odin-vm" => Self::new(CanonicalArch::Ovm, CanonicalVendor::Unknown, CanonicalSpecification::Unknown, Some(CanonicalAbi::Managed)),
+            "native" => Self::host_native()?,
+            // `node` / `python` 是宿主合同占位符，不是平台身份。
+            "node" | "python" => {
+                return Err(CanonicalTargetParseError::new(format!(
+                    "`{value}` 是宿主扩展占位符，不是平台身份；请用 `TargetRequest` 解析，Node 承载的 Wasm 请写 `wasm-node`"
+                )));
             }
-            "node" => Some(Self::node()),
-            "deno" => {
-                Some(Self::new(CanonicalArch::Wasm32, CanonicalVendor::Deno, CanonicalSpecification::Unknown, Some(CanonicalAbi::WebAssembly)))
-            }
-            "bun" => {
-                Some(Self::new(CanonicalArch::Wasm32, CanonicalVendor::Bun, CanonicalSpecification::Unknown, Some(CanonicalAbi::WebAssembly)))
-            }
-            "wechat" => Some(Self::wechat()),
-            "ovm" | "odin-vm" => {
-                Some(Self::new(CanonicalArch::Ovm, CanonicalVendor::Unknown, CanonicalSpecification::Unknown, Some(CanonicalAbi::Managed)))
-            }
-            "native" => Some(Self::host_native()),
-            _ => None,
-        }
+            _ => return Ok(None),
+        };
+        Ok(Some(alias))
     }
 
-    fn host_native() -> Self {
-        let arch = match std::env::consts::ARCH {
-            "x86_64" => CanonicalArch::X86_64,
-            "aarch64" => CanonicalArch::AArch64,
-            "x86" => CanonicalArch::X86,
-            _ => CanonicalArch::X86_64,
-        };
-        match std::env::consts::OS {
-            "windows" => Self::new(arch, CanonicalVendor::Pc, CanonicalSpecification::Windows, Some(CanonicalAbi::Msvc)),
-            "macos" => Self::new(CanonicalArch::AArch64, CanonicalVendor::Apple, CanonicalSpecification::MacOs, Some(CanonicalAbi::SystemV)),
-            _ => Self::new(arch, CanonicalVendor::Unknown, CanonicalSpecification::Linux, Some(CanonicalAbi::Gnu)),
-        }
+    fn host_native() -> Result<Self, CanonicalTargetParseError> {
+        crate::target_resolution::probe_build_host().map_err(|error| CanonicalTargetParseError::new(error.to_string()))
     }
 }
 
@@ -614,7 +611,7 @@ impl FromStr for CanonicalTarget {
         if trimmed.is_empty() {
             return Err(CanonicalTargetParseError::new("target cannot be empty"));
         }
-        if let Some(alias) = Self::parse_alias(trimmed) {
+        if let Some(alias) = Self::parse_alias(trimmed)? {
             return Ok(alias);
         }
 

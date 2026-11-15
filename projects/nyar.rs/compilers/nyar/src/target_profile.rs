@@ -500,9 +500,10 @@ impl CanonicalTarget {
             CanonicalArch::Jvm => CanonicalAbi::Jvm,
             CanonicalArch::Ovm => CanonicalAbi::Managed,
             CanonicalArch::Wasm32 | CanonicalArch::Wasm64 => CanonicalAbi::WebAssembly,
+            CanonicalArch::AArch64 if self.specification == CanonicalSpecification::Windows => CanonicalAbi::Msvc,
             CanonicalArch::AArch64 => CanonicalAbi::Aapcs64,
-            CanonicalArch::X86_64 if self.specification == CanonicalSpecification::Windows => CanonicalAbi::Msvc,
-            CanonicalArch::X86_64 => CanonicalAbi::SystemV,
+            CanonicalArch::X86_64 | CanonicalArch::X86 if self.specification == CanonicalSpecification::Windows => CanonicalAbi::Msvc,
+            CanonicalArch::X86_64 | CanonicalArch::X86 => CanonicalAbi::SystemV,
             _ => CanonicalAbi::SystemV,
         }
     }

@@ -5,7 +5,7 @@
 //! # ```legion
 //! # {
 //! #     name: "demo",
-//! #     build: [{ target: "node" }]
+//! #     build: [{ target: "wasm-node" }]
 //! # }
 //! # ```
 //!

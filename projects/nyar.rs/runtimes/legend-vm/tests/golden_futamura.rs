@@ -808,12 +808,12 @@ mod exported_elf_abi {
 /// Node-API `.node` lane：Node 的 Node-API 装载器 `require()` 产物并取回残差值。
 #[cfg(target_os = "linux")]
 mod node_addon_abi {
-    use legend_vm::compiler::{NativeProductOs, emit_native_node_addon};
+    use legend_vm::compiler::{NativePlatform, emit_native_node_addon};
 
     fn addon(source: &str, tag: &str) -> std::path::PathBuf {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", source, "lua_node").expect("specialize");
-        let bytes = emit_native_node_addon(&residual, NativeProductOs::Linux).expect("emit node addon");
+        let bytes = emit_native_node_addon(&residual, NativePlatform::linux_x64()).expect("emit node addon");
         let path = std::env::temp_dir().join(format!("legend-addon-{tag}-{}.node", std::process::id()));
         std::fs::write(&path, bytes).expect("write addon");
         path
@@ -874,7 +874,7 @@ mod node_addon_abi {
     fn node_addon_rejects_non_integer_results() {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", "return \"text\"\n", "lua_node").expect("specialize");
-        let error = emit_native_node_addon(&residual, NativeProductOs::Linux).expect_err("字符串结果必须失败闭合");
+        let error = emit_native_node_addon(&residual, NativePlatform::linux_x64()).expect_err("字符串结果必须失败闭合");
         assert!(error.contains("Node"), "unexpected error: {error}");
     }
 }
@@ -882,7 +882,7 @@ mod node_addon_abi {
 /// CPython 扩展模块 lane：CPython 的导入器 `import` 产物并读取模块常量。
 #[cfg(target_os = "linux")]
 mod python_extension_abi {
-    use legend_vm::compiler::{NativeProductOs, emit_native_python_extension};
+    use legend_vm::compiler::{NativePlatform, emit_native_python_extension};
 
     const MODULE_NAME: &str = "demo";
 
@@ -895,7 +895,7 @@ mod python_extension_abi {
     fn extension_dir_with_dependency(source: &str, tag: &str, dependency: Option<&str>) -> std::path::PathBuf {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", source, MODULE_NAME).expect("specialize");
-        let bytes = emit_native_python_extension(&residual, NativeProductOs::Linux, dependency).expect("emit python extension");
+        let bytes = emit_native_python_extension(&residual, NativePlatform::linux_x64(), dependency).expect("emit python extension");
         let dir = std::env::temp_dir().join(format!("legend-python-{tag}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("create module dir");
         std::fs::write(dir.join(format!("{MODULE_NAME}.so")), bytes).expect("write extension");
@@ -1026,7 +1026,7 @@ mod python_extension_abi {
     fn python_extension_rejects_non_integer_results() {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", "return \"text\"\n", MODULE_NAME).expect("specialize");
-        let error = emit_native_python_extension(&residual, NativeProductOs::Linux, None).expect_err("字符串结果必须失败闭合");
+        let error = emit_native_python_extension(&residual, NativePlatform::linux_x64(), None).expect_err("字符串结果必须失败闭合");
         assert!(error.contains("CPython"), "unexpected error: {error}");
     }
 }
@@ -1034,7 +1034,7 @@ mod python_extension_abi {
 /// Windows 宿主扩展 lane：`.pyd` / `.node` 都是带 `.data` 与基址重定位的 `PE32+` DLL。
 #[cfg(windows)]
 mod windows_extension_abi {
-    use legend_vm::compiler::{NativeProductOs, emit_native_node_addon, emit_native_python_extension};
+    use legend_vm::compiler::{NativePlatform, emit_native_node_addon, emit_native_python_extension};
 
     const MODULE_NAME: &str = "demo";
 
@@ -1084,7 +1084,7 @@ mod windows_extension_abi {
             )
             .expect("specialize");
         let library = python_library();
-        let bytes = emit_native_python_extension(&residual, NativeProductOs::Windows, Some(&library)).expect("emit pyd");
+        let bytes = emit_native_python_extension(&residual, NativePlatform::windows_x64(), Some(&library)).expect("emit pyd");
         std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
         assert_eq!(
             run_python(&dir, "print(demo.value)\nprint(demo.add(2, 3))\nprint(demo.greet())"),
@@ -1100,7 +1100,7 @@ mod windows_extension_abi {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", "print(\"hello\")\nreturn 7\n", MODULE_NAME).expect("specialize");
         let library = python_library();
-        let bytes = emit_native_python_extension(&residual, NativeProductOs::Windows, Some(&library)).expect("emit pyd");
+        let bytes = emit_native_python_extension(&residual, NativePlatform::windows_x64(), Some(&library)).expect("emit pyd");
         std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
         assert_eq!(run_python(&dir, "print(demo.value)"), "hello\n7", "Windows effect 必须写入真实 stdout");
         let _ = std::fs::remove_dir_all(&dir);
@@ -1114,7 +1114,7 @@ mod windows_extension_abi {
             .specialize_native("lua", "function join()\n  return \"a\" .. \"b\"\nend\nreturn 42\n", MODULE_NAME)
             .expect("specialize");
         let library = python_library();
-        let bytes = emit_native_python_extension(&residual, NativeProductOs::Windows, Some(&library)).expect("emit pyd");
+        let bytes = emit_native_python_extension(&residual, NativePlatform::windows_x64(), Some(&library)).expect("emit pyd");
         std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
         // 两次调用验证入口重置 arena：第二次结果不能叠加第一次的分配。
         assert_eq!(run_python(&dir, "print(demo.join())\nprint(demo.join())"), "ab\nab", "运行期拼接必须由镜像 arena 承载");
@@ -1128,7 +1128,7 @@ mod windows_extension_abi {
         let source = "function grow()\n  local s = \"\"\n  for i = 1, 3 do\n    s = s .. \"x\"\n  end\n  return s\nend\nreturn 42\n";
         let residual = runner.specialize_native("lua", source, MODULE_NAME).expect("specialize");
         let library = python_library();
-        let bytes = emit_native_python_extension(&residual, NativeProductOs::Windows, Some(&library)).expect("emit pyd");
+        let bytes = emit_native_python_extension(&residual, NativePlatform::windows_x64(), Some(&library)).expect("emit pyd");
         std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
         assert_eq!(run_python(&dir, "print(demo.grow())"), "xxx", "循环内逐步拼接必须共享同一次调用的 arena");
         let _ = std::fs::remove_dir_all(&dir);
@@ -1142,7 +1142,7 @@ mod windows_extension_abi {
         let source = "function sum()\n  local total = 0\n  for i = 1, 3 do\n    total = total + i\n  end\n  return total\nend\nreturn 42\n";
         let residual = runner.specialize_native("lua", source, MODULE_NAME).expect("specialize");
         let library = python_library();
-        let bytes = emit_native_python_extension(&residual, NativeProductOs::Windows, Some(&library)).expect("emit pyd");
+        let bytes = emit_native_python_extension(&residual, NativePlatform::windows_x64(), Some(&library)).expect("emit pyd");
         std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
         assert_eq!(run_python(&dir, "print(demo.sum())"), "6", "循环回边必须读到上一轮的变量值");
         let _ = std::fs::remove_dir_all(&dir);
@@ -1156,7 +1156,7 @@ mod windows_extension_abi {
         let source = "function equal()\n  return (\"a\" .. \"b\") == \"ab\"\nend\nfunction less()\n  return (\"ab\" .. \"c\") < \"abd\"\nend\nfunction longer()\n  return (\"ab\" .. \"c\") < \"ab\"\nend\nreturn 42\n";
         let residual = runner.specialize_native("lua", source, MODULE_NAME).expect("specialize");
         let library = python_library();
-        let bytes = emit_native_python_extension(&residual, NativeProductOs::Windows, Some(&library)).expect("emit pyd");
+        let bytes = emit_native_python_extension(&residual, NativePlatform::windows_x64(), Some(&library)).expect("emit pyd");
         std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
         assert_eq!(run_python(&dir, "print(demo.equal()); print(demo.less()); print(demo.longer())"), "1\n1\n0", "字符串比较必须按内容字节序");
         let _ = std::fs::remove_dir_all(&dir);
@@ -1168,7 +1168,7 @@ mod windows_extension_abi {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", "print(\"a\" .. \"b\")\nreturn 7\n", MODULE_NAME).expect("specialize");
         let library = python_library();
-        let bytes = emit_native_python_extension(&residual, NativeProductOs::Windows, Some(&library)).expect("emit pyd");
+        let bytes = emit_native_python_extension(&residual, NativePlatform::windows_x64(), Some(&library)).expect("emit pyd");
         std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
         assert_eq!(run_python(&dir, "print(demo.value)"), "ab\n7", "动态字符串必须按 guest 顺序写入 stdout");
         let _ = std::fs::remove_dir_all(&dir);
@@ -1185,7 +1185,7 @@ mod windows_extension_abi {
                 MODULE_NAME,
             )
             .expect("specialize");
-        let bytes = emit_native_node_addon(&residual, NativeProductOs::Windows).expect("emit node dll");
+        let bytes = emit_native_node_addon(&residual, NativePlatform::windows_x64()).expect("emit node dll");
         let path = dir.join("addon.node");
         std::fs::write(&path, bytes).expect("write .node");
         let script = format!("const m = require(String.raw`{}`); console.log(m.join()); console.log(m.join());", path.display());
@@ -1198,7 +1198,7 @@ mod windows_extension_abi {
         let dir = extension_dir("node-concat-print");
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", "print(\"a\" .. \"b\")\nreturn 7\n", MODULE_NAME).expect("specialize");
-        let bytes = emit_native_node_addon(&residual, NativeProductOs::Windows).expect("emit node dll");
+        let bytes = emit_native_node_addon(&residual, NativePlatform::windows_x64()).expect("emit node dll");
         let path = dir.join("addon.node");
         std::fs::write(&path, bytes).expect("write .node");
         let script = format!("require(String.raw`{}`);", path.display());
@@ -1217,7 +1217,7 @@ mod windows_extension_abi {
                 MODULE_NAME,
             )
             .expect("specialize");
-        let bytes = emit_native_node_addon(&residual, NativeProductOs::Windows).expect("emit node dll");
+        let bytes = emit_native_node_addon(&residual, NativePlatform::windows_x64()).expect("emit node dll");
         let path = dir.join("addon.node");
         std::fs::write(&path, bytes).expect("write .node");
         let script = format!(

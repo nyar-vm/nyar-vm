@@ -8,6 +8,7 @@ pub mod packaging;
 pub mod planning;
 pub mod selection;
 pub mod target_profile;
+pub mod target_resolution;
 pub mod testing;
 
 pub use self::{
@@ -34,6 +35,9 @@ pub use self::{
     target_profile::{
         ArtifactPolicy, EntryPolicy, PublishFormat, RunnerFamily, RunnerSelector, TargetBackendFamily, TargetHostKind, TargetMode,
         TargetProfile, WrapStrategy,
+    },
+    target_resolution::{
+        ArtifactContract, CpythonHostConfig, ResolvedTarget, TargetRequest, TargetResolutionError, TargetResolver, probe_build_host,
     },
     testing::{
         LegendFixtureEntry, LegendFixtureManifest, RuntimeFixtureResult, RuntimeFixtureSpec, assert_or_regenerate_text_sidecar,
