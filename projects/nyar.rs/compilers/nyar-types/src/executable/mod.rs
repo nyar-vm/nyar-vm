@@ -174,7 +174,7 @@ pub enum InstructionKind {
         /// Optional static type.
         ty: Option<NyarType>,
     },
-    /// 调用 callee（过渡期 LegacyCall 形态 → 统一 `Invoke`）。
+    /// 调用 callee。
     ///
     /// **已移除、禁止回填的 God 字段：** `dispatch`、`witness`、`evidence`、
     /// `generic_function`、`generic_arguments`、`effect`、`receiver_kind`、

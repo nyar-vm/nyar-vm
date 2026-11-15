@@ -237,11 +237,6 @@ impl TargetResolver {
     fn resolve_explicit(&self, request: TargetRequest, platform: CanonicalTarget) -> Result<ResolvedTarget, TargetResolutionError> {
         let platform = freeze(platform);
         let contract = match platform.arch {
-            CanonicalArch::Native => {
-                return Err(TargetResolutionError::new(format!(
-                    "平台身份 `{platform}` 含未展开的 `native` 架构；`native` 是请求占位符，请用 `TargetRequest` 解析"
-                )));
-            }
             CanonicalArch::Clr | CanonicalArch::Jvm | CanonicalArch::Wasm32 | CanonicalArch::Wasm64 | CanonicalArch::Ovm => {
                 ArtifactContract::Platform
             }

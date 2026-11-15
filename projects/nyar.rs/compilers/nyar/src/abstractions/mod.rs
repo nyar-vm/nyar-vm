@@ -206,8 +206,6 @@ pub enum CanonicalArch {
     Jvm,
     /// `Nyar VM`
     Ovm,
-    /// 宿主原生二进制占位。
-    Native,
 }
 
 impl CanonicalArch {
@@ -224,7 +222,6 @@ impl CanonicalArch {
             "clr" => Some(Self::Clr),
             "jvm" => Some(Self::Jvm),
             "ovm" | "odin-vm" => Some(Self::Ovm),
-            "native" => Some(Self::Native),
             _ => None,
         }
     }
@@ -243,7 +240,6 @@ impl CanonicalArch {
             Self::Clr => "clr",
             Self::Jvm => "jvm",
             Self::Ovm => "ovm",
-            Self::Native => "native",
         }
     }
 }
@@ -528,7 +524,7 @@ impl CanonicalTarget {
         };
         let arch = match self.arch {
             CanonicalArch::X86 => BinaryArch::X86,
-            CanonicalArch::X86_64 | CanonicalArch::Native => BinaryArch::X64,
+            CanonicalArch::X86_64 => BinaryArch::X64,
             CanonicalArch::AArch64 => BinaryArch::Arm64,
             _ => BinaryArch::Any,
         };
