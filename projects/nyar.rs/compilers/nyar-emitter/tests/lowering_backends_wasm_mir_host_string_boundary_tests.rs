@@ -99,13 +99,8 @@ fn utf8_length_call_main(bound_layout: Option<LayoutId>) -> ExecutableFunction {
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        suspend_points: Vec::new(),
-        frame_layouts: Vec::new(),
-        continuations: Vec::new(),
         case_chains: Vec::new(),
         #[allow(deprecated)]
-        state_machine: None,
-        suspend_plan: None,
         blocks: vec![block],
         diagnostics: Vec::new(),
     }
@@ -133,13 +128,8 @@ fn utf16_length_call_main() -> ExecutableFunction {
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        suspend_points: Vec::new(),
-        frame_layouts: Vec::new(),
-        continuations: Vec::new(),
         case_chains: Vec::new(),
         #[allow(deprecated)]
-        state_machine: None,
-        suspend_plan: None,
         blocks: vec![block],
         diagnostics: Vec::new(),
     }
@@ -297,13 +287,8 @@ fn utf8_field_get_main(bound_layout: Option<LayoutId>) -> ExecutableFunction {
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        suspend_points: Vec::new(),
-        frame_layouts: Vec::new(),
-        continuations: Vec::new(),
         case_chains: Vec::new(),
         #[allow(deprecated)]
-        state_machine: None,
-        suspend_plan: None,
         blocks: vec![block],
         diagnostics: Vec::new(),
     }
@@ -491,13 +476,8 @@ fn utf8_concat_call_main(bound_layout: Option<LayoutId>) -> ExecutableFunction {
         return_layout: bound_layout,
         entry: BlockRef(0),
         values: Vec::new(),
-        suspend_points: Vec::new(),
-        frame_layouts: Vec::new(),
-        continuations: Vec::new(),
         case_chains: Vec::new(),
         #[allow(deprecated)]
-        state_machine: None,
-        suspend_plan: None,
         blocks: vec![block],
         diagnostics: Vec::new(),
     }

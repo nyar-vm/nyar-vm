@@ -423,23 +423,6 @@ pub enum Terminator {
     Unreachable,
 }
 
-/// Continuation metadata for catch / resume contexts.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Continuation {
-    /// Handler dispatch block.
-    pub dispatch_block: BlockRef,
-    /// Resume target block.
-    pub resume_target: BlockRef,
-    /// Resume parameter SSA value.
-    pub resume_parameter: ValueRef,
-    /// Resume parameter static type, if known.
-    pub resume_parameter_type: Option<NyarType>,
-    /// Handler exit block.
-    pub handler_exit: BlockRef,
-    /// User effect carrier type (Raise only), if known.
-    pub carrier_type: Option<NyarType>,
-}
-
 /// `match` / `case` chain metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CaseChain {
@@ -474,128 +457,6 @@ pub struct CaseArm {
     pub exit_target: BlockRef,
     /// Optional fallthrough target.
     pub fallthrough_target: Option<BlockRef>,
-}
-
-/// Suspend-point metadata for effect / state-machine lowering.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SuspendPoint {
-    /// State-machine id.
-    pub state_id: u32,
-    /// Effect category.
-    pub effect: EffectKind,
-    /// Suspend block.
-    pub suspend_block: BlockRef,
-    /// Resume target.
-    pub resume_target: BlockRef,
-    /// Resume parameter count.
-    pub resume_parameter_count: usize,
-    /// Payload static type, if known.
-    pub payload_type: Option<NyarType>,
-    /// Spill candidates across the suspend.
-    pub spill_candidates: Vec<ValueRef>,
-    /// Optional continuation index when nested in a catch arm.
-    pub continuation_index: Option<usize>,
-    /// User effect carrier type (Raise only), if known.
-    pub carrier_type: Option<NyarType>,
-}
-
-/// Frame layout for one suspend state.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FrameLayout {
-    /// State-machine id.
-    pub state_id: u32,
-    /// Effect category.
-    pub effect: EffectKind,
-    /// Resume target.
-    pub resume_target: BlockRef,
-    /// Spill slots.
-    pub slots: Vec<FrameSlot>,
-    /// User effect carrier type (Raise only), if known.
-    pub carrier_type: Option<NyarType>,
-}
-
-/// One spill slot inside a frame layout.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FrameSlot {
-    /// Stable slot index.
-    pub slot_index: usize,
-    /// Spilled SSA value.
-    pub value: ValueRef,
-    /// Known static type, if any.
-    pub value_type: Option<NyarType>,
-}
-
-/// Function-level frame / continuation carrier naming table.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CarrierTable {
-    function_symbol: String,
-}
-
-impl CarrierTable {
-    /// Builds a carrier naming table for a suspend function.
-    pub fn new(function_symbol: impl Into<String>) -> Self {
-        Self { function_symbol: function_symbol.into() }
-    }
-
-    /// Frame carrier name (lane-neutral).
-    pub fn frame(&self, state_id: u32) -> String {
-        format!("{}$state_{state_id}_frame", self.function_symbol)
-    }
-
-    /// Continuation carrier name.
-    pub fn continuation(&self, index: usize) -> String {
-        format!("{}$continuation_{index}", self.function_symbol)
-    }
-
-    /// Continuation resume-value field name.
-    pub fn continuation_resume_field() -> &'static str {
-        "resume_value"
-    }
-
-    /// Runtime frame slot field name.
-    pub fn frame_slot_field(slot_index: usize) -> String {
-        format!("slot_{slot_index}")
-    }
-}
-
-/// One suspend state entry in a lowering plan.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SuspendState {
-    /// State-machine id.
-    pub state_id: u32,
-    /// Effect category.
-    pub effect: EffectKind,
-    /// Suspend block.
-    pub suspend_block: BlockRef,
-    /// Resume target.
-    pub resume_target: BlockRef,
-    /// Resume parameter count.
-    pub resume_parameter_count: usize,
-    /// Resume parameter static type, if known.
-    pub resume_parameter_type: Option<NyarType>,
-    /// Payload static type, if known.
-    pub payload_type: Option<NyarType>,
-    /// Spill slots.
-    pub spill_slots: Vec<ValueRef>,
-    /// Frame carrier name.
-    pub frame_carrier: String,
-    /// Optional continuation index.
-    pub continuation_index: Option<usize>,
-}
-
-/// Function-level suspend lowering plan.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SuspendLoweringPlan {
-    /// Function symbol.
-    pub function_symbol: String,
-    /// Entry block.
-    pub entry_block: BlockRef,
-    /// Suspend states.
-    pub states: Vec<SuspendState>,
-    /// Handler dispatch blocks.
-    pub handler_dispatch_blocks: Vec<BlockRef>,
-    /// Carrier naming table.
-    pub carrier_table: CarrierTable,
 }
 
 /// Compile-time diagnostic collected while building an executable view.
@@ -644,20 +505,8 @@ pub struct ExecutableFunction {
     pub entry: BlockRef,
     /// SSA values.
     pub values: Vec<Value>,
-    /// Suspend points.
-    pub suspend_points: Vec<SuspendPoint>,
-    /// Frame layouts.
-    pub frame_layouts: Vec<FrameLayout>,
-    /// Continuations.
-    pub continuations: Vec<Continuation>,
-    /// Case / match chains.
+    /// Case / match chains（待迁回语言所有；当前仍由后端校验消费）。
     pub case_chains: Vec<CaseChain>,
-    /// Deprecated alias of [`Self::suspend_plan`].
-    #[deprecated(note = "use suspend_plan")]
-    pub state_machine: Option<SuspendLoweringPlan>,
-    /// Explicit suspend lowering plan.
-    pub suspend_plan: Option<SuspendLoweringPlan>,
-    // 已删除：与 CFG 重写并行的 `state_machine_lowered` 标志。
     /// Blocks.
     pub blocks: Vec<Block>,
     /// Diagnostics.

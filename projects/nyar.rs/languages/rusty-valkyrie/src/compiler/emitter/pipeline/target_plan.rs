@@ -362,13 +362,8 @@ fn lower_function(program: &CompiledValkyrieProgram, function: &ValkyrieMirFunct
             return_layout,
             entry: BlockRef(function.entry.0),
             values,
-            suspend_points: Vec::new(),
-            frame_layouts: Vec::new(),
-            continuations: Vec::new(),
             case_chains: Vec::new(),
             #[allow(deprecated)]
-            state_machine: None,
-            suspend_plan: None,
             blocks,
             diagnostics: Vec::new(),
         },

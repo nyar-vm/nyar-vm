@@ -7,7 +7,7 @@ use nyar::QualifiedName;
 use nyar_types::{ItemInstanceId, NyarType};
 
 use crate::{
-    backend_plan_views::{ExecutableFunction, FunctionView, SuspendMetadataView},
+    backend_plan_views::{ExecutableFunction, FunctionView},
     contracts::Block,
 };
 
@@ -477,11 +477,6 @@ impl TargetExecutionPlan {
     /// 按实例 ID 查询 ABI 名称。
     pub fn abi_name_for_instance(&self, instance: ItemInstanceId) -> Option<QualifiedName> {
         self.abi_names.get(&instance).cloned()
-    }
-
-    /// 按实例 ID 查询挂起元数据视图。
-    pub fn suspend_metadata(&self, instance: ItemInstanceId) -> Option<SuspendMetadataView> {
-        self.functions.get(&instance).and_then(SuspendMetadataView::from_function)
     }
 
     /// 返回 sum 类型表示合同映射。

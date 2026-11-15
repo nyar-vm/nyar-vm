@@ -52,13 +52,8 @@ fn fixture_function(
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        suspend_points: Vec::new(),
-        frame_layouts: Vec::new(),
-        continuations: Vec::new(),
         case_chains: Vec::new(),
         #[allow(deprecated)]
-        state_machine: None,
-        suspend_plan: None,
         blocks: vec![Block { id: BlockRef(0), label: "entry".to_string(), parameters: Vec::new(), instructions, terminator }],
         diagnostics: Vec::new(),
     }

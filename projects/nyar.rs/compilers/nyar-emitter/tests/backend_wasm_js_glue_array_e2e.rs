@@ -51,13 +51,8 @@ fn identity_function(ty: NyarType, layout: Option<u32>) -> ExecutableFunction {
         return_layout: layout,
         entry: BlockRef(0),
         values: vec![Value { id: ValueRef(0), origin: ValueOrigin::Parameter { index: 0, name: "nums".to_string() } }],
-        suspend_points: Vec::new(),
-        frame_layouts: Vec::new(),
-        continuations: Vec::new(),
         case_chains: Vec::new(),
         #[allow(deprecated)]
-        state_machine: None,
-        suspend_plan: None,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),

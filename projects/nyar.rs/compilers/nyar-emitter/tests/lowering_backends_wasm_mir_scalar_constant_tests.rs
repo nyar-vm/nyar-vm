@@ -34,13 +34,8 @@ fn empty_function(symbol: &str, param_types: Vec<NyarType>, return_type: NyarTyp
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        suspend_points: Vec::new(),
-        frame_layouts: Vec::new(),
-        continuations: Vec::new(),
         case_chains: Vec::new(),
         #[allow(deprecated)]
-        state_machine: None,
-        suspend_plan: None,
         blocks,
         diagnostics: Vec::new(),
     }

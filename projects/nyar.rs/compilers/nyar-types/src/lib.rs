@@ -17,9 +17,8 @@ pub use self::{
     digest::combined_content_hash,
     errors::{NyarError, NyarErrorKind},
     executable::{
-        ArrayInitialization, Block, BlockRef, CarrierTable, CaseArm, CaseChain, Constant, Continuation, Diagnostic, EffectKind,
-        ExecutableFunction, FrameLayout, FrameSlot, Instruction, InstructionKind, Operand, SuspendLoweringPlan, SuspendPoint, SuspendState,
-        Terminator, Value, ValueOrigin, ValueRef,
+        ArrayInitialization, Block, BlockRef, CaseArm, CaseChain, Constant, Diagnostic, EffectKind, ExecutableFunction, Instruction,
+        InstructionKind, Operand, Terminator, Value, ValueOrigin, ValueRef,
     },
     external_import::{ExternalCallArgument, ExternalCallEdge, ExternalImportLink, InternalCallEdge},
     layout::{

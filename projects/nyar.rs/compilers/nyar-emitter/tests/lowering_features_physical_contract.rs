@@ -20,13 +20,8 @@ fn function(symbol: &str, return_type: NyarType, parameters: Vec<NyarType>) -> E
         value_types: values,
         entry: BlockRef(0),
         values: Vec::new(),
-        suspend_points: Vec::new(),
-        frame_layouts: Vec::new(),
-        continuations: Vec::new(),
         case_chains: Vec::new(),
         #[allow(deprecated)]
-        state_machine: None,
-        suspend_plan: None,
         blocks: vec![Block {
             id: BlockRef(0),
             label: "entry".to_string(),

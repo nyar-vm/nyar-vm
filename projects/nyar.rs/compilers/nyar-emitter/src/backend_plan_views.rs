@@ -29,18 +29,10 @@ pub type ExecutableTerminator = crate::contracts::Terminator;
 pub type ExecutableDiagnostic = crate::contracts::Diagnostic;
 /// SSA 值描述。
 pub type ExecutableValue = crate::contracts::Value;
-/// 挂起点元数据。
-pub type ExecutableSuspendPoint = crate::contracts::SuspendPoint;
-/// 帧布局描述。
-pub type ExecutableFrameLayout = crate::contracts::FrameLayout;
-/// 续延元数据。
-pub type ExecutableContinuation = crate::contracts::Continuation;
 /// `case` 链元数据。
 pub type ExecutableCaseChain = crate::contracts::CaseChain;
 /// 基本块。
 pub type ExecutableBlock = crate::contracts::Block;
-/// 挂起降低计划。
-pub type ExecutableSuspendPlan = crate::contracts::SuspendLoweringPlan;
 /// 函数级可执行语义。
 pub type ExecutableFunction = crate::contracts::ExecutableFunction;
 
@@ -62,44 +54,8 @@ impl FunctionView {
         &self.function.blocks
     }
 
-    /// 返回挂起点列表。
-    pub fn suspend_points(&self) -> &[ExecutableSuspendPoint] {
-        &self.function.suspend_points
-    }
-
     /// 返回 `case` 链列表。
     pub fn case_chains(&self) -> &[ExecutableCaseChain] {
         &self.function.case_chains
-    }
-}
-
-/// Minimal suspend metadata view required by suspend-aware backends.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SuspendMetadataView {
-    /// 所属函数符号。
-    pub function_symbol: String,
-    /// 挂起点列表。
-    pub suspend_points: Vec<ExecutableSuspendPoint>,
-    /// 帧布局列表。
-    pub frame_layouts: Vec<ExecutableFrameLayout>,
-    /// 续延列表。
-    pub continuations: Vec<ExecutableContinuation>,
-    /// `case` 链列表。
-    pub case_chains: Vec<ExecutableCaseChain>,
-}
-
-impl SuspendMetadataView {
-    /// 从可挂起函数提取最小挂起元数据视图。
-    pub fn from_function(function: &ExecutableFunction) -> Option<Self> {
-        let suspend_plan = function.suspend_plan.as_ref()?;
-        // `suspend_plan` is canonical; still keep points/layouts as explicit slices for consumers.
-        let _ = suspend_plan;
-        Some(Self {
-            function_symbol: function.symbol.clone(),
-            suspend_points: function.suspend_points.clone(),
-            frame_layouts: function.frame_layouts.clone(),
-            continuations: function.continuations.clone(),
-            case_chains: function.case_chains.clone(),
-        })
     }
 }

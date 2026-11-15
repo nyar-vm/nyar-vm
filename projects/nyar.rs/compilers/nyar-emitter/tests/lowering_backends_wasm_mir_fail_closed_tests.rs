@@ -30,13 +30,8 @@ fn function(instructions: Vec<Instruction>, value_types: BTreeMap<ValueRef, Nyar
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        suspend_points: Vec::new(),
-        frame_layouts: Vec::new(),
-        continuations: Vec::new(),
         case_chains: Vec::new(),
         #[allow(deprecated)]
-        state_machine: None,
-        suspend_plan: None,
         blocks: vec![block],
         diagnostics: Vec::new(),
     }

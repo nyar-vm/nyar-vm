@@ -55,7 +55,7 @@ use crate::{
     lowering::{lower_fragment_to_driver_input, write_wasm_wat_sidecar},
 };
 
-pub(crate) use backend_plan_views::{FunctionView, SuspendMetadataView};
+pub(crate) use backend_plan_views::FunctionView;
 pub use lowering::pattern_matching_contract::{PatternMatchingContractError, validate_pattern_matching_invariants};
 
 /// canonical 原语拼写的测试载体映射（仅单测使用）。
