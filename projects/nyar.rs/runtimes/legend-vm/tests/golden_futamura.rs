@@ -962,6 +962,21 @@ mod python_extension_abi {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// i64 不能被 C `long` 的 32 位宽度静默截断：模块常量与方法返回都走 64 位装箱。
+    #[test]
+    fn python_extension_preserves_i64_values() {
+        let dir = extension_dir(
+            "function big()\n  return 4294967297\nend\nfunction below()\n  return -4294967297\nend\nreturn 4294967297\n",
+            "i64",
+        );
+        assert_eq!(
+            run_python(&dir, "print(demo.value)\nprint(demo.big())\nprint(demo.below())"),
+            "4294967297\n4294967297\n-4294967297",
+            "模块常量与方法返回必须保留 i64 宽度"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// 参数个数/类型不符必须由宿主抛出 `TypeError`，不能静默当成 0/-1。
     #[test]
     fn python_method_argument_errors_surface_as_host_exceptions() {
@@ -1090,6 +1105,30 @@ mod windows_extension_abi {
             run_python(&dir, "print(demo.value)\nprint(demo.add(2, 3))\nprint(demo.greet())"),
             "42\n5\nhi",
             "`.pyd` 必须能被真实 CPython 导入"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Win64 的 C `long` 是 32 位：模块常量与方法返回都必须走 64 位装箱，
+    /// `4294967297` 不能被静默截成 `1`。
+    #[test]
+    fn windows_python_extension_preserves_i64_values() {
+        let dir = extension_dir("i64");
+        let runner = legend_vm::LegendVmRunner::new();
+        let residual = runner
+            .specialize_native(
+                "lua",
+                "function big()\n  return 4294967297\nend\nfunction below()\n  return -4294967297\nend\nreturn 4294967297\n",
+                MODULE_NAME,
+            )
+            .expect("specialize");
+        let library = python_library();
+        let bytes = emit_native_python_extension(&residual, NativePlatform::windows_x64(), Some(&library)).expect("emit pyd");
+        std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
+        assert_eq!(
+            run_python(&dir, "print(demo.value)\nprint(demo.big())\nprint(demo.below())"),
+            "4294967297\n4294967297\n-4294967297",
+            "Windows `.pyd` 必须保留 i64 宽度"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

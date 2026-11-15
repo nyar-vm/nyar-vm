@@ -1204,10 +1204,12 @@ pub fn lower_native_residual_to_program(
         Some(NativeHostModule::Python) => {
             // 多阶段初始化：宿主负责创建模块，扩展只提供已初始化的定义与执行钩子。
             imports.push((host_library.clone(), "PyModuleDef_Init".to_string()));
-            imports.push((host_library.clone(), "PyModule_AddIntConstant".to_string()));
+            // 模块常量与方法返回值都用 64 位整数装箱：Windows 的 C `long` 只有
+            // 32 位，`PyModule_AddIntConstant` / `PyLong_FromLong` 会静默截断 i64。
+            imports.push((host_library.clone(), "PyLong_FromLongLong".to_string()));
+            imports.push((host_library.clone(), "PyModule_AddObject".to_string()));
             if has_methods {
                 imports.push((host_library.clone(), "PyArg_ParseTuple".to_string()));
-                imports.push((host_library.clone(), "PyLong_FromLong".to_string()));
             }
             if string_methods {
                 imports.push((host_library.clone(), "PyUnicode_FromStringAndSize".to_string()));
@@ -1451,7 +1453,10 @@ fn push_cstring(data: &mut Vec<u8>, value: &str) {
 }
 
 /// `PyObject* wrapper(PyObject* self, PyObject* args)`：以 `PyArg_ParseTuple` 解析
-/// 整数实参并调用同名残差函数，结果经 `PyLong_FromLong` 变成 Python `int`。
+/// 整数实参并调用同名残差函数，结果经 `PyLong_FromLongLong` 变成 Python `int`。
+///
+/// 必须使用 64 位装箱：Windows 的 C `long` 是 32 位，`PyLong_FromLong` 会把
+/// `4294967297` 静默截成 `1`，而残差载体是 `i64`。
 ///
 /// `PyArg_ParseTuple` 返回 0 表示解析失败（类型/个数不符），此时宿主已经设置异常，
 /// 包装体原样返回 `NULL`，不伪造结果。布尔按 1/0 返回。
@@ -1519,7 +1524,7 @@ fn python_method_wrapper(
     else {
         instructions.push(Lir::StoreSlot(TEMP_SLOT));
         instructions.push(Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 0 });
-        instructions.push(Lir::CallImport { module: dll.to_string(), field: "PyLong_FromLong".to_string() });
+        instructions.push(Lir::CallImport { module: dll.to_string(), field: "PyLong_FromLongLong".to_string() });
         instructions.push(Lir::Return);
     }
     instructions.push(Lir::Label(FAIL_LABEL));
@@ -1558,13 +1563,18 @@ fn python_module_registration(module_name: &str, dll: &str) -> NativeTextProgram
 /// 模块实例由宿主创建；这里安装残差 `main` 的结果常量 `value`（方法表由
 /// `_PyModule_ExecDef` 依据 `m_methods` 先行安装）。成功返回 0，失败返回 -1，
 /// 不吞掉宿主错误。
+///
+/// `value` 先经 `PyLong_FromLongLong` 装箱再交给 `PyModule_AddObject`：
+/// `PyModule_AddIntConstant` 走 C `long`，在 Windows 上只有 32 位，会把 i64 截断。
 fn python_module_exec(value_offset: u32, dll: &str, arena: Option<u32>) -> NativeTextProgramFunction {
     use NativeTextInstruction as Lir;
     const MODULE_SLOT: u16 = 0;
     const VALUE_SLOT: u16 = 1;
-    const RESULT_SLOT: u16 = 2;
-    const ZERO_SLOT: u16 = 3;
-    const TEMP_SLOT: u16 = 4;
+    const OBJECT_SLOT: u16 = 2;
+    const RESULT_SLOT: u16 = 3;
+    const ZERO_SLOT: u16 = 4;
+    const TEMP_SLOT: u16 = 5;
+    const FAIL_LABEL: u32 = 0;
     let mut instructions = vec![Lir::LoadParam { index: 0, slot: MODULE_SLOT }];
     if let Some(arena) = arena {
         // 入口实参已落槽：重置使用 rax/rcx 不会破坏 Win64 的 rcx 形参。
@@ -1575,25 +1585,34 @@ fn python_module_exec(value_offset: u32, dll: &str, arena: Option<u32>) -> Nativ
         Lir::StoreSlot(VALUE_SLOT),
         Lir::LoadI64(0),
         Lir::StoreSlot(ZERO_SLOT),
-        // `PyModule_AddIntConstant(module, "value", value)`。
+        // `PyLong_FromLongLong(value)`：64 位有符号整数，不经过 C `long`。
+        Lir::LoadSlotToArg { slot: VALUE_SLOT, index: 0 },
+        Lir::CallImport { module: dll.to_string(), field: "PyLong_FromLongLong".to_string() },
+        Lir::StoreSlot(OBJECT_SLOT),
+        // `NULL` 表示装箱失败（异常已由宿主设置）。
+        Lir::LoadSlot(OBJECT_SLOT),
+        Lir::LoadSlotToRcx(ZERO_SLOT),
+        Lir::Ne,
+        Lir::JumpIfZero(FAIL_LABEL),
+        // `PyModule_AddObject(module, "value", object)`：成功时接管对象引用。
         Lir::LoadSlotToArg { slot: MODULE_SLOT, index: 0 },
         Lir::LoadDataAddress(value_offset),
         Lir::StoreSlot(TEMP_SLOT),
         Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 1 },
-        Lir::LoadSlotToArg { slot: VALUE_SLOT, index: 2 },
-        Lir::CallImport { module: dll.to_string(), field: "PyModule_AddIntConstant".to_string() },
+        Lir::LoadSlotToArg { slot: OBJECT_SLOT, index: 2 },
+        Lir::CallImport { module: dll.to_string(), field: "PyModule_AddObject".to_string() },
         Lir::StoreSlot(RESULT_SLOT),
         Lir::LoadSlot(RESULT_SLOT),
         Lir::LoadSlotToRcx(ZERO_SLOT),
         Lir::Eq,
-        Lir::JumpIfZero(1),
+        Lir::JumpIfZero(FAIL_LABEL),
         Lir::LoadI64(0),
         Lir::Return,
-        Lir::Label(1),
+        Lir::Label(FAIL_LABEL),
         Lir::LoadI64(-1),
         Lir::Return,
     ]);
-    NativeTextProgramFunction { name: PYTHON_EXEC_NAME.to_string(), slot_count: 5, instructions }
+    NativeTextProgramFunction { name: PYTHON_EXEC_NAME.to_string(), slot_count: 6, instructions }
 }
 
 /// `napi_register_module_v1(env, exports)` 入口：把残差 `main` 的整数值写成
@@ -2997,7 +3016,12 @@ mod tests {
             !image.elf_imports.iter().any(|symbol| symbol == "PyModule_Create2"),
             "多阶段初始化不调用 `PyModule_Create2`：模块由宿主创建"
         );
-        assert!(image.elf_imports.iter().any(|symbol| symbol == "PyModule_AddIntConstant"), "必须导入 `PyModule_AddIntConstant`");
+        assert!(image.elf_imports.iter().any(|symbol| symbol == "PyLong_FromLongLong"), "`value` 必须 64 位装箱");
+        assert!(image.elf_imports.iter().any(|symbol| symbol == "PyModule_AddObject"), "模块常量经 `PyModule_AddObject` 安装");
+        assert!(
+            !image.elf_imports.iter().any(|symbol| symbol == "PyModule_AddIntConstant"),
+            "`PyModule_AddIntConstant` 走 32 位 C `long`，不得用于 i64 `value`"
+        );
         assert!(!image.data.is_empty(), "`PyModuleDef` 必须位于镜像数据段");
         // 模块名、`m_slots` 与槽位函数指针各一条自相对重定位。
         assert_eq!(image.data_relocations.len(), 3, "模块名 / m_slots / 槽位函数指针");
@@ -3040,7 +3064,7 @@ mod tests {
         let image = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativePlatform::linux_x64(), NativeHostModule::Python)).expect("lower python methods");
         assert!(image.symbols.iter().any(|(name, _)| name == "__nyar_py_wrap_add"), "必须生成方法包装体");
         assert!(image.elf_imports.iter().any(|symbol| symbol == "PyArg_ParseTuple"), "方法实参必须经宿主解析");
-        assert!(image.elf_imports.iter().any(|symbol| symbol == "PyLong_FromLong"), "返回值必须包成 Python int");
+        assert!(image.elf_imports.iter().any(|symbol| symbol == "PyLong_FromLongLong"), "返回值必须 64 位装箱成 Python int");
         // 方法名与格式串必须在数据段里以 NUL 结尾。
         assert!(image.data.windows(4).any(|window| window == b"add\0"), "方法名必须进入数据段");
         assert!(image.data.windows(6).any(|window| window == b"nn:add"), "格式串必须带方法名");
