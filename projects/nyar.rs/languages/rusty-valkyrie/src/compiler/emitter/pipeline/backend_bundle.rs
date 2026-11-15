@@ -159,7 +159,7 @@ impl FrontendBuildBundle for CompilerBuildBundle {
         &self,
         partition_index: usize,
     ) -> std::result::Result<nyar_emitter::AssembledFragment, nyar_emitter::EmitterError> {
-        assemble_fragment(&self.compiled_program, &self.artifact_plan, partition_index).map_err(|message| message)
+        assemble_fragment(&self.compiled_program, &self.artifact_plan, partition_index).map_err(|error| error.to_string())
     }
 
     fn target_host_flavor(&self) -> Option<String> {

@@ -9,8 +9,41 @@ use nyar_emitter::{
     AdaptedFragmentInput, AssembledFragment, FragmentSubmission, LoweredBackendInput, TargetExecutionPlan, TargetInputRequest,
 };
 
-use super::pipeline::target_plan;
+use super::pipeline::target_plan::{self, TargetPlanError};
 use crate::compiler::valkyrie_mir::CompiledValkyrieProgram;
+
+/// 装配边界失败：身份核对失败保留一句说明，适配器失败保留结构化的
+/// `TargetPlanError`（stage/instance/symbol/reason），下游不得再拍平为裸文本。
+#[derive(Debug)]
+pub enum AssemblyError {
+    /// 分区/程序身份不一致。
+    Identity(String),
+    /// 语言 × 目标适配失败。
+    TargetPlan {
+        /// 出错的分区名。
+        partition: String,
+        /// 适配器产生的结构化错误。
+        source: TargetPlanError,
+    },
+}
+
+impl std::fmt::Display for AssemblyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Identity(message) => f.write_str(message),
+            Self::TargetPlan { partition, source } => write!(f, "分区 `{partition}` 目标计划构建失败: {source}"),
+        }
+    }
+}
+
+impl std::error::Error for AssemblyError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Identity(_) => None,
+            Self::TargetPlan { source, .. } => Some(source),
+        }
+    }
+}
 
 /// 返回已解析的导出/入口数量；装配器不直接读取语义计划。
 #[doc(hidden)]
@@ -92,31 +125,32 @@ pub fn assemble_fragment(
     compiled_program: &CompiledValkyrieProgram,
     plan: &ArtifactPartitionPlan,
     partition_index: usize,
-) -> std::result::Result<AssembledFragment, String> {
+) -> std::result::Result<AssembledFragment, AssemblyError> {
     if plan.module_name.to_string() != compiled_program.mir_program().linked.module_name {
-        return Err(report!("前端计划与分区计划不匹配"));
+        return Err(AssemblyError::Identity(report!("前端计划与分区计划不匹配")));
     }
     if partition_index >= plan.partitions.len() {
-        return Err(report!("分区索引 `{partition_index}` 超出范围"));
+        return Err(AssemblyError::Identity(report!("分区索引 `{partition_index}` 超出范围")));
     }
     let partition = &plan.partitions[partition_index];
     let fragment_view = plan
         .fragment_views
         .iter()
         .find(|view| view.fragment_id == partition.fragment)
-        .ok_or_else(|| report!("分区 `{}` 缺少优化后的语义片段视图", partition.name))?;
+        .ok_or_else(|| AssemblyError::Identity(report!("分区 `{}` 缺少优化后的语义片段视图", partition.name)))?;
     let linked = &compiled_program.mir_program().linked;
-    let fragment = linked.fragments.get(&partition.fragment).ok_or_else(|| report!("分区 `{}` 对应的语义片段不存在", partition.name))?;
+    let fragment =
+        linked.fragments.get(&partition.fragment).ok_or_else(|| AssemblyError::Identity(report!("分区 `{}` 对应的语义片段不存在", partition.name)))?;
     if partition.exported_operations != fragment.exported_operations
         || partition.entry_operation != fragment.entry_operation
         || fragment_view.canonical_operations != fragment.exported_operations
     {
-        return Err(report!("分区 `{}` 的 callable 身份与片段合同不一致", partition.name));
+        return Err(AssemblyError::Identity(report!("分区 `{}` 的 callable 身份与片段合同不一致", partition.name)));
     }
 
     let fragment_requires_suspend = fragment.required_capabilities.iter().any(|capability| capability.as_str() == "suspend");
     if fragment_requires_suspend {
-        return Err(report!("分区 `{}` 要求 suspend，但 Compiler 尚未提供已验证的 suspend 合同", partition.name));
+        return Err(AssemblyError::Identity(report!("分区 `{}` 要求 suspend，但 Compiler 尚未提供已验证的 suspend 合同", partition.name)));
     }
 
     let mut roots = partition.exported_operations.clone();
@@ -129,7 +163,7 @@ pub fn assemble_fragment(
     // tag 宽度是平台服务提供的事实；语言侧不再声明它。
     let sum_tag_width = nyar_emitter::sum_tag_width(plan.target.to_profile(None).backend_family);
     let backend_plan = target_plan::from_compiled_program(compiled_program, &partition.fragment, theory_bundle.clone(), &roots, sum_tag_width)
-        .map_err(|error| format!("目标计划构建失败: {error}"))?;
+        .map_err(|source| AssemblyError::TargetPlan { partition: partition.name.clone(), source })?;
 
     Ok(AssembledFragment {
         partition: partition.clone(),

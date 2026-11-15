@@ -24,7 +24,39 @@ use super::super::super::valkyrie_mir::{
 
 type Result<T> = std::result::Result<T, String>;
 
-/// 语言 × 目标适配失败：片段/根身份缺失有独立变体，其余降层原因保留细节文本。
+/// 适配失败所在的降层阶段：下游按枚举归因，不再解析文本。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdapterStage {
+    /// 链接事实一致性：片段身份、导入绑定、根闭包与 ABI 名称。
+    Link,
+    /// canonical 类型到目标类型的投影。
+    Type,
+    /// 函数级结构与函数体降层。
+    Function,
+    /// 表示与布局事实：载体合同、sum tag、文本编码登记。
+    Representation,
+}
+
+impl AdapterStage {
+    /// 阶段标签。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Link => "link",
+            Self::Type => "type",
+            Self::Function => "function",
+            Self::Representation => "representation",
+        }
+    }
+}
+
+impl std::fmt::Display for AdapterStage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// 语言 × 目标适配失败：片段/根身份缺失有独立变体，其余降层原因携带
+/// 阶段、来源实例与符号，供机械归因；细节文本保留在 `reason`。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TargetPlanError {
     /// 片段身份不在链接结果中。
@@ -39,9 +71,22 @@ pub enum TargetPlanError {
     },
     /// 语言合同无法无损投影到目标计划。
     Unsound {
+        /// 失败所在的降层阶段。
+        stage: AdapterStage,
+        /// 出错的可调用实例（阶段不涉及具体实例时为 `None`）。
+        instance: Option<ItemInstanceId>,
+        /// 出错的可调用 ABI 名称（若已解析）。
+        symbol: Option<String>,
         /// 具体原因。
         reason: String,
     },
+}
+
+impl TargetPlanError {
+    /// 构造携带阶段与来源身份的 `Unsound` 失败。
+    fn unsound(stage: AdapterStage, instance: Option<ItemInstanceId>, symbol: Option<String>, reason: String) -> Self {
+        Self::Unsound { stage, instance, symbol, reason }
+    }
 }
 
 impl std::fmt::Display for TargetPlanError {
@@ -49,18 +94,21 @@ impl std::fmt::Display for TargetPlanError {
         match self {
             Self::UnknownFragment { fragment } => write!(f, "Valkyrie 片段 `{fragment}` 不存在"),
             Self::UnknownRoot { instance } => write!(f, "Compiler callable 实例 `{instance:?}` 缺少函数体"),
-            Self::Unsound { reason } => f.write_str(reason),
+            Self::Unsound { stage, instance, symbol, reason } => {
+                write!(f, "target-plan[{stage}]")?;
+                if let Some(instance) = instance {
+                    write!(f, " instance={instance:?}")?;
+                }
+                if let Some(symbol) = symbol {
+                    write!(f, " symbol={symbol}")?;
+                }
+                write!(f, ": {reason}")
+            }
         }
     }
 }
 
 impl std::error::Error for TargetPlanError {}
-
-impl From<String> for TargetPlanError {
-    fn from(reason: String) -> Self {
-        Self::Unsound { reason }
-    }
-}
 
 /// 从已验证的 Valkyrie 程序生成目标私有执行计划。
 ///
@@ -82,7 +130,7 @@ pub fn from_compiled_program(
             return Err(TargetPlanError::UnknownRoot { instance: *root });
         }
     }
-    build_plan(program, fragment_id, theory_bundle, roots, sum_tag_width).map_err(TargetPlanError::from)
+    build_plan(program, fragment_id, theory_bundle, roots, sum_tag_width)
 }
 
 fn build_plan(
@@ -91,32 +139,47 @@ fn build_plan(
     theory_bundle: nyar::TheoryBundle,
     roots: &[ItemInstanceId],
     sum_tag_width: u32,
-) -> Result<TargetExecutionPlan> {
+) -> std::result::Result<TargetExecutionPlan, TargetPlanError> {
     let canonical = program.mir_program();
-    let fragment = canonical.linked.fragments.get(fragment_id).ok_or_else(|| format!("Canonical 片段 `{fragment_id}` 不存在"))?;
+    let fragment = canonical
+        .linked
+        .fragments
+        .get(fragment_id)
+        .ok_or_else(|| TargetPlanError::unsound(AdapterStage::Link, None, None, format!("Canonical 片段 `{fragment_id}` 不存在")))?;
     let mut declared_imports = BTreeMap::new();
     for (index, import) in &canonical.linked.imports {
         if canonical.mir.functions.contains_key(&import.callee) {
-            return Err(format!("callable 实例 `{:?}` 同时绑定函数体与导入", import.callee));
+            return Err(TargetPlanError::unsound(
+                AdapterStage::Link,
+                Some(import.callee),
+                None,
+                format!("callable 实例 `{:?}` 同时绑定函数体与导入", import.callee),
+            ));
         }
         if declared_imports.insert(import.callee, (*index, import)).is_some() {
-            return Err(format!("callable 实例 `{:?}` 绑定多个 ImportIndex", import.callee));
+            return Err(TargetPlanError::unsound(
+                AdapterStage::Link,
+                Some(import.callee),
+                None,
+                format!("callable 实例 `{:?}` 绑定多个 ImportIndex", import.callee),
+            ));
         }
-    }
-    for (callee, (idx, import)) in &declared_imports {
-        let link_str = format!("{:?}", import.link);
-        let symbol = canonical.linked.callable_names.get(callee).cloned().unwrap_or_default();
     }
     let mut pending = roots
         .iter()
         .copied()
         .map(|instance| {
             if !canonical.mir.functions.contains_key(&instance) {
-                return Err(format!("Compiler callable 实例 `{instance:?}` 缺少 canonical 函数体"));
+                return Err(TargetPlanError::unsound(
+                    AdapterStage::Link,
+                    Some(instance),
+                    None,
+                    format!("Compiler callable 实例 `{instance:?}` 缺少 canonical 函数体"),
+                ));
             }
             Ok(instance)
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<std::result::Result<Vec<_>, TargetPlanError>>()?;
     let mut seen = std::collections::BTreeSet::new();
     let mut functions = BTreeMap::new();
     let mut abi_names = BTreeMap::new();
@@ -126,27 +189,52 @@ fn build_plan(
             continue;
         }
         if let Some((index, import)) = declared_imports.get(&instance) {
-            let parameter_types = import.parameter_types.iter().map(|ty| lower_type(canonical, *ty)).collect::<Result<Vec<_>>>()?;
-            let return_type = lower_type(canonical, import.return_type)?;
+            let parameter_types = import
+                .parameter_types
+                .iter()
+                .map(|ty| {
+                    lower_type(canonical, *ty)
+                        .map_err(|reason| TargetPlanError::unsound(AdapterStage::Type, Some(instance), None, reason))
+                })
+                .collect::<std::result::Result<Vec<_>, TargetPlanError>>()?;
+            let return_type = lower_type(canonical, import.return_type)
+                .map_err(|reason| TargetPlanError::unsound(AdapterStage::Type, Some(instance), None, reason))?;
             imports.insert(
                 instance,
                 BackendImport { index: *index, link: import.link.clone(), parameter_types, return_type },
             );
             continue;
         }
-        let name = canonical.linked.callable_names.get(&instance).ok_or_else(|| format!("callable 实例 `{instance:?}` 缺少 ABI 名称"))?;
+        let name = canonical
+            .linked
+            .callable_names
+            .get(&instance)
+            .ok_or_else(|| TargetPlanError::unsound(AdapterStage::Link, Some(instance), None, format!("callable 实例 `{instance:?}` 缺少 ABI 名称")))?;
         abi_names.insert(instance, name.clone());
-        let function = canonical.mir.functions.get(&instance).ok_or_else(|| format!("callable `{name}` 缺少 canonical 函数体"))?;
+        let function = canonical.mir.functions.get(&instance).ok_or_else(|| {
+            TargetPlanError::unsound(
+                AdapterStage::Link,
+                Some(instance),
+                Some(name.to_string()),
+                format!("callable `{name}` 缺少 canonical 函数体"),
+            )
+        })?;
         // 可达调用的目标必须已有闭合实例。签名仍含 Generic 的声明模板没有被前端证明
         // 不可达，只是从前端单态化里漏掉；把它从闭包队列里滤掉等于把这处缺口伪装成
         // 编译成功，因此这里失败闭合，要求前端提供单态化/evidence 合同。
         if signature_contains_generic(canonical, function) {
-            return Err(format!(
-                "可达调用的目标缺少闭合实例: instance={instance:?} symbol={name} 的声明签名仍含 Generic 类型参数，\
-                 backend 无法编码；需前端提供单态化/evidence 合同"
+            return Err(TargetPlanError::unsound(
+                AdapterStage::Function,
+                Some(instance),
+                Some(name.to_string()),
+                format!(
+                    "可达调用的目标缺少闭合实例: instance={instance:?} symbol={name} 的声明签名仍含 Generic 类型参数，\
+                     backend 无法编码；需前端提供单态化/evidence 合同"
+                ),
             ));
         }
-        let (lowered, callees) = lower_function(program, function)?;
+        let (lowered, callees) = lower_function(program, function)
+            .map_err(|reason| TargetPlanError::unsound(AdapterStage::Function, Some(instance), Some(name.to_string()), reason))?;
         pending.extend(callees);
         functions.insert(instance, lowered);
     }
@@ -183,11 +271,23 @@ fn build_plan(
             let folded = match encoding {
                 CanonicalPrimitiveType::Utf8 => NyarType::Utf8,
                 CanonicalPrimitiveType::Utf16 => NyarType::Utf16,
-                other => return Err(format!("文本载体 `TypeId` 登记了非文本编码身份: {other:?}")),
+                other => {
+                    return Err(TargetPlanError::unsound(
+                        AdapterStage::Representation,
+                        None,
+                        None,
+                        format!("文本载体 `TypeId` 登记了非文本编码身份: {other:?}"),
+                    ));
+                }
             };
             if let Some(existing) = aggregate_layout_by_nyar_type.get(&folded).copied() {
                 if existing != *layout_id {
-                    return Err(format!("文本编码身份 `{folded:?}` 登记了冲突的托管布局: {existing:?} vs {layout_id:?}"));
+                    return Err(TargetPlanError::unsound(
+                        AdapterStage::Representation,
+                        None,
+                        None,
+                        format!("文本编码身份 `{folded:?}` 登记了冲突的托管布局: {existing:?} vs {layout_id:?}"),
+                    ));
                 }
             }
             aggregate_layout_by_nyar_type.insert(folded, *layout_id);
@@ -229,7 +329,8 @@ fn build_plan(
         functions,
         abi_names,
         imports,
-        sum_reps: platform_sum_representations(canonical, sum_tag_width)?,
+        sum_reps: platform_sum_representations(canonical, sum_tag_width)
+            .map_err(|reason| TargetPlanError::unsound(AdapterStage::Representation, None, None, reason))?,
         // 程序级文本表示模式只来自正式表示计划的显式事实（`RepresentationPlan`）；
         // 计划未声明时保持 `None`，后端按 managed 语义 fail-closed，禁止在这里
         // 按布局注册表是否含 `utf8` 反推模式。
@@ -1198,6 +1299,23 @@ mod tests {
         })
         .expect_err("`Yield` 不得进入目标合同");
         assert!(error.contains("尚无目标合同"), "诊断必须保持失败闭合语义，实际：{error}");
+    }
+
+    /// `Unsound` 必须携带可机械归因的阶段与来源身份，而不是只剩一句文本。
+    #[test]
+    fn unsound_error_carries_stage_and_source_identity() {
+        let instance = ItemInstanceId::from_index(3).expect("测试实例身份");
+        let error = TargetPlanError::unsound(AdapterStage::Type, Some(instance), Some("demo::run".to_string()), "投影失败".to_string());
+        let TargetPlanError::Unsound { stage, instance: bound_instance, symbol, reason } = &error else {
+            panic!("必须构造 Unsound");
+        };
+        assert_eq!(*stage, AdapterStage::Type);
+        assert_eq!(*bound_instance, Some(instance));
+        assert_eq!(symbol.as_deref(), Some("demo::run"));
+        assert_eq!(reason, "投影失败");
+        let text = error.to_string();
+        assert!(text.contains("target-plan[type]"), "展示必须含阶段: {text}");
+        assert!(text.contains("symbol=demo::run"), "展示必须含符号: {text}");
     }
 
 }
