@@ -28,7 +28,6 @@ fn raising_function() -> ExecutableFunction {
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![
             Block {

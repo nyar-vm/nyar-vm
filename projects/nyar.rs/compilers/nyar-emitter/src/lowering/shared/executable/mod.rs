@@ -293,7 +293,6 @@ mod tests {
             return_layout: None,
             entry: crate::contracts::BlockRef(0),
             values: Vec::new(),
-            case_chains: Vec::new(),
             #[allow(deprecated)]
             blocks: vec![crate::contracts::Block {
                 id: crate::contracts::BlockRef(0),

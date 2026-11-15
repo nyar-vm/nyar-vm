@@ -56,7 +56,6 @@ fn function(symbol: &str, return_type: NyarType, parameters: Vec<NyarType>) -> E
         value_types,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![Block {
             id: BlockRef(0),

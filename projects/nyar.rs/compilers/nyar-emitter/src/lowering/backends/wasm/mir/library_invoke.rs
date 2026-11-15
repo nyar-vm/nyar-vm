@@ -304,7 +304,6 @@ mod tests {
                     origin: ValueOrigin::Parameter { index: *index, name: (*name).to_string() },
                 })
                 .collect(),
-            case_chains: Vec::new(),
             #[allow(deprecated)]
             blocks: vec![crate::contracts::Block {
                 id: crate::contracts::BlockRef(0),

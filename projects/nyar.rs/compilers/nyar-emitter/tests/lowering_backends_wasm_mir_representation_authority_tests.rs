@@ -68,7 +68,6 @@ fn utf8_receiver_field_get_main(field: FieldId, bind_layout: bool) -> Executable
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![block],
         diagnostics: Vec::new(),
@@ -135,7 +134,6 @@ fn wasm_array_new_element_type_self_registers_and_lowers() {
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![block],
         diagnostics: Vec::new(),
@@ -178,7 +176,6 @@ fn base_function(symbol: &str, return_type: NyarType, param_types: Vec<NyarType>
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: Vec::new(),
         diagnostics: Vec::new(),

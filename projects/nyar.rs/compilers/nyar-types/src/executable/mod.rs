@@ -423,42 +423,6 @@ pub enum Terminator {
     Unreachable,
 }
 
-/// `match` / `case` chain metadata.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CaseChain {
-    /// Dispatch block entering the chain.
-    pub dispatch_block: BlockRef,
-    /// First arm entry.
-    pub first_arm: BlockRef,
-    /// Block entered when no arm matches.
-    pub no_match_block: BlockRef,
-    /// Final exit block.
-    pub exit_block: BlockRef,
-    /// Whether this chain produces a value.
-    pub produce_value: bool,
-    /// Per-arm metadata.
-    pub arms: Vec<CaseArm>,
-}
-
-/// Single case / match arm control-flow metadata.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CaseArm {
-    /// Arm entry block.
-    pub entry_block: BlockRef,
-    /// Optional pattern-check block.
-    pub check_block: Option<BlockRef>,
-    /// Optional guard block.
-    pub guard_block: Option<BlockRef>,
-    /// Body block.
-    pub body_block: BlockRef,
-    /// Next target on pattern / guard failure.
-    pub next_arm_target: BlockRef,
-    /// Exit target after a successful arm.
-    pub exit_target: BlockRef,
-    /// Optional fallthrough target.
-    pub fallthrough_target: Option<BlockRef>,
-}
-
 /// Compile-time diagnostic collected while building an executable view.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Diagnostic {
@@ -505,8 +469,6 @@ pub struct ExecutableFunction {
     pub entry: BlockRef,
     /// SSA values.
     pub values: Vec<Value>,
-    /// Case / match chains（待迁回语言所有；当前仍由后端校验消费）。
-    pub case_chains: Vec<CaseChain>,
     /// Blocks.
     pub blocks: Vec<Block>,
     /// Diagnostics.

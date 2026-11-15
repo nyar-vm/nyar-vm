@@ -33,7 +33,6 @@ fn function(instructions: Vec<Instruction>, terminator: Terminator, value_types:
         value_types,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![Block { id: BlockRef(0), label: "entry".to_string(), parameters: Vec::new(), instructions, terminator }],
         diagnostics: Vec::new(),

@@ -29,8 +29,6 @@ pub type ExecutableTerminator = crate::contracts::Terminator;
 pub type ExecutableDiagnostic = crate::contracts::Diagnostic;
 /// SSA 值描述。
 pub type ExecutableValue = crate::contracts::Value;
-/// `case` 链元数据。
-pub type ExecutableCaseChain = crate::contracts::CaseChain;
 /// 基本块。
 pub type ExecutableBlock = crate::contracts::Block;
 /// 函数级可执行语义。
@@ -52,10 +50,5 @@ impl FunctionView {
     /// 返回全部基本块。
     pub fn blocks(&self) -> &[ExecutableBlock] {
         &self.function.blocks
-    }
-
-    /// 返回 `case` 链列表。
-    pub fn case_chains(&self) -> &[ExecutableCaseChain] {
-        &self.function.case_chains
     }
 }

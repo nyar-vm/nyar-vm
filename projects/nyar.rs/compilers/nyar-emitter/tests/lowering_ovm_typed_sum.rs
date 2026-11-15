@@ -57,7 +57,6 @@ fn sum_function(instructions: Vec<Instruction>, value_types: BTreeMap<ValueRef, 
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![Block {
             id: BlockRef(0),

@@ -446,7 +446,6 @@ mod tests {
                     origin: ValueOrigin::Parameter { index: *index, name: (*name).to_string() },
                 })
                 .collect(),
-            case_chains: Vec::new(),
             blocks: vec![Block {
                 id: BlockRef(0),
                 label: "entry".to_string(),

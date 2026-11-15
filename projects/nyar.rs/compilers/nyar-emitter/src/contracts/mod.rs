@@ -7,8 +7,8 @@
 //! 不得重新挂回 [`nyar_types::InstructionKind::Call`]。
 
 pub use nyar_types::{
-    ArrayInitialization, Block, BlockRef, CaseArm, CaseChain, Constant, Diagnostic, EffectKind, ExecutableFunction, Instruction,
-    InstructionKind, Operand, StorageKind, Terminator, Value, ValueOrigin, ValueRef,
+    ArrayInitialization, Block, BlockRef, Constant, Diagnostic, EffectKind, ExecutableFunction, Instruction, InstructionKind, Operand,
+    StorageKind, Terminator, Value, ValueOrigin, ValueRef,
 };
 
 /// 后端私有的调用路由（不是 Semantic MIR 权威）。

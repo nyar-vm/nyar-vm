@@ -31,7 +31,6 @@ fn callee_function() -> ExecutableFunction {
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![Block {
             id: BlockRef(0),
@@ -61,7 +60,6 @@ fn caller_function(instance: ItemInstanceId) -> ExecutableFunction {
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![Block {
             id: BlockRef(0),

@@ -34,7 +34,6 @@ fn empty_function(symbol: &str, param_types: Vec<NyarType>, return_type: NyarTyp
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks,
         diagnostics: Vec::new(),

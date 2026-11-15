@@ -51,7 +51,6 @@ fn identity_function(ty: NyarType, layout: Option<u32>) -> ExecutableFunction {
         return_layout: layout,
         entry: BlockRef(0),
         values: vec![Value { id: ValueRef(0), origin: ValueOrigin::Parameter { index: 0, name: "nums".to_string() } }],
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![Block {
             id: BlockRef(0),

@@ -20,7 +20,6 @@ fn leaf_i32_fn(symbol: &str, blocks: Vec<Block>) -> ExecutableFunction {
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks,
         diagnostics: Vec::new(),

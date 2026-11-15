@@ -34,7 +34,6 @@ fn constant_function(literal: i64, return_type: NyarType) -> ExecutableFunction 
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![Block {
             id: BlockRef(0),
@@ -179,7 +178,6 @@ fn try_lower_load_constant(literal: i64, slot_type: NyarType) -> Result<OdinModu
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![Block {
             id: BlockRef(0),
@@ -215,7 +213,6 @@ fn identity_i32(symbol: &str) -> ExecutableFunction {
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![Block {
             id: BlockRef(0),
@@ -239,7 +236,6 @@ fn call_with_i32_constant(symbol: &str, callee: ItemInstanceId, literal: i64) ->
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![Block {
             id: BlockRef(0),
@@ -306,7 +302,6 @@ fn call_host_with_constant(symbol: &str, callee: ItemInstanceId, literal: i64) -
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![Block {
             id: BlockRef(0),

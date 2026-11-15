@@ -34,7 +34,6 @@ fn call_main(callee: Operand) -> ExecutableFunction {
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![block],
         diagnostics: Vec::new(),
@@ -109,7 +108,6 @@ fn wasm_i64_slot_receiving_i32_carrier_fails_structured() {
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![block],
         diagnostics: Vec::new(),

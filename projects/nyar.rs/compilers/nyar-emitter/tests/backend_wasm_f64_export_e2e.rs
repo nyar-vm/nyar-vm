@@ -63,7 +63,6 @@ fn cast_function(source: NyarType, target: NyarType) -> ExecutableFunction {
         return_layout: None,
         entry: BlockRef(0),
         values: vec![Value { id: ValueRef(0), origin: ValueOrigin::Parameter { index: 0, name: "x".to_string() } }],
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![Block {
             id: BlockRef(0),
@@ -92,7 +91,6 @@ fn constant_f64_function(value: f64) -> ExecutableFunction {
         return_layout: None,
         entry: BlockRef(0),
         values: vec![Value { id: ValueRef(0), origin: ValueOrigin::Temporary }],
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![Block {
             id: BlockRef(0),

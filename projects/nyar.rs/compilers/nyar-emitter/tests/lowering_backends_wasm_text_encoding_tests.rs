@@ -22,7 +22,6 @@ fn text_abi_submission(param_type: NyarType) -> FragmentSubmission {
         value_types: BTreeMap::new(),
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![Block {
             id: BlockRef(0),

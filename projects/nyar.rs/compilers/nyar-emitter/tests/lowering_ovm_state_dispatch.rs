@@ -32,7 +32,6 @@ fn dispatching_function(case_key: u32) -> ExecutableFunction {
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![
             Block {

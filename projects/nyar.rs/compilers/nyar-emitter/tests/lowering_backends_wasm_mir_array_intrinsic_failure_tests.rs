@@ -31,7 +31,6 @@ fn main_function(instructions: Vec<Instruction>, return_value: ValueRef, value_t
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![block],
         diagnostics: Vec::new(),

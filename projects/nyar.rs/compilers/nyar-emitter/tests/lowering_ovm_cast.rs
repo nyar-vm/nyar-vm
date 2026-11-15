@@ -52,7 +52,6 @@ fn cast_function(source_type: NyarType, target_type: NyarType) -> ExecutableFunc
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![Block {
             id: BlockRef(0),
@@ -81,7 +80,6 @@ fn cast_constant_function(target_type: NyarType) -> ExecutableFunction {
         return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![Block {
             id: BlockRef(0),

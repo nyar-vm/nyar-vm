@@ -362,7 +362,6 @@ fn lower_function(program: &CompiledValkyrieProgram, function: &ValkyrieMirFunct
             return_layout,
             entry: BlockRef(function.entry.0),
             values,
-            case_chains: Vec::new(),
             #[allow(deprecated)]
             blocks,
             diagnostics: Vec::new(),
