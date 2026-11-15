@@ -16,13 +16,8 @@ miette = { workspace = true }
 nyar = { workspace = true }
 nyar-analyzer = { workspace = true }
 nyar-emitter = { workspace = true }
-acorn-odin = { workspace = true }
 rusty-bash = { workspace = true }
 rusty-c = { workspace = true }
 rusty-lua = { workspace = true }
 rusty-powershell = { workspace = true }
 rusty-tcl = { workspace = true }
-
-# OVM is a Futamura *sink* for probes only — not a lib dependency of the PE substrate.
-[dev-dependencies]
-odin-vm = { workspace = true }

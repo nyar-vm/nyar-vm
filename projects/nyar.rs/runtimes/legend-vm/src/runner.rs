@@ -5,7 +5,7 @@ use std::{collections::HashMap, path::Path};
 use miette::{Result, miette};
 
 use crate::{
-    compiler::{CompileArtifact, NativeResidualModule, NyarBytecodeCompiler, PeCompiler, StackCompiler, emit_native_pe},
+    compiler::{NativeResidualModule, PeCompiler, emit_native_pe},
     evaluator::{evaluate_bash_script, evaluate_c_script, evaluate_lua_script, evaluate_powershell_script, evaluate_tcl_script},
     guest::{FnGuestInterpret, GuestInterpretFn},
     value::LegacyValue,
@@ -51,8 +51,6 @@ impl LegendVmRunner {
             FnGuestInterpret { ids: &["lua"], interpret: evaluate_lua_script },
             FnGuestInterpret { ids: &["tcl"], interpret: evaluate_tcl_script },
             FnGuestInterpret { ids: &["c"], interpret: evaluate_c_script },
-            FnGuestInterpret { ids: &["javascript", "js"], interpret: evaluate_javascript_stub },
-            FnGuestInterpret { ids: &["python", "py"], interpret: evaluate_python_stub },
         ];
         for guest in guests {
             self.register_fn_guest(*guest);
@@ -79,42 +77,32 @@ impl LegendVmRunner {
         Ok(evaluator(source, env))
     }
 
-    /// Compile source for the language's supported artifact lane.
+    /// Compile source for the language's native specialization lane.
     ///
-    /// Host-script languages: Futamura specialize → [`CompileArtifact::Native`]
-    /// (native residual → PE). JS/Python remain bytecode-pipe **probes** only.
-    pub fn compile_module(&self, language: &str, source: &str, module_name: &str) -> Result<CompileArtifact> {
+    /// Host-script languages: Futamura specialize → native residual → PE/ELF.
+    /// Languages without a compiled lane (currently JS / Python) report that
+    /// compilation is unsupported instead of returning a stub artifact.
+    pub fn compile_module(&self, language: &str, source: &str, module_name: &str) -> Result<NativeResidualModule> {
         let language = language.to_ascii_lowercase();
         match language.as_str() {
-            "javascript" | "js" | "typescript" | "ts" => Ok(CompileArtifact::BytecodeProbe(compile_js_stub(source, module_name))),
-            "python" | "py" => Ok(CompileArtifact::BytecodeProbe(compile_python_stub(source, module_name))),
             "lua" | "bash" | "sh" | "powershell" | "ps1" | "pwsh" | "tcl" | "c" => {
-                crate::compiler::specialize_language(&language, source, module_name)
-                    .map(CompileArtifact::Native)
-                    .map_err(|error| miette!("{error}"))
+                crate::compiler::specialize_language(&language, source, module_name).map_err(|error| miette!("{error}"))
             }
+            "javascript" | "js" | "typescript" | "ts" | "python" | "py" => Err(miette!(
+                "language '{language}' has no compilation lane: interpreter integration is not implemented"
+            )),
             other => Err(miette!("language '{other}' does not support compilation")),
         }
     }
 
     /// Specialize a host-script language into a native-bound residual module.
     pub fn specialize_native(&self, language: &str, source: &str, module_name: &str) -> Result<NativeResidualModule> {
-        match self.compile_module(language, source, module_name)? {
-            CompileArtifact::Native(module) => Ok(module),
-            CompileArtifact::BytecodeProbe(_) => {
-                Err(miette!("language '{language}' is a bytecode probe, not a native PE specialization subject"))
-            }
-        }
+        self.compile_module(language, source, module_name)
     }
 
     /// Emit a Windows PE from a native residual (specialize product path).
     pub fn emit_native_pe(&self, module: &NativeResidualModule, output_path: &Path) -> Result<Vec<u8>> {
         emit_native_pe(module, Some(output_path))
-    }
-
-    /// Compile a generate-time probe module to `.odin` bytes (not host-script PE).
-    pub fn compile_to_nyar(&self, module: &crate::compiler::GenerateModule) -> Result<Vec<u8>> {
-        NyarBytecodeCompiler.compile(module)
     }
 
     /// Compile raw x64 machine code to a PE executable.
@@ -207,52 +195,4 @@ fn detect_language_from_shebang(source: &str) -> Option<String> {
         return Some("bash".to_string());
     }
     None
-}
-
-fn evaluate_javascript_stub(source: &str, env: &mut HashMap<String, LegacyValue>) -> LegacyValue {
-    let trimmed = source.trim();
-    if let Some(rest) = trimmed.strip_prefix("console.log(") {
-        let payload = rest.trim_end_matches(");").trim_end_matches(')');
-        let value = LegacyValue::String(strip_js_quotes(payload));
-        println!("{}", value.to_string_value());
-        env.insert("_".to_string(), value.clone());
-        return value;
-    }
-    LegacyValue::Null
-}
-
-fn evaluate_python_stub(source: &str, env: &mut HashMap<String, LegacyValue>) -> LegacyValue {
-    for line in source.lines() {
-        let line = line.trim();
-        if let Some(rest) = line.strip_prefix("print(") {
-            let payload = rest.trim_end_matches(')');
-            let value = LegacyValue::String(strip_js_quotes(payload));
-            println!("{}", value.to_string_value());
-            env.insert("_".to_string(), value.clone());
-            return value;
-        }
-    }
-    LegacyValue::Null
-}
-
-fn compile_js_stub(_source: &str, module_name: &str) -> crate::compiler::GenerateModule {
-    let mut compiler = StackCompiler::new(module_name);
-    compiler.emit_main_return_i64(0);
-    compiler.finish()
-}
-
-fn compile_python_stub(_source: &str, module_name: &str) -> crate::compiler::GenerateModule {
-    let mut compiler = StackCompiler::new(module_name);
-    compiler.emit_main_return_i64(0);
-    compiler.finish()
-}
-
-fn strip_js_quotes(value: &str) -> String {
-    let value = value.trim();
-    if (value.starts_with('"') && value.ends_with('"')) || (value.starts_with('\'') && value.ends_with('\'')) {
-        value[1..value.len().saturating_sub(1)].to_string()
-    }
-    else {
-        value.to_string()
-    }
 }

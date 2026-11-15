@@ -6,6 +6,6 @@ Futamura's first projection specializes a language interpreter with respect to a
 
 This is an ownership contract, not a delivered support matrix. Current Lua specialization is wired to a limited `NativeResidualModule` path and Windows PE wrapping. Full per-operation native frame/stack code generation remains incomplete: integer exit-code folding or a stub is not full compilation. Other guest specialization paths can remain incomplete. Python and TypeScript directories are not active workspace members.
 
-Current `.odin` or stack-residual probes do not prove production specialization. Future OVM support must implement its own adapter and runtime contract rather than route every target through OdinVM. Second/third projections remain future work.
+There is no separate bytecode or probe compilation lane: a language either specializes into its target lane or reports that compilation is unsupported. Future OVM support must implement its own language-to-OVM adapter and runtime contract rather than route every target through OdinVM. Second/third projections remain future work.
 
 Architecture guards forbid language parser copies, shared host-script semantic models and complete evaluator copies in this crate. Use guest-local interpreters and register thin adapters. Validate interpreter equivalence with runtime unknown inputs, not only compile-time constants.

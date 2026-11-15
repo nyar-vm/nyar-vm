@@ -1,54 +1,29 @@
 //! Futamura / partial-evaluation pipeline proofs.
 //!
 //! Host-script PE product path: specialize(interpret, program) → **native residual**
-//! → Windows PE (not OVM). `.odin` / [`OdinVm`] remain probe-only for JS/Python stubs.
+//! → Windows PE (not OVM). Languages without a compiled lane must fail closed.
 
 use std::collections::HashMap;
 
 use legend_vm::{
     LegacyValue, LegendVmRunner,
-    compiler::{CompileArtifact, ResidualValue, eval_native_residual, eval_native_residual_with_inputs, eval_native_residual_with_trace},
+    compiler::{ResidualValue, eval_native_residual, eval_native_residual_with_inputs, eval_native_residual_with_trace},
 };
-use odin_vm::{OdinVm, Value};
 
 #[test]
-fn bytecode_probe_stack_compiler_to_ovm_js_stub() {
+fn languages_without_a_compiled_lane_report_unsupported() {
     let runner = LegendVmRunner::new();
-    let artifact = runner.compile_module("javascript", "console.log('probe');", "probe").expect("compile module stub");
-    let CompileArtifact::BytecodeProbe(module) = artifact
-    else {
-        panic!("JS stub must stay on bytecode probe lane");
-    };
-    let bytes = runner.compile_to_nyar(&module).expect("encode nyar bytes");
-    let mut vm = OdinVm::new();
-    let loaded = vm.load(&bytes).expect("load nyar module");
-    let result = vm.run(&loaded, "main", Vec::new()).expect("run nyar module");
-    assert_eq!(result, Value::I32(0));
+    for language in ["javascript", "js", "typescript", "ts", "python", "py"] {
+        let error = runner.compile_module(language, "console.log('probe');", "probe").expect_err("no stub artifact may be produced");
+        assert!(error.to_string().contains("no compilation lane"), "language: {language}; unexpected error: {error}");
+        assert!(!runner.is_language_supported(language), "language: {language} must not be advertised as supported");
+    }
 }
 
 #[test]
-fn bytecode_probe_python_stub_uses_nyar_path() {
+fn lua_pe_specializes_to_native_residual() {
     let runner = LegendVmRunner::new();
-    let artifact = runner.compile_module("python", "print('probe')", "probe").expect("compile module stub");
-    let CompileArtifact::BytecodeProbe(module) = artifact
-    else {
-        panic!("Python stub must stay on bytecode probe lane");
-    };
-    let bytes = runner.compile_to_nyar(&module).expect("encode nyar bytes");
-    let mut vm = OdinVm::new();
-    let loaded = vm.load(&bytes).expect("load nyar module");
-    let result = vm.run(&loaded, "main", Vec::new()).expect("run nyar module");
-    assert_eq!(result, Value::I32(0));
-}
-
-#[test]
-fn lua_pe_specializes_to_native_residual_not_nyar() {
-    let runner = LegendVmRunner::new();
-    let artifact = runner.compile_module("lua", "return 1", "ok").expect("lua compile_module");
-    let CompileArtifact::Native(module) = artifact
-    else {
-        panic!("Lua PE must be Native residual, not bytecode / OVM");
-    };
+    let module = runner.compile_module("lua", "return 1", "ok").expect("lua compile_module");
     assert!(module.op_count() > 0);
     assert!(module.function("main").is_some());
 }
