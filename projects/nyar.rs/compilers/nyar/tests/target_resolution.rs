@@ -1,6 +1,9 @@
 //! 作者面目标占位符（`native` / `node` / `python`）的统一解析：平台身份与宿主合同正交。
 
-use nyar::{ArtifactContract, CanonicalAbi, CanonicalTarget, CanonicalTargetParseError, TargetRequest, TargetResolver};
+use nyar::{
+    ArtifactContract, CanonicalAbi, CanonicalSpecification, CanonicalTarget, CanonicalTargetParseError, NodeHostProbe, PythonHostProbe,
+    TargetRequest, TargetResolver,
+};
 
 fn resolver() -> TargetResolver {
     TargetResolver::for_build_host().expect("build host must resolve")
@@ -83,4 +86,63 @@ fn node_alias_only_resolves_as_a_placeholder() {
 
     let error: CanonicalTargetParseError = "node".parse::<CanonicalTarget>().expect_err("node is not a platform identity");
     assert!(error.to_string().contains("TargetRequest"), "{error}");
+}
+
+#[test]
+fn node_host_probe_maps_process_tokens() {
+    let windows = NodeHostProbe::from_process_tokens("win32", "x64").expect("windows node");
+    assert_eq!(windows.platform.to_string(), "x86_64-pc-windows-msvc");
+
+    let apple = NodeHostProbe::from_process_tokens("darwin", "arm64").expect("apple node");
+    assert_eq!(apple.platform.arch, nyar::CanonicalArch::AArch64);
+    assert_eq!(apple.platform.specification, CanonicalSpecification::MacOs);
+    assert_eq!(apple.platform.abi, Some(CanonicalAbi::Aapcs64));
+
+    let linux = NodeHostProbe::from_process_tokens("linux", "x64").expect("linux node");
+    assert_eq!(linux.platform.to_string(), "x86_64-unknown-linux-gnu");
+
+    assert!(NodeHostProbe::from_process_tokens("sunos", "x64").is_err());
+    assert!(NodeHostProbe::from_process_tokens("linux", "sparc").is_err());
+}
+
+#[test]
+fn python_host_probe_requires_host_supplied_config() {
+    let linux = PythonHostProbe::from_tokens("linux", "x86_64", ".cpython-312-x86_64-linux-gnu.so", None).expect("linux python");
+    assert_eq!(linux.platform.specification, CanonicalSpecification::Linux);
+    assert_eq!(linux.config.module_suffix.as_deref(), Some(".cpython-312-x86_64-linux-gnu.so"));
+    assert_eq!(linux.config.import_library, None);
+
+    let windows = PythonHostProbe::from_tokens("win32", "AMD64", ".cp312-win_amd64.pyd", Some("python312.dll")).expect("windows python");
+    assert_eq!(windows.platform.specification, CanonicalSpecification::Windows);
+    assert_eq!(windows.config.import_library.as_deref(), Some("python312.dll"));
+
+    assert!(
+        PythonHostProbe::from_tokens("win32", "AMD64", ".cp312-win_amd64.pyd", None).is_err(),
+        "Windows 导入库名不能由编译器猜"
+    );
+    assert!(
+        PythonHostProbe::from_tokens("linux", "x86_64", "", None).is_err(),
+        "扩展后缀不能只凭 OS 推导"
+    );
+}
+
+#[test]
+fn probed_resolution_uses_the_real_host_process() {
+    let resolver = resolver();
+    match NodeHostProbe::probe() {
+        Ok(probe) => {
+            let resolved = resolver.resolve_label_probed("node").expect("probed node");
+            assert_eq!(resolved.platform, probe.platform, "`node` 必须展开为真实 Node 进程平台");
+            assert_eq!(resolved.contract, ArtifactContract::NodeApi);
+        }
+        Err(error) => eprintln!("skip: node 不可用（{error}）"),
+    }
+    match PythonHostProbe::probe() {
+        Ok(probe) => {
+            let resolved = resolver.resolve_label_probed("python").expect("probed python");
+            assert_eq!(resolved.platform, probe.platform, "`python` 必须展开为真实解释器平台");
+            assert!(matches!(resolved.contract, ArtifactContract::Cpython(_)));
+        }
+        Err(error) => eprintln!("skip: python 不可用（{error}）"),
+    }
 }

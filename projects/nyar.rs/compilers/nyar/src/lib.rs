@@ -37,7 +37,8 @@ pub use self::{
         TargetProfile, WrapStrategy,
     },
     target_resolution::{
-        ArtifactContract, CpythonHostConfig, ResolvedTarget, TargetRequest, TargetResolutionError, TargetResolver, probe_build_host,
+        ArtifactContract, CpythonHostConfig, NodeHostProbe, PythonHostProbe, ResolvedTarget, TargetRequest, TargetResolutionError,
+        TargetResolver, probe_build_host,
     },
     testing::{
         LegendFixtureEntry, LegendFixtureManifest, RuntimeFixtureResult, RuntimeFixtureSpec, assert_or_regenerate_text_sidecar,

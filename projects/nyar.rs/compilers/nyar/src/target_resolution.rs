@@ -12,7 +12,10 @@
 //! 冻结结果；无法识别的架构或 OS 明确失败，不得回退到「最常见的平台」。生成后的
 //! 机器码不再临时决定自己采用哪种 ABI。
 
-use std::fmt::{Display, Formatter};
+use std::{
+    fmt::{Display, Formatter},
+    process::Command,
+};
 
 use crate::abstractions::{CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget, CanonicalTargetParseError, CanonicalVendor};
 
@@ -207,6 +210,30 @@ impl TargetResolver {
         self.resolve(TargetRequest::parse(value)?)
     }
 
+    /// 展开占位符前先探测真实宿主进程。
+    ///
+    /// `node` 用 Node 进程的 `process.platform` / `process.arch`，`python` 用解释器的
+    /// 平台、扩展后缀与导入库；探测失败即结构化失败，不回落到编译进程的平台。
+    /// `native` 与显式平台沿用 [`Self::resolve`]（本机探测或显式覆盖）。
+    pub fn resolve_probed(&self, request: TargetRequest) -> Result<ResolvedTarget, TargetResolutionError> {
+        match request {
+            TargetRequest::Node => {
+                let probe = NodeHostProbe::probe()?;
+                self.resolve_contract(request, probe.platform, ArtifactContract::NodeApi)
+            }
+            TargetRequest::Python => {
+                let probe = PythonHostProbe::probe()?;
+                self.resolve_contract(request, probe.platform, ArtifactContract::Cpython(probe.config))
+            }
+            other => self.resolve(other),
+        }
+    }
+
+    /// 解析目标标签并在展开 `node` / `python` 时探测真实宿主进程。
+    pub fn resolve_label_probed(&self, value: &str) -> Result<ResolvedTarget, TargetResolutionError> {
+        self.resolve_probed(TargetRequest::parse(value)?)
+    }
+
     fn resolve_explicit(&self, request: TargetRequest, platform: CanonicalTarget) -> Result<ResolvedTarget, TargetResolutionError> {
         let platform = freeze(platform);
         let contract = match platform.arch {
@@ -224,13 +251,22 @@ impl TargetResolver {
     }
 
     fn resolve_placeholder(&self, request: TargetRequest, platform: CanonicalTarget) -> Result<ResolvedTarget, TargetResolutionError> {
-        let platform = require_machine_platform(request, platform)?;
         let contract = match request {
             TargetRequest::Native => ArtifactContract::Native,
             TargetRequest::Node => ArtifactContract::NodeApi,
             TargetRequest::Python => ArtifactContract::Cpython(CpythonHostConfig::default()),
             TargetRequest::Platform(_) => unreachable!("显式平台不走占位符展开"),
         };
+        self.resolve_contract(request, platform, contract)
+    }
+
+    fn resolve_contract(
+        &self,
+        request: TargetRequest,
+        platform: CanonicalTarget,
+        contract: ArtifactContract,
+    ) -> Result<ResolvedTarget, TargetResolutionError> {
+        let platform = require_machine_platform(request, platform)?;
         Ok(ResolvedTarget { request, platform, contract })
     }
 }
@@ -301,4 +337,153 @@ fn require_machine_platform(request: TargetRequest, platform: CanonicalTarget) -
         }
     }
     Ok(platform)
+}
+
+/// Node 宿主进程探测结果。
+///
+/// 用于展开 `node` 占位符：Node 进程的架构可能与编译进程或操作系统默认架构不同，
+/// 不能直接用编译进程的 `std::env::consts`。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NodeHostProbe {
+    /// Node 进程所在的机器平台。
+    pub platform: CanonicalTarget,
+}
+
+impl NodeHostProbe {
+    /// 从 Node 的 `process.platform` / `process.arch` 文本构造平台身份。
+    pub fn from_process_tokens(platform: &str, arch: &str) -> Result<Self, TargetResolutionError> {
+        Ok(Self { platform: host_platform_from_tokens(platform, arch, "Node")? })
+    }
+
+    /// 运行 PATH 上的 `node` 探测将要装载产物的宿主进程。
+    ///
+    /// 探测失败（未安装、异常退出或平台无法识别）明确报错，不回落到构建宿主。
+    pub fn probe() -> Result<Self, TargetResolutionError> {
+        let output = run_probe("node", &["-p", r#"process.platform + "\n" + process.arch"#], "Node")?;
+        let mut lines = output.lines();
+        let platform = lines.next().unwrap_or_default().trim();
+        let arch = lines.next().unwrap_or_default().trim();
+        Self::from_process_tokens(platform, arch)
+    }
+}
+
+/// Python 宿主进程探测结果。
+///
+/// 扩展后缀与 Windows 导入库都来自解释器本身；缺失时由需要它们的阶段失败，
+/// 不按 OS 猜一个默认后缀。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PythonHostProbe {
+    /// 宿主解释器所在的机器平台。
+    pub platform: CanonicalTarget,
+    /// 扩展后缀与导入库配置。
+    pub config: CpythonHostConfig,
+}
+
+impl PythonHostProbe {
+    /// 从 `sys.platform`、`platform.machine()`、`EXT_SUFFIX` 与导入库名构造。
+    pub fn from_tokens(
+        platform: &str,
+        machine: &str,
+        module_suffix: &str,
+        import_library: Option<&str>,
+    ) -> Result<Self, TargetResolutionError> {
+        let platform = host_platform_from_tokens(platform, machine, "Python")?;
+        if module_suffix.trim().is_empty() {
+            return Err(TargetResolutionError::new(
+                "Python 宿主没有提供扩展后缀（`EXT_SUFFIX`）；扩展产物名不能只凭 OS 推导",
+            ));
+        }
+        if platform.specification == CanonicalSpecification::Windows && import_library.is_none_or(|value| value.trim().is_empty()) {
+            return Err(TargetResolutionError::new(
+                "Windows Python 宿主没有提供扩展导入库名（例如 `python312.dll`）；版本相关的名字不能由编译器猜",
+            ));
+        }
+        Ok(Self {
+            platform,
+            config: CpythonHostConfig {
+                module_suffix: Some(module_suffix.trim().to_string()),
+                import_library: import_library.map(|value| value.trim().to_string()).filter(|value| !value.is_empty()),
+            },
+        })
+    }
+
+    /// 探测将要装载扩展的 Python 解释器。
+    ///
+    /// 依次尝试 `NYAR_PYTHON`、`python3`、`python`；全部失败时把每次尝试的失败原因
+    /// 汇总成结构化错误。
+    pub fn probe() -> Result<Self, TargetResolutionError> {
+        const SCRIPT: &str = concat!(
+            "import platform, sys, sysconfig\n",
+            "print(sys.platform)\n",
+            "print(platform.machine())\n",
+            "print(sysconfig.get_config_var('EXT_SUFFIX') or '')\n",
+            "print(('python%d%d.dll' % sys.version_info[:2]) if sys.platform == 'win32' else '')\n",
+        );
+        let mut candidates = Vec::new();
+        if let Ok(program) = std::env::var("NYAR_PYTHON")
+            && !program.trim().is_empty()
+        {
+            candidates.push(program);
+        }
+        candidates.extend(["python3".to_string(), "python".to_string()]);
+
+        let mut attempts = Vec::new();
+        for program in candidates {
+            match Command::new(&program).args(["-c", SCRIPT]).output() {
+                Ok(output) if output.status.success() => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let mut lines = stdout.lines();
+                    let platform = lines.next().unwrap_or_default().trim();
+                    let machine = lines.next().unwrap_or_default().trim();
+                    let module_suffix = lines.next().unwrap_or_default().trim();
+                    let import_library = lines.next().unwrap_or_default().trim();
+                    return Self::from_tokens(platform, machine, module_suffix, Some(import_library));
+                }
+                Ok(output) => attempts.push(format!("{program}: {}", String::from_utf8_lossy(&output.stderr).trim())),
+                Err(error) => attempts.push(format!("{program}: {error}")),
+            }
+        }
+        Err(TargetResolutionError::new(format!("无法探测 Python 宿主进程：{}", attempts.join("; "))))
+    }
+}
+
+/// 从宿主的平台与架构文本构造机器平台身份。
+fn host_platform_from_tokens(platform: &str, arch: &str, host: &str) -> Result<CanonicalTarget, TargetResolutionError> {
+    let arch = match arch.to_ascii_lowercase().as_str() {
+        "x64" | "x86_64" | "amd64" => CanonicalArch::X86_64,
+        "arm64" | "aarch64" => CanonicalArch::AArch64,
+        "ia32" | "x86" | "i386" => CanonicalArch::X86,
+        "arm" | "armv7l" => CanonicalArch::Arm,
+        other => {
+            return Err(TargetResolutionError::new(format!("无法识别 {host} 宿主进程的架构 `{other}`")));
+        }
+    };
+    let (vendor, specification, abi) = match platform.to_ascii_lowercase().as_str() {
+        "win32" | "windows" => (CanonicalVendor::Pc, CanonicalSpecification::Windows, CanonicalAbi::Msvc),
+        "darwin" | "macos" => (
+            CanonicalVendor::Apple,
+            CanonicalSpecification::MacOs,
+            if arch == CanonicalArch::AArch64 { CanonicalAbi::Aapcs64 } else { CanonicalAbi::SystemV },
+        ),
+        "linux" => (CanonicalVendor::Unknown, CanonicalSpecification::Linux, CanonicalAbi::Gnu),
+        other => {
+            return Err(TargetResolutionError::new(format!("无法识别 {host} 宿主进程的操作系统 `{other}`")));
+        }
+    };
+    Ok(CanonicalTarget::new(arch, vendor, specification, Some(abi)))
+}
+
+/// 运行一个宿主探测命令，失败时带程序名与 stderr。
+fn run_probe(program: &str, args: &[&str], host: &str) -> Result<String, TargetResolutionError> {
+    let output = Command::new(program).args(args).output().map_err(|error| {
+        TargetResolutionError::new(format!("无法启动 `{program}` 探测 {host} 宿主进程：{error}；可显式指定目标平台跳过探测"))
+    })?;
+    if !output.status.success() {
+        return Err(TargetResolutionError::new(format!(
+            "`{program}` 探测 {host} 宿主进程失败（{}）：{}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
