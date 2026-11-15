@@ -1,4 +1,4 @@
-//! OVM `PerformEffect { Raise }` 的 resume 参数落槽合同。
+//! OVM `Raise` 终止符的 resume 参数落槽合同。
 //!
 //! 前端对未捕获 `raise` 生成的 resume 块携带一个 `Resume = !` 形参：VM 在 handler
 //! resume 时把 resume 值留在栈顶，后端必须把这个值直接落到 resume 块的形参槽，
@@ -11,13 +11,13 @@ use std::collections::BTreeMap;
 use nyar::{Identifier, QualifiedName};
 use nyar_emitter::{
     FragmentSubmission, TargetExecutionPlan,
-    contracts::{Block, BlockRef, EffectKind, ExecutableFunction, Terminator, ValueRef},
+    contracts::{Block, BlockRef, ExecutableFunction, Terminator, ValueRef},
     testing::lower_fragment_to_nyar_module,
 };
 use nyar_types::NyarType;
 use acorn_odin::{OdinHeadCode, OdinModuleData, decode_at};
 
-/// `main() -> void`：入口块 `PerformEffect Raise`，resume 块带一个 `Bottom` 形参后 `return`。
+/// `main() -> void`：入口块 `Raise`，resume 块带一个 `Bottom` 形参后 `return`。
 fn raising_function() -> ExecutableFunction {
     ExecutableFunction {
         symbol: "main".to_string(),
@@ -35,7 +35,7 @@ fn raising_function() -> ExecutableFunction {
                 label: "entry".to_string(),
                 parameters: Vec::new(),
                 instructions: Vec::new(),
-                terminator: Terminator::PerformEffect { effect: EffectKind::Raise, payload: None, resume_target: BlockRef(1) },
+                terminator: Terminator::Raise { payload: None, resume_target: BlockRef(1) },
             },
             Block {
                 id: BlockRef(1),

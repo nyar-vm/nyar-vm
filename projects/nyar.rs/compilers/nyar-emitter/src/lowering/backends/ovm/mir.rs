@@ -8,7 +8,7 @@ use crate::{
         ExecutableInstruction as MirInstruction, ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand,
         ExecutableTerminator as MirTerminator, ExecutableValueRef as MirValueRef, NyarType,
     },
-    contracts::{EffectKind, ValueOrigin},
+    contracts::ValueOrigin,
     lowering::backends::ovm::lir::{OdinLirInstruction, encode_odin_function},
 };
 use acorn_odin::{
@@ -1288,95 +1288,35 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 self.emitter.emit_jump_to_block(OdinHeadCode::Jump, *then_target);
                 let _ = else_target;
             }
-            MirTerminator::PerformEffect { effect, payload, resume_target } => {
-                match effect {
-                    EffectKind::Yield | EffectKind::DelegateYield => {
-                        // `yield expr` / `yield from expr`：把 payload 压栈后发射 `Yield` opcode。
-                        // VM 弹出 yielded 值、捕获当前帧为 `CoroutineState`、挂起返回父帧；
-                        // 当父帧 `Resume` 时从 `Yield` 之后继续，跳到 resume_target。
-                        if let Some(payload) = payload {
-                            self.emit_operand(payload)?;
-                        }
-                        else {
-                            // 无 payload 的 yield：压 i32(0) 作为 unit 占位后再发 Yield。
-                            self.emitter.emit_const_i32(0);
-                        }
-                        self.emitter.emit_plain(OdinHeadCode::Yield);
-                        self.emit_block_argument_copies(*resume_target, &[])?;
-                        self.emitter.emit_jump_to_block(OdinHeadCode::Jump, *resume_target);
-                    }
-                    EffectKind::Raise => {
-                        // `raise expr`：将 payload 压栈后发射 `PerformEffect` opcode。
-                        // operand1 = 常量池索引（effect 的 method_name 字符串）。
-                        // VM 用此字符串在 witness_entries 中查找 handler。
-                        // handler 可选择 resume（控制流回到 resume_target，resume 值在栈顶）；
-                        // 若未 resume 则按未处理效果传播。
-                        // 对 `Effectful::Resume = !`：resume 不可达时 VM 不必保留 resume 续体。
-                        if let Some(payload) = payload {
-                            self.emit_operand(payload)?;
-                        }
-                        else {
-                            // 无 payload 的 raise：压 i32(0) 作为 unit 占位。
-                            self.emitter.emit_const_i32(0);
-                        }
-                        let effect_name_index = self.emitter.intern_string("raise");
-                        self.emitter.emit_imm1(OdinHeadCode::PerformEffect, effect_name_index);
-                        // resume 时 VM 把 resume 值压到栈顶；resume 块的唯一形参直接从栈顶落槽。
-                        // 零形参 resume 块（`Resume = !` 的未捕获 raise）没有落槽对象，
-                        // 栈顶值由 VM 的续体语义持有，本层不补造操作数。
-                        let resume_block = self.mir_fn.blocks.iter().find(|block| block.id == *resume_target).expect("validated resume target");
-                        match resume_block.parameters.len() {
-                            0 => {}
-                            1 => {
-                                let local = self.slots.block_param_locals[&(*resume_target, 0)];
-                                self.emit_store_local(local);
-                            }
-                            count => panic!("ovm `raise` resume 块只接受至多一个 resume 形参，实际 {count}: {}", self.mir_fn.symbol),
-                        }
-                        self.emitter.emit_jump_to_block(OdinHeadCode::Jump, *resume_target);
-                    }
-                    EffectKind::Await | EffectKind::AsyncSpawn | EffectKind::AsyncBlock => {
-                        // future / async 相关 effect 暂未落地 VM opcode，保留 console_log 调试桩。
-                        if let Some(payload) = payload {
-                            self.emit_operand(payload)?;
-                            self.emitter.emit_call_import("console_log", 1);
-                        }
-                        self.emit_block_argument_copies(*resume_target, &[])?;
-                        self.emitter.emit_jump_to_block(OdinHeadCode::Jump, *resume_target);
-                    }
+            MirTerminator::Raise { payload, resume_target } => {
+                // `raise expr`：将 payload 压栈后发射 `PerformEffect` opcode。
+                // operand1 = 常量池索引（effect 的 method_name 字符串）。
+                // VM 用此字符串在 witness_entries 中查找 handler。
+                // handler 可选择 resume（控制流回到 resume_target，resume 值在栈顶）；
+                // 若未 resume 则按未处理效果传播。
+                // 对 `Effectful::Resume = !`：resume 不可达时 VM 不必保留 resume 续体。
+                if let Some(payload) = payload {
+                    self.emit_operand(payload)?;
                 }
-            }
-            MirTerminator::YieldToRuntime { effect, payload, resume_state: _ } => {
-                // 状态机重写后的 effect：与 `PerformEffect` 同构地发射对应 opcode。
-                // resume_state 由后续 `StateDispatch` 在恢复时读取（暂用 fallthrough 桩处理）。
-                match effect {
-                    EffectKind::Yield | EffectKind::DelegateYield => {
-                        if let Some(payload) = payload {
-                            self.emit_operand(payload)?;
-                        }
-                        else {
-                            self.emitter.emit_const_i32(0);
-                        }
-                        self.emitter.emit_plain(OdinHeadCode::Yield);
-                    }
-                    EffectKind::Raise => {
-                        if let Some(payload) = payload {
-                            self.emit_operand(payload)?;
-                        }
-                        else {
-                            self.emitter.emit_const_i32(0);
-                        }
-                        let effect_name_index = self.emitter.intern_string("raise");
-                        self.emitter.emit_imm1(OdinHeadCode::PerformEffect, effect_name_index);
-                    }
-                    EffectKind::Await | EffectKind::AsyncSpawn | EffectKind::AsyncBlock => {
-                        // future / async 相关 effect 暂未落地 VM opcode，保留 console_log 调试桩。
-                        if let Some(payload) = payload {
-                            self.emit_operand(payload)?;
-                            self.emitter.emit_call_import("console_log", 1);
-                        }
-                    }
+                else {
+                    // 无 payload 的 raise：压 i32(0) 作为 unit 占位。
+                    self.emitter.emit_const_i32(0);
                 }
+                let effect_name_index = self.emitter.intern_string("raise");
+                self.emitter.emit_imm1(OdinHeadCode::PerformEffect, effect_name_index);
+                // resume 时 VM 把 resume 值压到栈顶；resume 块的唯一形参直接从栈顶落槽。
+                // 零形参 resume 块（`Resume = !` 的未捕获 raise）没有落槽对象，
+                // 栈顶值由 VM 的续体语义持有，本层不补造操作数。
+                let resume_block = self.mir_fn.blocks.iter().find(|block| block.id == *resume_target).expect("validated resume target");
+                match resume_block.parameters.len() {
+                    0 => {}
+                    1 => {
+                        let local = self.slots.block_param_locals[&(*resume_target, 0)];
+                        self.emit_store_local(local);
+                    }
+                    count => panic!("ovm `raise` resume 块只接受至多一个 resume 形参，实际 {count}: {}", self.mir_fn.symbol),
+                }
+                self.emitter.emit_jump_to_block(OdinHeadCode::Jump, *resume_target);
             }
             MirTerminator::StateDispatch { state, cases, default_target } => {
                 // 状态机入口：读取 state local，与每个 case_key 比较；

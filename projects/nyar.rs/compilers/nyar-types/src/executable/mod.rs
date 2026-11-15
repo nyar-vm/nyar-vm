@@ -110,23 +110,6 @@ pub enum Operand {
     Symbol(NamePath),
 }
 
-/// Effect terminator category.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EffectKind {
-    /// `raise expr`
-    Raise,
-    /// `yield expr`
-    Yield,
-    /// `yield from expr`
-    DelegateYield,
-    /// `expr.await`
-    Await,
-    /// `expr.awake`
-    AsyncSpawn,
-    /// `expr.block`
-    AsyncBlock,
-}
-
 /// 可执行指令（Semantic MIR 信封的薄镜像）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Instruction {
@@ -392,10 +375,13 @@ pub enum Terminator {
         /// Else target.
         else_target: BlockRef,
     },
-    /// Perform an effect and resume at `resume_target`.
-    PerformEffect {
-        /// Effect category.
-        effect: EffectKind,
+    /// 可恢复的异常传播（语言 `raise` 的共享目标事实）。
+    ///
+    /// 语言拥有 `raise / yield / await` 等全部效果语义与验证；公共目标合同只保留
+    /// 唯一已有后端落点的可恢复传播：payload 交给目标（wasm trap / OVM
+    /// `PerformEffect`）后可在 `resume_target` 恢复。其余效果在语言适配层失败闭合，
+    /// 不得回到公共枚举。
+    Raise {
         /// Optional payload.
         payload: Option<Operand>,
         /// Resume target.
@@ -409,15 +395,6 @@ pub enum Terminator {
         cases: Vec<(u32, BlockRef)>,
         /// Default target.
         default_target: BlockRef,
-    },
-    /// Yield control to runtime with a resume state.
-    YieldToRuntime {
-        /// Effect category.
-        effect: EffectKind,
-        /// Optional payload.
-        payload: Option<Operand>,
-        /// Resume state id.
-        resume_state: u32,
     },
     /// Unreachable terminator.
     Unreachable,

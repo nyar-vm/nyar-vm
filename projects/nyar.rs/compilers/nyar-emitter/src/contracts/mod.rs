@@ -7,7 +7,7 @@
 //! 不得重新挂回 [`nyar_types::InstructionKind::Call`]。
 
 pub use nyar_types::{
-    ArrayInitialization, Block, BlockRef, Constant, Diagnostic, EffectKind, ExecutableFunction, Instruction, InstructionKind, Operand,
+    ArrayInitialization, Block, BlockRef, Constant, Diagnostic, ExecutableFunction, Instruction, InstructionKind, Operand,
     StorageKind, Terminator, Value, ValueOrigin, ValueRef,
 };
 

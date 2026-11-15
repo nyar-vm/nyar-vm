@@ -250,8 +250,7 @@ pub fn collect_reachable_blocks(function: &ExecutableFunction) -> Vec<Executable
                 stack.push(*else_target);
                 stack.push(*then_target);
             }
-            ExecutableTerminator::PerformEffect { resume_target, .. } => stack.push(*resume_target),
-            ExecutableTerminator::YieldToRuntime { .. } => {}
+            ExecutableTerminator::Raise { resume_target, .. } => stack.push(*resume_target),
             ExecutableTerminator::StateDispatch { cases, default_target, .. } => {
                 stack.push(*default_target);
                 for (_, target) in cases {
@@ -269,9 +268,7 @@ pub fn executable_has_state_machine(function: &ExecutableFunction) -> bool {
     function.blocks.iter().any(|block| {
         matches!(
             block.terminator,
-            ExecutableTerminator::StateDispatch { .. }
-                | ExecutableTerminator::YieldToRuntime { .. }
-                | ExecutableTerminator::PerformEffect { .. }
+            ExecutableTerminator::StateDispatch { .. } | ExecutableTerminator::Raise { .. }
         )
     })
 }

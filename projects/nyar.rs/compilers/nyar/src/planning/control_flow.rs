@@ -1,8 +1,8 @@
 //! Suspend artifacts carried from frontend to driver backends.
 //!
 //! Backends fall into two consumption models:
-//! - [`SuspendConsumptionModel::FirstClass`]: native `PerformEffect` / `YieldToRuntime` + continuation runtime
-//!   (ovm, future CLR coroutine runtime).
+//! - [`SuspendConsumptionModel::FirstClass`]: language-owned suspend plan + a native continuation
+//!   runtime supplied by the target lane (ovm, future CLR coroutine runtime).
 //! - [`SuspendConsumptionModel::StateMachine`]: explicit `MoveNext` / asyncify lowering
 //!   (JVM, WASM, legacy MSIL PE writer).
 
@@ -13,7 +13,7 @@ use crate::packaging::TargetLane;
 /// How a backend lane consumes suspend metadata at the driver boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SuspendConsumptionModel {
-    /// Native continuations; backend owns resume dispatch (`PerformEffect` / `YieldToRuntime` intact).
+    /// Native continuations; language suspend plan stays intact, backend owns resume dispatch.
     FirstClass,
     /// Explicit state-machine rewrite (`ControlFlowPayload` with dispatch cases and frame types).
     StateMachine,

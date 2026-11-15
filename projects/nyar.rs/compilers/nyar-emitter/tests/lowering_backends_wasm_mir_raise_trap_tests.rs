@@ -1,6 +1,6 @@
 //! `Raise` effect 终止符的 wasm 目标合同：未捕获 raise 编码为 `unreachable` trap。
 //!
-//! 正面：含 `PerformEffect { Raise }` 的函数必须完成 lowering，产物含 `unreachable`，
+//! 正面：含 `Raise` 终止符的函数必须完成 lowering，产物含 `unreachable`，
 //! 在 Node 里执行即 trap。零形参与单形参 resume 块（真实 `std::types::panic` 形态）
 //! 都必须通过槽规划。
 
@@ -8,7 +8,7 @@ use acorn_wasm::{WasmBinaryModule, WasmOpcode};
 use nyar::{Identifier, NyarType, QualifiedName};
 use nyar_emitter::{
     FragmentSubmission, TargetExecutionPlan,
-    contracts::{Block, BlockRef, EffectKind, ExecutableFunction, Terminator, ValueRef},
+    contracts::{Block, BlockRef, ExecutableFunction, Terminator, ValueRef},
     testing::lower_fragment_to_wasm_mir_module,
 };
 use std::{collections::BTreeMap, process::Command};
@@ -34,7 +34,7 @@ fn raising_function(with_resume_param: bool) -> ExecutableFunction {
                 label: "entry".to_string(),
                 parameters: Vec::new(),
                 instructions: Vec::new(),
-                terminator: Terminator::PerformEffect { effect: EffectKind::Raise, payload: None, resume_target: BlockRef(1) },
+                terminator: Terminator::Raise { payload: None, resume_target: BlockRef(1) },
             },
             Block {
                 id: BlockRef(1),

@@ -568,8 +568,7 @@ fn validate_terminator(function: &ExecutableFunction, block: &crate::contracts::
         crate::contracts::Terminator::Return { value: Some(value) } => vec![value],
         crate::contracts::Terminator::Jump { arguments, .. } => arguments.iter().collect(),
         crate::contracts::Terminator::Branch { condition, .. } => vec![condition],
-        crate::contracts::Terminator::PerformEffect { payload: Some(payload), .. } => vec![payload],
-        crate::contracts::Terminator::YieldToRuntime { payload: Some(payload), .. } => vec![payload],
+        crate::contracts::Terminator::Raise { payload: Some(payload), .. } => vec![payload],
         crate::contracts::Terminator::StateDispatch { .. } => Vec::new(),
         _ => Vec::new(),
     };

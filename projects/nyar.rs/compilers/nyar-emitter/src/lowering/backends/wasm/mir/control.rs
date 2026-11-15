@@ -85,7 +85,7 @@ impl<'a> WasmMirLowerer<'a> {
             // `unreachable` 只是永不返回的兜底。非文本 payload（结构化 effect 值）没有
             // 文本 ABI，仍按 trap 终止。resume 块在 wasm 上永不可达（trap 不会返回），
             // 仍保留在调度表中以保持块身份与验证器一致。
-            MirTerminator::PerformEffect { effect: crate::contracts::EffectKind::Raise, payload, .. } => {
+            MirTerminator::Raise { payload, .. } => {
                 self.emit_host_raise(payload)?;
                 self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Unreachable));
             }
