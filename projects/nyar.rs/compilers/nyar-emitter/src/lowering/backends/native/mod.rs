@@ -18,9 +18,12 @@
 //! Node `.node` / Python `.pyd` 只是同一 ISA 上的宿主装载与 ABI 包装形态，不是独立
 //! 指令集；宿主调用属于导入合同，不属于算子编码。
 
+mod host;
 mod x64_lir;
 mod x64_program;
 pub mod x86_64;
+
+pub use host::{NativeHostModule, NativePlatform, NativeProductTarget};
 
 pub use x64_program::{
     encode_native_text_program, encode_native_text_program_with_data, encode_native_text_program_with_dependencies,
