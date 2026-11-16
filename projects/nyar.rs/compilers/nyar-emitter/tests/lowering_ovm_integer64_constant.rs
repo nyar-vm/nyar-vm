@@ -42,7 +42,6 @@ fn constant_function(literal: i64, return_type: NyarType) -> ExecutableFunction 
             instructions: Vec::new(),
             terminator: Terminator::Return { value: Some(Operand::Constant(Constant::Int(literal))) },
         }],
-        diagnostics: Vec::new(),
     }
 }
 
@@ -191,7 +190,6 @@ fn try_lower_load_constant(literal: i64, slot_type: NyarType) -> Result<OdinModu
             }],
             terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
         }],
-        diagnostics: Vec::new(),
     };
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), function)]));
     plan.testing_module_name("ovm_integer64_constant").testing_entry_operation(main_name);
@@ -221,7 +219,6 @@ fn identity_i32(symbol: &str) -> ExecutableFunction {
             instructions: Vec::new(),
             terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
         }],
-        diagnostics: Vec::new(),
     }
 }
 
@@ -249,7 +246,6 @@ fn call_with_i32_constant(symbol: &str, callee: ItemInstanceId, literal: i64) ->
             }],
             terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
         }],
-        diagnostics: Vec::new(),
     }
 }
 
@@ -315,7 +311,6 @@ fn call_host_with_constant(symbol: &str, callee: ItemInstanceId, literal: i64) -
             }],
             terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
         }],
-        diagnostics: Vec::new(),
     }
 }
 

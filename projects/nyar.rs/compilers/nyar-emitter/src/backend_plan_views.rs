@@ -25,8 +25,6 @@ pub type ExecutableInstruction = crate::contracts::Instruction;
 pub type ExecutableInstructionKind = crate::contracts::InstructionKind;
 /// 基本块终结符。
 pub type ExecutableTerminator = crate::contracts::Terminator;
-/// 可执行层诊断。
-pub type ExecutableDiagnostic = crate::contracts::Diagnostic;
 /// SSA 值描述。
 pub type ExecutableValue = crate::contracts::Value;
 /// 基本块。

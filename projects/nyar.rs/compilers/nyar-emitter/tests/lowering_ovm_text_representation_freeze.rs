@@ -63,7 +63,6 @@ fn empty_function(symbol: &str, return_type: NyarType, return_layout: Option<Lay
         values: Vec::new(),
         #[allow(deprecated)]
         blocks,
-        diagnostics: Vec::new(),
     }
 }
 

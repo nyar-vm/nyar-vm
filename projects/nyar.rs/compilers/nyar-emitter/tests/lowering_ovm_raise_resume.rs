@@ -45,7 +45,6 @@ fn raising_function() -> ExecutableFunction {
                 terminator: Terminator::Return { value: None },
             },
         ],
-        diagnostics: Vec::new(),
     }
 }
 

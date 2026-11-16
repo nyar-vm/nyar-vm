@@ -78,7 +78,6 @@ fn cast_function(source: NyarType, target: NyarType) -> ExecutableFunction {
             }],
             terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(1))) },
         }],
-        diagnostics: Vec::new(),
     }
 }
 
@@ -106,7 +105,6 @@ fn constant_f64_function(value: f64) -> ExecutableFunction {
             }],
             terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
         }],
-        diagnostics: Vec::new(),
     }
 }
 

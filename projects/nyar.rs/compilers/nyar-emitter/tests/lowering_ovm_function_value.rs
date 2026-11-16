@@ -45,7 +45,6 @@ fn callee_function() -> ExecutableFunction {
             }],
             terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
         }],
-        diagnostics: Vec::new(),
     }
 }
 
@@ -81,7 +80,6 @@ fn caller_function(instance: ItemInstanceId) -> ExecutableFunction {
             ],
             terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(1))) },
         }],
-        diagnostics: Vec::new(),
     }
 }
 

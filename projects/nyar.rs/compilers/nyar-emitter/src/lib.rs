@@ -56,7 +56,6 @@ use crate::{
 };
 
 pub(crate) use backend_plan_views::FunctionView;
-pub use lowering::pattern_matching_contract::{PatternMatchingContractError, validate_pattern_matching_invariants};
 
 /// canonical 原语拼写的测试载体映射（仅单测使用）。
 ///

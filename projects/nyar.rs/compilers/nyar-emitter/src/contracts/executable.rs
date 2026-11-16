@@ -37,21 +37,6 @@ pub enum ValueOrigin {
         /// Parameter name.
         name: String,
     },
-    /// `let` binding.
-    LetBinding {
-        /// Binding name.
-        name: String,
-    },
-    /// Pattern `mut pat`: mutable borrow binding.
-    MutRefBinding {
-        /// Binding name.
-        name: String,
-    },
-    /// Pattern `pin mut pat`: pinned mutable borrow binding.
-    PinMutRefBinding {
-        /// Binding name.
-        name: String,
-    },
     /// Literal materialization.
     Literal,
     /// Path / symbol load.
@@ -147,11 +132,6 @@ pub enum InstructionKind {
         constant: Constant,
         /// Optional static type.
         ty: Option<NyarType>,
-    },
-    /// Load a named symbol.
-    LoadSymbol {
-        /// Symbol path.
-        path: NamePath,
     },
     /// Copy an operand into the output.
     Copy {
@@ -284,13 +264,6 @@ pub enum InstructionKind {
         /// Sum receiver.
         object: Operand,
     },
-    /// Pattern probe for handler / case dispatch.
-    PatternMatch {
-        /// Scrutinee value.
-        value: Operand,
-        /// Debug-only pattern description (not a language HIR pattern).
-        pattern_debug: String,
-    },
     /// 运行时长度的语言数组构造。使用完整 `array_type`，而非仅元素类型。
     ArrayNew {
         /// Full array type (`Array<T>` / …); transitional stand-in for `TypeId`.
@@ -403,16 +376,6 @@ pub enum Terminator {
     Unreachable,
 }
 
-/// Compile-time diagnostic collected while building an executable view.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Diagnostic {
-    /// Pattern matching could not be lowered.
-    PatternLoweringFailed {
-        /// Human-readable reason.
-        reason: String,
-    },
-}
-
 /// Executable basic block.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Block {
@@ -451,6 +414,4 @@ pub struct ExecutableFunction {
     pub values: Vec<Value>,
     /// Blocks.
     pub blocks: Vec<Block>,
-    /// Diagnostics.
-    pub diagnostics: Vec<Diagnostic>,
 }

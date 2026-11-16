@@ -8,7 +8,6 @@ use crate::{
         ExecutableInstruction as MirInstruction, ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand,
         ExecutableTerminator as MirTerminator, ExecutableValueRef as MirValueRef, NyarType,
     },
-    contracts::ValueOrigin,
     lowering::backends::ovm::lir::{OdinLirInstruction, encode_odin_function},
 };
 use acorn_odin::{

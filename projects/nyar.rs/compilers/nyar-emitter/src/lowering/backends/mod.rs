@@ -1,5 +1,4 @@
 pub(crate) use crate::lowering::{
-    features::pattern_matching_contract,
     sanitize_symbol,
     shared::{executable, interop},
 };

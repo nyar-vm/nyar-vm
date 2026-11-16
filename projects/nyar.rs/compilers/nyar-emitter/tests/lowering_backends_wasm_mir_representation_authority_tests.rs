@@ -70,7 +70,6 @@ fn utf8_receiver_field_get_main(field: FieldId, bind_layout: bool) -> Executable
         values: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![block],
-        diagnostics: Vec::new(),
     }
 }
 
@@ -136,7 +135,6 @@ fn wasm_array_new_element_type_self_registers_and_lowers() {
         values: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![block],
-        diagnostics: Vec::new(),
     };
     let main_name = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), function)]));
@@ -178,7 +176,6 @@ fn base_function(symbol: &str, return_type: NyarType, param_types: Vec<NyarType>
         values: Vec::new(),
         #[allow(deprecated)]
         blocks: Vec::new(),
-        diagnostics: Vec::new(),
     }
 }
 

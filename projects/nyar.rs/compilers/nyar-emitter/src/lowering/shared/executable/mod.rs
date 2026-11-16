@@ -298,7 +298,6 @@ mod tests {
                 instructions: Vec::new(),
                 terminator: crate::contracts::Terminator::Return { value: None },
             }],
-            diagnostics: Vec::new(),
         }
     }
 

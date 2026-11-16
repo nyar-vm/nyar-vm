@@ -101,7 +101,6 @@ fn utf8_length_call_main(bound_layout: Option<LayoutId>) -> ExecutableFunction {
         values: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![block],
-        diagnostics: Vec::new(),
     }
 }
 
@@ -129,7 +128,6 @@ fn utf16_length_call_main() -> ExecutableFunction {
         values: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![block],
-        diagnostics: Vec::new(),
     }
 }
 
@@ -287,7 +285,6 @@ fn utf8_field_get_main(bound_layout: Option<LayoutId>) -> ExecutableFunction {
         values: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![block],
-        diagnostics: Vec::new(),
     }
 }
 
@@ -475,7 +472,6 @@ fn utf8_concat_call_main(bound_layout: Option<LayoutId>) -> ExecutableFunction {
         values: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![block],
-        diagnostics: Vec::new(),
     }
 }
 

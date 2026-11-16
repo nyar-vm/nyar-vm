@@ -33,7 +33,6 @@ fn main_function(instructions: Vec<Instruction>, return_value: ValueRef, value_t
         values: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![block],
-        diagnostics: Vec::new(),
     }
 }
 

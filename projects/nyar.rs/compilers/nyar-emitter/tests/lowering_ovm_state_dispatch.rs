@@ -48,7 +48,6 @@ fn dispatching_function(case_key: u32) -> ExecutableFunction {
             Block { id: BlockRef(1), label: "hit".to_string(), parameters: Vec::new(), instructions: Vec::new(), terminator: Terminator::Return { value: None } },
             Block { id: BlockRef(2), label: "default".to_string(), parameters: Vec::new(), instructions: Vec::new(), terminator: Terminator::Return { value: None } },
         ],
-        diagnostics: Vec::new(),
     }
 }
 

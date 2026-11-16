@@ -7,10 +7,7 @@ use crate::lowering::shared::physical_layout::{ResolvedAggregateLayout, Resolved
 use super::{
     WasmOperatorBinding,
     super::{
-        super::{
-            executable::{ExecutableLoweringContext, collect_reachable_blocks},
-            pattern_matching_contract::validate_pattern_matching_invariants,
-        },
+        super::{executable::{ExecutableLoweringContext, collect_reachable_blocks}},
         gc::WASM_GC_ANYREF,
         sections::encode_uleb128,
     },
@@ -127,11 +124,6 @@ pub(in crate::lowering::backends::wasm) fn lower_mir_function_to_wasm_bytes(
     managed_utf8_to_host_handle: &BTreeMap<LayoutId, ManagedUtf8ToHostHandlePlan>,
     utf8_host_handle_materialize: &BTreeMap<LayoutId, Utf8HostHandleMaterializePlan>,
 ) -> crate::Result<Vec<u8>> {
-    if let Err(error) = validate_pattern_matching_invariants(mir_fn) {
-        // 合同违约必须是编译期结构化失败：`debug_assert!` 只在 debug 构建里 panic，
-        // release 构建会继续 lowering 并可能把残差 `PatternMatch` 编成运行期 trap。
-        return Err(format!("pattern matching contract violation in function `{}`: {error:?}", mir_fn.symbol));
-    }
     let ctx = ExecutableLoweringContext::new(submission, crate::lowering::shared::physical_layout::LayoutPolicy::WASM32)?;
     let mut lowerer = WasmMirLowerer::new(
         &ctx,

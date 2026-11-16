@@ -43,7 +43,6 @@ fn cmp_function() -> ExecutableFunction {
         values: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![block],
-        diagnostics: Vec::new(),
     }
 }
 
@@ -79,7 +78,6 @@ fn main_function(callee_type: NyarType, referenced_instance: ItemInstanceId, env
         values: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![block],
-        diagnostics: Vec::new(),
     }
 }
 

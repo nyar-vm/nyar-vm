@@ -466,7 +466,6 @@ fn lower_function(program: &CompiledValkyrieProgram, function: &ValkyrieMirFunct
             values,
             #[allow(deprecated)]
             blocks,
-            diagnostics: Vec::new(),
         },
         callees,
     ))

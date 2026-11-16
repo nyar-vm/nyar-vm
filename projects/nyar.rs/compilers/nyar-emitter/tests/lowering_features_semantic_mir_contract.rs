@@ -35,7 +35,6 @@ fn function(instructions: Vec<Instruction>, terminator: Terminator, value_types:
         values: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![Block { id: BlockRef(0), label: "entry".to_string(), parameters: Vec::new(), instructions, terminator }],
-        diagnostics: Vec::new(),
     }
 }
 
@@ -79,19 +78,6 @@ fn rejects_instruction_output_without_semantic_type() {
         BTreeMap::new(),
     ));
     assert_eq!(result.unwrap_err().code, "SMIR001");
-}
-
-#[test]
-fn rejects_residual_pattern_match() {
-    let result = validate_function(&function(
-        vec![instr(
-            InstructionKind::PatternMatch { value: Operand::Constant(Constant::Unit), pattern_debug: "fixture".to_string() },
-            Vec::new(),
-        )],
-        Terminator::Return { value: None },
-        BTreeMap::new(),
-    ));
-    assert_eq!(result.unwrap_err().code, "SMIR008");
 }
 
 #[test]

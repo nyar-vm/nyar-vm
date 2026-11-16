@@ -60,7 +60,6 @@ fn identity_function(ty: NyarType, layout: Option<u32>) -> ExecutableFunction {
             instructions: Vec::new(),
             terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
         }],
-        diagnostics: Vec::new(),
     }
 }
 

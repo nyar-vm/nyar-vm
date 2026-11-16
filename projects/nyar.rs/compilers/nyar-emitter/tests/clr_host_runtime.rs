@@ -48,7 +48,6 @@ fn function(symbol: &str, return_type: NyarType, parameters: Vec<NyarType>) -> E
             instructions: Vec::new(),
             terminator: Terminator::Return { value: None },
         }],
-        diagnostics: Vec::new(),
     }
 }
 

@@ -1970,7 +1970,6 @@ impl ClrMethodEmitter<'_> {
 fn instruction_kind_name(kind: &InstructionKind) -> &'static str {
     match kind {
         InstructionKind::LoadConstant { .. } => "LoadConstant",
-        InstructionKind::LoadSymbol { .. } => "LoadSymbol",
         InstructionKind::Copy { .. } => "Copy",
         InstructionKind::Cast { .. } => "Cast",
         InstructionKind::StoreVar { .. } => "StoreVar",
@@ -1985,7 +1984,6 @@ fn instruction_kind_name(kind: &InstructionKind) -> &'static str {
         InstructionKind::SumNew { .. } => "SumNew",
         InstructionKind::SumPayloadGet { .. } => "SumPayloadGet",
         InstructionKind::SumVariantIs { .. } => "SumVariantIs",
-        InstructionKind::PatternMatch { .. } => "PatternMatch",
         InstructionKind::ArrayNew { .. } => "ArrayNew",
         InstructionKind::ArrayFromElements { .. } => "ArrayFromElements",
         InstructionKind::ArrayGet { .. } => "ArrayGet",

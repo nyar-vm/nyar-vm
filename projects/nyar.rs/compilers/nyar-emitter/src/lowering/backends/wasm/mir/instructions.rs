@@ -712,12 +712,9 @@ impl<'a> WasmMirLowerer<'a> {
                     self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Drop));
                 }
             }
-            // fail-closed：未实现的指令必须在编码期结构化失败。把 `PatternMatch` 编成
+            // fail-closed：未实现的指令必须在编码期结构化失败。把未实现指令编成
             // 运行期 `unreachable` 会把后端能力缺口伪装成运行期 trap，调用方无法区分
             // 「程序真的不可达」与「后端没实现」。
-            MirInstructionKind::PatternMatch { pattern_debug, .. } => {
-                return Err(format!("WASM 后端未实现指令 PatternMatch（pattern=`{pattern_debug}`，symbol=`{}`）", self.mir_fn.symbol));
-            }
             kind => {
                 return Err(format!("WASM 后端未实现指令 {kind:?}（symbol=`{}`）", self.mir_fn.symbol));
             }

@@ -17,7 +17,6 @@ pub mod backends;
 #[doc(hidden)]
 pub mod features;
 pub(crate) mod shared;
-pub(crate) use self::features::pattern_matching_contract;
 
 #[cfg(not(feature = "ovm-lane"))]
 use self::backends::{clr, jvm, wasm};

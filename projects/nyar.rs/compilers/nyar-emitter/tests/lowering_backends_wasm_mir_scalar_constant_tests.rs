@@ -36,7 +36,6 @@ fn empty_function(symbol: &str, param_types: Vec<NyarType>, return_type: NyarTyp
         values: Vec::new(),
         #[allow(deprecated)]
         blocks,
-        diagnostics: Vec::new(),
     }
 }
 

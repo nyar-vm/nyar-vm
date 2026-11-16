@@ -44,7 +44,6 @@ fn array_function(length: usize, elements: usize) -> ExecutableFunction {
             }],
             terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
         }],
-        diagnostics: Vec::new(),
     }
 }
 

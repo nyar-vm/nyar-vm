@@ -65,7 +65,6 @@ fn sum_function(instructions: Vec<Instruction>, value_types: BTreeMap<ValueRef, 
             instructions,
             terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
         }],
-        diagnostics: Vec::new(),
     }
 }
 

@@ -37,7 +37,6 @@ fn field_get_main(field: FieldId) -> ExecutableFunction {
         values: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![block],
-        diagnostics: Vec::new(),
     }
 }
 

@@ -428,17 +428,6 @@ pub fn validate_function(function: &ExecutableFunction) -> Result<(), SemanticMi
             }
         }
         for (index, instruction) in block.instructions.iter().enumerate() {
-            // A residual high-level pattern is the primary contract failure.
-            // Report SMIR008 before secondary metadata checks so malformed
-            // residual MIR cannot be misreported as a missing value type.
-            if let ExecutableInstructionKind::PatternMatch { .. } = instruction.kind {
-                return Err(SemanticMirContractError {
-                    code: "SMIR008",
-                    function: function.symbol.clone(),
-                    location: format!("block {} instruction {index}", block.id.0),
-                    detail: format!("residual PatternMatch instruction at block {} instruction {index}", block.id.0),
-                });
-            }
             if let Some(output) = crate::contracts::instruction_primary_result(instruction) {
                 if !function.value_types.contains_key(&output) {
                     return Err(SemanticMirContractError {
@@ -504,7 +493,7 @@ fn text_constant_type(constant: &Constant) -> Option<NyarType> {
 fn instruction_operands(kind: &ExecutableInstructionKind) -> Vec<&ExecutableOperand> {
     use crate::contracts::InstructionKind::*;
     match kind {
-        LoadConstant { .. } | LoadSymbol { .. } => Vec::new(),
+        LoadConstant { .. } => Vec::new(),
         // 函数值的实例身份不是操作数；捕获环境是普通 SSA 聚合值，必须已定义。
         // 结果 SSA 类型由 value_types 登记校验。
         LoadFunctionRef { environment, .. } => environment.iter().collect(),
@@ -524,7 +513,6 @@ fn instruction_operands(kind: &ExecutableInstructionKind) -> Vec<&ExecutableOper
         FieldSet { object, value, .. } => vec![object, value],
         SumNew { payload, .. } => payload.iter().collect(),
         SumPayloadGet { object, .. } | SumVariantIs { object, .. } => vec![object],
-        PatternMatch { value, .. } => vec![value],
         ArrayNew { length, initialization, .. } => {
             let mut values = vec![length];
             if let crate::contracts::ArrayInitialization::Fill(fill) = initialization {

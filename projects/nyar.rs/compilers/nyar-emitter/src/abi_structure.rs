@@ -482,7 +482,6 @@ mod tests {
                 instructions: Vec::new(),
                 terminator: Terminator::Return { value: None },
             }],
-            diagnostics: Vec::new(),
         }
     }
 

@@ -36,7 +36,6 @@ fn call_main(callee: Operand) -> ExecutableFunction {
         values: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![block],
-        diagnostics: Vec::new(),
     }
 }
 
@@ -110,7 +109,6 @@ fn wasm_i64_slot_receiving_i32_carrier_fails_structured() {
         values: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![block],
-        diagnostics: Vec::new(),
     };
     let import = BackendImport {
         index: ImportIndex::from_index(0).expect("导入下标"),

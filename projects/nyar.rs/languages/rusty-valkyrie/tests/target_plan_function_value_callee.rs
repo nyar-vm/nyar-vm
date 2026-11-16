@@ -54,7 +54,6 @@ fn fixture_function(
         values: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![Block { id: BlockRef(0), label: "entry".to_string(), parameters: Vec::new(), instructions, terminator }],
-        diagnostics: Vec::new(),
     }
 }
 

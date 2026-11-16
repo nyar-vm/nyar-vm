@@ -42,7 +42,6 @@ fn null_return_function() -> ExecutableFunction {
             }],
             terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
         }],
-        diagnostics: Vec::new(),
     }
 }
 

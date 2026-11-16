@@ -30,7 +30,6 @@ fn text_abi_submission(param_type: NyarType) -> FragmentSubmission {
             instructions: Vec::new(),
             terminator: Terminator::Return { value: None },
         }],
-        diagnostics: Vec::new(),
     };
     FragmentSubmission::from_backend_plan(TargetExecutionPlan::from_functions(BTreeMap::from([(operation, function)])))
 }

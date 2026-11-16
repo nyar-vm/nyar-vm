@@ -22,7 +22,6 @@ fn leaf_i32_fn(symbol: &str, blocks: Vec<Block>) -> ExecutableFunction {
         values: Vec::new(),
         #[allow(deprecated)]
         blocks,
-        diagnostics: Vec::new(),
     }
 }
 

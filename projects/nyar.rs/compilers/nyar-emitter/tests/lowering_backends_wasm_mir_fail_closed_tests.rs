@@ -2,7 +2,7 @@
 //! `Err`，禁止 `_ => {}` 静默跳过（目标槽保持旧值）或编成运行期 `unreachable`
 //! trap（把能力缺口伪装成程序不可达）。
 
-use nyar::{Identifier, NamePath};
+use nyar::Identifier;
 use nyar_emitter::{
     FragmentSubmission, TargetExecutionPlan,
     contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef},
@@ -32,7 +32,6 @@ fn function(instructions: Vec<Instruction>, value_types: BTreeMap<ValueRef, Nyar
         values: Vec::new(),
         #[allow(deprecated)]
         blocks: vec![block],
-        diagnostics: Vec::new(),
     }
 }
 
@@ -44,32 +43,6 @@ fn lower(function: ExecutableFunction, layouts: Option<AggregateLayoutPlan>) -> 
         plan.testing_aggregate_layouts(layouts);
     }
     lower_fragment_to_wasm_mir_module(&FragmentSubmission::from_backend_plan(plan), "main")
-}
-
-/// fail-closed：`PatternMatch` 没有 wasm lowering 时必须编译期报错，
-/// 禁止 `encode_unreachable` 把未实现指令编成运行期 trap。lowering 入口先用
-/// pattern-matching 合同拒绝残差指令，`emit_instruction` 的 `PatternMatch` 臂
-/// 只是 release 构建下的纵深防御。
-#[test]
-fn wasm_pattern_match_fails_structured_instead_of_unreachable() {
-    let load = Instruction::from_kind(InstructionKind::LoadConstant { constant: Constant::Int(1), ty: Some(I32) });
-    let pattern =
-        Instruction::from_kind(InstructionKind::PatternMatch { value: Operand::Value(ValueRef(0)), pattern_debug: "fixture".to_string() });
-    let error = lower(function(vec![Instruction { results: vec![ValueRef(0)], ..load }, pattern], BTreeMap::from([(ValueRef(0), I32)])), None)
-        .expect_err("未实现的 PatternMatch 必须返回 Err，不得编成 unreachable trap");
-    assert!(error.contains("pattern matching contract violation"), "错误必须来自编译期合同而不是运行期 trap: {error}");
-    assert!(error.contains("ResidualPatternMatchInstruction"), "错误必须指明残差 PatternMatch 指令: {error}");
-}
-
-/// fail-closed：兜底臂不再是 `_ => {}`；未覆盖的指令种类（`LoadSymbol`）同样结构化失败。
-#[test]
-fn wasm_unhandled_instruction_kind_fails_structured() {
-    let symbol = Instruction::from_kind(InstructionKind::LoadSymbol {
-        path: NamePath::new(vec![Identifier::new("fixture"), Identifier::new("answer")]),
-    });
-    let error = lower(function(vec![Instruction { results: vec![ValueRef(0)], ..symbol }], BTreeMap::from([(ValueRef(0), I32)])), None)
-        .expect_err("兜底臂必须 fail-closed，不得静默跳过指令");
-    assert!(error.contains("未实现指令 LoadSymbol"), "错误必须指明被吞掉的指令种类: {error}");
 }
 
 /// fail-closed：非空值聚合的 `AggregateCopy` 缺地址槽时不能静默跳过

@@ -8,8 +8,8 @@
 
 mod executable;
 pub use self::executable::{
-    ArrayInitialization, Block, BlockRef, Constant, Diagnostic, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, Value,
-    ValueOrigin, ValueRef,
+    ArrayInitialization, Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, Value, ValueOrigin,
+    ValueRef,
 };
 pub use nyar_types::StorageKind;
 
