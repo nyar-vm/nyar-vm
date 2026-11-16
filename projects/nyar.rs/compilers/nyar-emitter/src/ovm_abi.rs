@@ -418,10 +418,10 @@ mod tests {
     use std::collections::BTreeMap;
 
     use nyar::{Identifier, QualifiedName};
-    use nyar_types::{AggregateLayout, FieldLayout, StorageKind, ValueOrigin};
+    use nyar_types::{AggregateLayout, FieldLayout, StorageKind};
 
     use super::*;
-    use crate::contracts::{Block, BlockRef, Terminator, Value, ValueRef};
+    use crate::contracts::{Block, BlockRef, Terminator, Value, ValueOrigin, ValueRef};
 
     fn nyar(s: &str) -> NyarType {
         crate::test_canonical_primitive(s)

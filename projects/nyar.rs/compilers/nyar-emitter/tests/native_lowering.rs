@@ -20,10 +20,8 @@ use nyar_emitter::{
     target_operator::{TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
     testing::lower_fragment_to_native_image,
 };
-use nyar_types::{
-    Block, BlockRef, Constant, ExecutableFunction, ImportIndex, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator,
-    ValueRef,
-};
+use nyar_emitter::contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef};
+use nyar_types::{ImportIndex, ItemInstanceId, NyarType};
 
 const LONG: NyarType = NyarType::Integer64 { signed: true };
 const INTEGER: NyarType = NyarType::Integer32 { signed: true };

@@ -15,11 +15,13 @@ use std::{collections::BTreeMap, process::Command};
 use nyar::{HostProjectionBoundary, Identifier, QualifiedName};
 use nyar_emitter::{
     FragmentSubmission, TargetExecutionPlan,
-    contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, Value, ValueRef},
+    contracts::{
+        Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, Value, ValueOrigin, ValueRef,
+    },
     lowering::backends::wasm::lower_fragment_to_wasm_module_for,
     nyar_backend_wasi::{WasiPreview, WasmBinaryModule, WasmPackageKind},
 };
-use nyar_types::{InstructionId, NyarType, ProvenanceId, ValueOrigin};
+use nyar_types::{InstructionId, NyarType, ProvenanceId};
 
 const I64: NyarType = NyarType::Integer64 { signed: true };
 const U64: NyarType = NyarType::Integer64 { signed: false };

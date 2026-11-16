@@ -4,6 +4,6 @@ Neutral identity, linkage, capability, partition, provenance and artifact contra
 
 The crate must not own a language AST/MIR, a universal executable representation, target encoding or interpreter state. Shared identity is not shared semantics.
 
-Current `canonical_program`, `executable` and related layout contracts still contain Valkyrie-specific semantics and cross-target assumptions. They are migration debt: rename and return Valkyrie program types to Valkyrie, then place target plans and LIR with their target owners. Do not advertise them as a universal or optional common MIR.
+The shared executable view (`executable`) has been removed from this crate: SSA/CFG executable contracts now belong to the target lane (`nyar-emitter`), and language program types belong to Valkyrie. `canonical_program` and the related layout contracts still contain cross-target assumptions and remain migration debt; do not advertise them as a universal or optional common MIR.
 
 Host import contracts must retain explicit identity, signatures, calling conventions and ownership. Backend-private representation must not become the semantic bus between languages and targets.

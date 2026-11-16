@@ -13,9 +13,9 @@ use nyar_emitter::{
     testing::lower_fragment_to_clr_module,
     transitional::binary::pe::{ClrImageKind, PeWriter, PeWriterOptions},
 };
+use nyar_emitter::contracts::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef};
 use nyar_types::{
-    AggregateLayout, AggregateLayoutPlan, Block, BlockRef, ExecutableFunction, FieldLayout, ImportIndex, Instruction, InstructionKind,
-    ItemInstanceId, NyarType, Operand, StorageKind, Terminator, ValueRef,
+    AggregateLayout, AggregateLayoutPlan, FieldLayout, ImportIndex, ItemInstanceId, NyarType, StorageKind,
 };
 
 const LONG: NyarType = NyarType::Integer64 { signed: true };

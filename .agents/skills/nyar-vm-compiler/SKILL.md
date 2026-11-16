@@ -14,7 +14,7 @@ description: >-
 
 动态语言执行第一投影 `R_L,P = S(I_L, P)`，保留未知操作与运行时依赖。LegendVM 提供 guest/特化基底；OdinVM 只执行 OVM `.odin`。其他目标不经过 OdinVM。
 
-现有 canonical/executable 合同是 Valkyrie 归属迁移债务，不得推广成强制或可选共享语义子集。
+现有 canonical 合同仍是 Valkyrie 归属迁移债务，不得推广成强制或可选共享语义子集；共享 executable 视图已迁入 `nyar-emitter` 目标侧私有合同，禁止再回挂到 `nyar-types` 或 Nyar。
 
 ## 归属
 

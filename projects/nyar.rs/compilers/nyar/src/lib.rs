@@ -55,7 +55,7 @@ pub use nyar_optimizer::{
     ProjectionPolicy, ReferenceManagement, RewriteEquation, RewritePhase, RewriteRule, RewriteTheory, TermRewrite, TheoryBundle,
 };
 pub use nyar_types::{
-    AggregateLayoutPlan, CapabilityTag, ExecutableFunction, ExternalCallArgument, ExternalCallEdge, ExternalImportLink, FlagsLayout,
+    AggregateLayoutPlan, CapabilityTag, ExternalCallArgument, ExternalCallEdge, ExternalImportLink, FlagsLayout,
     Identifier, InternalCallEdge, NamePath, NyarFunctionType, NyarType, QualifiedName, SingletonInstancePlan, SumTypeLayout, SymbolIdentity,
     WitnessCallEdge, WitnessMethodSlotSubmission, WitnessObject, WitnessSubmission,
 };

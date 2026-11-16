@@ -1,4 +1,7 @@
-//! 各后端 lowering 共用的 Canonical Semantic MIR 边界。
+//! 目标侧可执行合同（target-lane private）。
+//!
+//! 本模块承载 SSA/CFG 形状的可执行语义视图，归 emitter 私有；它不再是
+//! `nyar-types` 的公共 MIR 边界，也不得被其他 crate 当作中性 API 消费。
 //!
 //! `IntrinsicOpcode`、Call 上的 God 字段，以及指令上的 `StorageKind` / `LayoutId`
 //! **已删除**。物理布局只属于 RepresentationPlan，不得塞回共享指令面。
@@ -7,7 +10,7 @@ use std::collections::BTreeMap;
 
 use ordered_float::OrderedFloat;
 
-use crate::{ItemInstanceId, NamePath, NyarType};
+use nyar_types::{ItemInstanceId, NamePath, NyarType};
 
 /// SSA value reference within an executable function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -114,23 +117,23 @@ pub enum Operand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Instruction {
     /// Stable instruction identity.
-    pub id: crate::InstructionId,
+    pub id: nyar_types::InstructionId,
     /// SSA results (0..n); types live in the value table.
     pub results: Vec<ValueRef>,
     /// Instruction payload (transitional name; target MirOperation).
     pub kind: InstructionKind,
     /// Source or synthetic provenance.
-    pub provenance: crate::ProvenanceId,
+    pub provenance: nyar_types::ProvenanceId,
 }
 
 impl Instruction {
     /// Wrap a kind in a synthetic envelope (tests / transitional emitters).
     pub fn from_kind(kind: InstructionKind) -> Self {
         Self {
-            id: crate::InstructionId::from_index(0).expect("stub InstructionId"),
+            id: nyar_types::InstructionId::from_index(0).expect("stub InstructionId"),
             results: Vec::new(),
             kind,
-            provenance: crate::ProvenanceId::from_index(0).expect("synthetic ProvenanceId"),
+            provenance: nyar_types::ProvenanceId::from_index(0).expect("synthetic ProvenanceId"),
         }
     }
 }
@@ -201,14 +204,14 @@ pub enum InstructionKind {
     /// Construct a named aggregate / struct instance.
     StructNew {
         /// 已冻结的名义聚合身份。
-        nominal: crate::NominalInstanceId,
+        nominal: nyar_types::NominalInstanceId,
         /// 已冻结的字段身份与初始化值。
-        fields: Vec<(crate::FieldId, Operand)>,
+        fields: Vec<(nyar_types::FieldId, Operand)>,
     },
     /// Construct a tuple.
     TupleNew {
         /// 编译器已验证的完整 tuple 布局身份。
-        layout_id: crate::LayoutId,
+        layout_id: nyar_types::LayoutId,
         /// 元素值；arity / 类型来自结果 `TypeId`。
         fields: Vec<Operand>,
     },
@@ -219,14 +222,14 @@ pub enum InstructionKind {
         /// 元组对象。
         object: Operand,
         /// 编译器已验证的完整 tuple 布局身份。
-        layout_id: crate::LayoutId,
+        layout_id: nyar_types::LayoutId,
         /// 来自元组类型身份的位置索引。
         index: u32,
     },
     /// Copy an aggregate by layout.
     AggregateCopy {
         /// 编译器已验证的源/目标聚合布局身份。
-        layout_id: crate::LayoutId,
+        layout_id: nyar_types::LayoutId,
         /// Source aggregate.
         source: Operand,
         /// Destination aggregate.
@@ -237,23 +240,23 @@ pub enum InstructionKind {
         /// Object / aggregate.
         object: Operand,
         /// 已冻结的字段身份。
-        field: crate::FieldId,
+        field: nyar_types::FieldId,
     },
     /// Write a field.
     FieldSet {
         /// Object / aggregate.
         object: Operand,
         /// 已冻结的字段身份。
-        field: crate::FieldId,
+        field: nyar_types::FieldId,
         /// Value to write.
         value: Operand,
     },
     /// Construct a value of an explicitly declared nominal sum variant.
     SumNew {
         /// 已冻结的 sum 名义实例身份。
-        nominal: crate::NominalInstanceId,
+        nominal: nyar_types::NominalInstanceId,
         /// 已冻结的 variant 身份。
-        variant: crate::VariantId,
+        variant: nyar_types::VariantId,
         /// Payload value for a payload-bearing variant.
         payload: Option<Operand>,
     },
@@ -263,9 +266,9 @@ pub enum InstructionKind {
     /// identity are semantic metadata, never inferred from field spellings.
     SumPayloadGet {
         /// 已冻结的 sum 名义实例身份。
-        nominal: crate::NominalInstanceId,
+        nominal: nyar_types::NominalInstanceId,
         /// 已冻结的 variant 身份。
-        variant: crate::VariantId,
+        variant: nyar_types::VariantId,
         /// Sum receiver.
         object: Operand,
     },
@@ -275,9 +278,9 @@ pub enum InstructionKind {
     /// Must not be lowered as a field named `tag` discovered from a physical carrier.
     SumVariantIs {
         /// 已冻结的 sum 名义实例身份。
-        nominal: crate::NominalInstanceId,
+        nominal: nyar_types::NominalInstanceId,
         /// 已冻结的 variant 身份。
-        variant: crate::VariantId,
+        variant: nyar_types::VariantId,
         /// Sum receiver.
         object: Operand,
     },
@@ -303,7 +306,7 @@ pub enum InstructionKind {
         ///
         /// 平台若需要定长数组的物理 body，必须显式处理缺失事实，不得用
         /// dummy 身份占位。
-        layout_id: Option<crate::LayoutId>,
+        layout_id: Option<nyar_types::LayoutId>,
         /// Full array type; fixed length lives in the type, not a parallel `usize`.
         array_type: NyarType,
         /// Element values in evaluation order already sequenced by SSA/CFG.
@@ -439,9 +442,9 @@ pub struct ExecutableFunction {
     /// SSA value static types.
     pub value_types: BTreeMap<ValueRef, NyarType>,
     /// Semantic MIR 已绑定的 SSA 值到聚合布局身份映射。
-    pub value_layouts: BTreeMap<ValueRef, crate::LayoutId>,
+    pub value_layouts: BTreeMap<ValueRef, nyar_types::LayoutId>,
     /// Semantic MIR 已绑定的返回值布局身份（标量/无返回值为 `None`）。
-    pub return_layout: Option<crate::LayoutId>,
+    pub return_layout: Option<nyar_types::LayoutId>,
     /// Entry block.
     pub entry: BlockRef,
     /// SSA values.

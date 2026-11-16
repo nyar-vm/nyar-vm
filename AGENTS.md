@@ -53,7 +53,7 @@ Valkyrie 前端 ──不能依赖──> Legion / Asgard
 - Nyar 核心 crate 不得依赖 `rusty-valkyrie`、`legion`、`asgard`。
 - `odin-vm` 不得导入任何语言的 AST、解析器或编译流水线。
 - `legend-vm` 不得新增完整的语言 tree-walk；guest 的解析与解释留在 `rusty-<lang>` crate。
-- `nyar-types` 仅承载中性合同与身份。现有 canonical/executable 语言语义必须归还 Valkyrie，不得改成可选共享 MIR。
+- `nyar-types` 仅承载中性合同与身份。canonical 语言语义必须归还 Valkyrie；共享 executable 视图归目标侧 `nyar-emitter` 私有合同，不得回挂 `nyar-types`/Nyar，也不得改成可选共享 MIR。
 - Nyar 只提供统一工具、编排及中性合同，各语言拥有 IR/MIR、解释器与语义，各目标拥有计划/LIR 和 runtime wrapper。
 - Python/Lua/动态 TypeScript 通过解释器特化保留未知运行时操作，不能以常量折叠或 stub 替代编译。
 - **[valkyrie.rs](https://github.com/valkyrie-language/valkyrie.rs) 是下游语料仓**（fixtures / golden / harness 黑盒），经 git 依赖消费 `nyar-vm` 的 CLI 与编译栈。**本仓不得引用、写入或假设 valkyrie.rs 路径**；语义与集成 Rust 测试只留在 `rusty-valkyrie/tests/`。

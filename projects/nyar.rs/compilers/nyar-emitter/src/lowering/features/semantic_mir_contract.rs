@@ -7,9 +7,10 @@
 use crate::{
     FragmentSubmission,
     backend_plan_views::{ExecutableFunction, ExecutableInstructionKind, ExecutableOperand},
+    contracts::{Constant, ValueOrigin},
 };
 use nyar::QualifiedName;
-use nyar_types::{Constant, NyarType, ValueOrigin};
+use nyar_types::NyarType;
 
 /// Semantic MIR 合同拒绝的错误定位（集成测试专用）。
 #[doc(hidden)]

@@ -22,9 +22,8 @@ use nyar_emitter::{
     testing::lower_fragment_to_clr_managed_surface,
     transitional::binary::pe::{ClrImageKind, PeWriter, PeWriterOptions},
 };
-use nyar_types::{
-    Block, BlockRef, ExecutableFunction, ImportIndex, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, ValueRef,
-};
+use nyar_emitter::contracts::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef};
+use nyar_types::{ImportIndex, ItemInstanceId, NyarType};
 
 const LONG: NyarType = NyarType::Integer64 { signed: true };
 const INTEGER: NyarType = NyarType::Integer32 { signed: true };

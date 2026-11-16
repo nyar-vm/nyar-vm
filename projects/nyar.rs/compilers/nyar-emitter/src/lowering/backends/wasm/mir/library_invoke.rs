@@ -245,7 +245,8 @@ mod tests {
         TargetExecutionPlan,
         lowering::backends::wasm::abi::{WasmAbiCarrier, WasmLibraryExportAbi},
     };
-    use nyar_types::{NyarType, ValueOrigin};
+    use crate::contracts::ValueOrigin;
+    use nyar_types::NyarType;
 
     fn nyar(s: &str) -> NyarType {
         crate::test_canonical_primitive(s)

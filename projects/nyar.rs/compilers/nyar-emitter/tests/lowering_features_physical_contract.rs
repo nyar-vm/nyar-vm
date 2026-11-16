@@ -5,9 +5,8 @@ use nyar_emitter::{
     BackendImport, FragmentSubmission, TargetExecutionPlan,
     lowering::features::physical_contract::{PhysicalBackend, PhysicalValueCategory, build_physical_plan},
 };
-use nyar_types::{
-    Block, BlockRef, ExecutableFunction, ImportIndex, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, ValueRef,
-};
+use nyar_emitter::contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef};
+use nyar_types::{ImportIndex, ItemInstanceId, NyarType};
 
 fn function(symbol: &str, return_type: NyarType, parameters: Vec<NyarType>) -> ExecutableFunction {
     let values = parameters.iter().enumerate().map(|(index, ty)| (ValueRef(index as u32), ty.clone())).collect();
@@ -74,7 +73,7 @@ fn constant_int_call_argument_is_not_unit() {
     caller_function.blocks[0].instructions.push(instr(
         InstructionKind::Call {
             callee: Operand::Symbol(nyar::NamePath::new(target.parts().to_vec())),
-            arguments: vec![Operand::Constant(nyar_types::Constant::Int(0))],
+            arguments: vec![Operand::Constant(Constant::Int(0))],
         },
         Vec::new(),
     ));

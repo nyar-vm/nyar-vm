@@ -12,9 +12,9 @@ use nyar_emitter::{
     nyar_backend_jvm::{JvmClassFile, JvmInstruction, JvmTypeDescriptor},
     testing::lower_fragment_to_jvm_managed_surface,
 };
+use nyar_emitter::contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef};
 use nyar_types::{
-    AggregateLayout, AggregateLayoutPlan, Block, BlockRef, Constant, ExecutableFunction, FieldId, FieldLayout, Instruction, InstructionKind,
-    ItemInstanceId, NominalInstanceId, NyarType, Operand, StorageKind, Terminator, ValueRef,
+    AggregateLayout, AggregateLayoutPlan, FieldId, FieldLayout, ItemInstanceId, NominalInstanceId, NyarType, StorageKind,
 };
 
 const INTEGER64: NyarType = NyarType::Integer64 { signed: true };

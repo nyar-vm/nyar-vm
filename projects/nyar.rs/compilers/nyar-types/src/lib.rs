@@ -16,10 +16,6 @@ pub use self::{
     contract_versions::{IDENTITY_SCHEMA_VERSION, LAYOUT_PLAN_VERSION, MIR_CONTRACT_VERSION, contract_version_fingerprint},
     digest::combined_content_hash,
     errors::{NyarError, NyarErrorKind},
-    executable::{
-        ArrayInitialization, Block, BlockRef, Constant, Diagnostic, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator,
-        Value, ValueOrigin, ValueRef,
-    },
     external_import::{ExternalCallArgument, ExternalCallEdge, ExternalImportLink, InternalCallEdge},
     layout::{
         AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, LayoutKey, SINGLETON_CONSTRUCTOR_NAME,
@@ -54,8 +50,6 @@ pub mod contract_versions;
 pub mod core_surface;
 pub mod digest;
 mod errors;
-/// 后端私有的可执行视图，供 lowering 使用。
-pub mod executable;
 mod external_import;
 /// 聚合 / singleton 布局合同，供可执行 lowering 使用。
 pub mod layout;

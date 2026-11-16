@@ -12,7 +12,8 @@ use nyar_emitter::{
     nyar_backend_jvm::{JvmInstruction, JvmMethodDescriptor, JvmTypeDescriptor},
     testing::lower_fragment_to_jvm_managed_surface,
 };
-use nyar_types::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, ValueRef};
+use nyar_emitter::contracts::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef};
+use nyar_types::{ItemInstanceId, NyarType};
 
 const LONG: NyarType = NyarType::Integer64 { signed: true };
 

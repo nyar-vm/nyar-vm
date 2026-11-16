@@ -50,6 +50,6 @@ Native 的 `.node` 必须满足 Node-API 导出、初始化与生命周期合同
 
 当前 Cargo workspace 的语言成员为 `rusty-valkyrie` 与 `rusty-{bash,c,lua,powershell,tcl}`。Python、TypeScript 等目录不在活动 workspace 中，不能从目录存在推导支持已交付。
 
-现有编译链仍有 Valkyrie 专用 canonical/executable 类型和跨目标共用计划的迁移债务。Lua 已接有限的 native residual 路径，但完整逐操作 native 代码生成尚未完成，退出码折叠或 stub 不构成动态语言编译交付。各 target 的已有实现也不代表每种语言都能使用。
+现有编译链仍有 Valkyrie 专用 canonical 类型和跨目标共用计划的迁移债务；共享 executable 视图已移到目标侧 `nyar-emitter` 私有合同，不再由 `nyar-types` 或 Nyar 导出。Lua 已接有限的 native residual 路径，但完整逐操作 native 代码生成尚未完成，退出码折叠或 stub 不构成动态语言编译交付。各 target 的已有实现也不代表每种语言都能使用。
 
 验收按语言语义 → 工具变换合法性 → 目标适配与运行时 → 真实产物逐层进行。测试通过不能覆盖层次错误，手填中间合同不能替代源码到产物证据。

@@ -18,10 +18,12 @@ use std::collections::BTreeMap;
 use nyar::{Identifier, QualifiedName};
 use nyar_emitter::{
     FragmentSubmission, ProgramTextRepresentation, TargetExecutionPlan,
-    contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, Value, ValueRef},
+    contracts::{
+        Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, Value, ValueOrigin, ValueRef,
+    },
     testing::lower_fragment_to_nyar_module,
 };
-use nyar_types::{AggregateLayout, FieldLayout, LayoutId, NyarType, StorageKind, ValueOrigin};
+use nyar_types::{AggregateLayout, FieldLayout, LayoutId, NyarType, StorageKind};
 use acorn_odin::OdinModuleData;
 
 /// 计划冻结的 `utf8` 托管布局身份：单一 `[u8]` 槽配方（与 `Utf8Text` 同形）。

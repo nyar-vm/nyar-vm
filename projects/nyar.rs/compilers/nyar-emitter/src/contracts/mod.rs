@@ -4,12 +4,14 @@
 //! 不得依赖前端 crate 的 MIR 类型。
 //!
 //! 下列 dispatch / receiver 枚举是 emitter 私有的 TargetExecutionPlan 路由提示，
-//! 不得重新挂回 [`nyar_types::InstructionKind::Call`]。
+//! 不得重新挂回 [`InstructionKind::Call`]。
 
-pub use nyar_types::{
-    ArrayInitialization, Block, BlockRef, Constant, Diagnostic, ExecutableFunction, Instruction, InstructionKind, Operand,
-    StorageKind, Terminator, Value, ValueOrigin, ValueRef,
+mod executable;
+pub use self::executable::{
+    ArrayInitialization, Block, BlockRef, Constant, Diagnostic, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, Value,
+    ValueOrigin, ValueRef,
 };
+pub use nyar_types::StorageKind;
 
 /// 后端私有的调用路由（不是 Semantic MIR 权威）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

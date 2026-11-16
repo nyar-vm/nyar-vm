@@ -7,9 +7,9 @@
 //! 公共 [`crate::TargetExecutionPlan`] 只携带逻辑导出身份与签名；Wasm lane 在
 //! 需要导出 ABI 时按函数签名现场冻结，不把本 lane 的载体缓存写回共享计划。
 
-use nyar_types::{ExecutableFunction, ItemInstanceId, NyarType};
+use nyar_types::{ItemInstanceId, NyarType};
 
-use crate::Result;
+use crate::{Result, contracts::ExecutableFunction};
 
 /// Wasm 库导出参数或返回值的物理载体。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

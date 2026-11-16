@@ -17,9 +17,9 @@ use nyar_emitter::{
     target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
     testing::{lower_fragment_to_jvm_class, lower_fragment_to_jvm_managed_surface},
 };
+use nyar_emitter::contracts::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef};
 use nyar_types::{
-    AggregateLayout, AggregateLayoutPlan, Block, BlockRef, ExecutableFunction, FieldLayout, ImportIndex, Instruction, InstructionKind,
-    ItemInstanceId, NyarType, Operand, StorageKind, Terminator, ValueRef,
+    AggregateLayout, AggregateLayoutPlan, FieldLayout, ImportIndex, ItemInstanceId, NyarType, StorageKind,
 };
 
 const LONG: NyarType = NyarType::Integer64 { signed: true };

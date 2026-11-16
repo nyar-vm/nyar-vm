@@ -6,4 +6,4 @@ Reusable transformation, analysis, optimization and specialization tools with ne
 
 Language-specific static closure rules do not prohibit dynamic runtime operations. Dynamic dispatch must be explicit and validated against a runtime contract. Interpreter specialization preserves unknown operations rather than pretending they are closed static calls.
 
-Current Valkyrie canonical and common executable contracts are migration debt. They must be renamed and returned to the language or separated into target-owned plans. Nyar must not invent a CPU/VM shared IR or use OdinVM as an intermediate for unrelated targets.
+The shared executable view has moved to the target lane (`nyar-emitter`), so Nyar no longer exports it. The Valkyrie canonical contracts remain migration debt: they must be returned to the language or separated into target-owned plans. Nyar must not invent a CPU/VM shared IR or use OdinVM as an intermediate for unrelated targets.

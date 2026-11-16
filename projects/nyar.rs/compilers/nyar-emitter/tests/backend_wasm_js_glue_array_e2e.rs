@@ -14,7 +14,8 @@ use nyar_emitter::{
     lowering::backends::wasm::lower_fragment_to_wasm_module_for,
     nyar_backend_wasi::{WasiPreview, WasmBinaryModule, WasmPackageKind, WasmSection},
 };
-use nyar_types::{AggregateLayout, FieldLayout, ItemInstanceId, NyarType, StorageKind, ValueOrigin};
+use nyar_emitter::contracts::ValueOrigin;
+use nyar_types::{AggregateLayout, FieldLayout, ItemInstanceId, NyarType, StorageKind};
 
 const I64: NyarType = NyarType::Integer64 { signed: true };
 const I32: NyarType = NyarType::Integer32 { signed: true };

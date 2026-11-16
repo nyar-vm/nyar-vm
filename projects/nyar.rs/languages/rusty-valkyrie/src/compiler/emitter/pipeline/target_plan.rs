@@ -8,11 +8,12 @@ use std::collections::BTreeMap;
 use nyar_emitter::{
     BackendImport, ProgramTextRepresentation, SumRepresentation, SumVariantRepresentation, TargetExecutionPlan, TargetPlanInput,
     backend_plan_views::ExecutableFunction,
-    contracts::{Block, BlockRef, ValueRef},
+    contracts::{
+        ArrayInitialization, Block, BlockRef, Constant, Instruction, InstructionKind, Operand, Terminator, Value, ValueOrigin, ValueRef,
+    },
 };
 use nyar_types::{
-    CanonicalPrimitiveType, CanonicalTypeKind, Constant, Instruction, InstructionKind, ItemInstanceId, NyarFunctionType, NyarType, Operand,
-    Terminator, Value, ValueOrigin,
+    CanonicalPrimitiveType, CanonicalTypeKind, ItemInstanceId, NyarFunctionType, NyarType,
     semantic_ids::{MirValueId, NominalInstanceId, TypeId, VariantId},
 };
 
@@ -646,8 +647,8 @@ fn lower_operation(
             array_type: lower_type(program, *array_type)?,
             length: value(*length),
             initialization: match initialization {
-                ValkyrieMirArrayInitialization::Default => nyar_types::ArrayInitialization::Default,
-                ValkyrieMirArrayInitialization::Fill(fill) => nyar_types::ArrayInitialization::Fill(value(*fill)),
+                ValkyrieMirArrayInitialization::Default => ArrayInitialization::Default,
+                ValkyrieMirArrayInitialization::Fill(fill) => ArrayInitialization::Fill(value(*fill)),
             },
         },
         ValkyrieMirOperation::ArrayFromElements { array_type, elements } => {
