@@ -285,8 +285,14 @@ impl ExecutionManifest {
     }
 
     /// 基于当前 `BuildPlan`、运行契约与编译证据生成 execution manifest。
+    ///
+    /// `artifact_source_dir` 是 manifest 所描述的那一代产物的实际所在目录：产物事务
+    /// 下它是暂存目录（提交后随文件一起进入输出目录），绝不允许从最终输出目录采集
+    /// ——那里混有上一代文件与事务元数据（锁、generation 清单），会把它们伪装成
+    /// 本代 artifact 摘要并让 freshness 永远判 stale。
     pub fn from_build_plan(
         plan: &BuildPlan,
+        artifact_source_dir: &Path,
         contracts: &[RunContract],
         library_exports: &[LibraryExportIndexEntry],
         evidence: &crate::compiler::emitter::pipeline::CompilerCompileEvidence,
@@ -302,7 +308,7 @@ impl ExecutionManifest {
             artifact_kind: plan.project.artifact_kind,
             library_exports: library_exports.to_vec(),
             inputs: collect_execution_input_digests(plan)?,
-            artifacts: collect_execution_artifact_digests(&plan.output_dir)?,
+            artifacts: collect_execution_artifact_digests(artifact_source_dir)?,
             run_contracts: contracts.to_vec(),
             compile_evidence: Some(CompileEvidenceDigest::from(evidence)),
             toolchain_fingerprint: crate::legion::cache::toolchain_fingerprint(),
@@ -859,6 +865,8 @@ fn is_execution_metadata_file(path: &Path) -> bool {
             || value.eq_ignore_ascii_case(BACKEND_REQUEST_SNAPSHOT_FILE_NAME)
             || value.eq_ignore_ascii_case(BACKEND_RESULT_SNAPSHOT_FILE_NAME)
             || value.eq_ignore_ascii_case(COMPILE_EVIDENCE_FILE_NAME)
+            || value.eq_ignore_ascii_case(super::build::DELIVERY_MANIFEST_FILE)
+            || value.eq_ignore_ascii_case(super::build::BUILD_LOCK_FILE)
     })
 }
 
@@ -905,4 +913,26 @@ fn hex_encode(bytes: &[u8]) -> String {
         let _ = write!(&mut text, "{byte:02x}");
     }
     text
+}
+
+#[cfg(test)]
+mod artifact_digest_tests {
+    use super::*;
+
+    /// 产物摘要采集只收本代交付文件：事务元数据（锁、generation 清单）与各快照
+    /// 必须被排除，否则提交后锁文件消失会让 freshness 永远判 stale。
+    #[test]
+    fn collect_excludes_transaction_metadata_files() {
+        let root = tempfile::tempdir().expect("temp dir");
+        let dir = root.path();
+        fs::write(dir.join("app.wasm"), b"wasm").expect("write artifact");
+        fs::write(dir.join("app.js"), b"glue").expect("write glue");
+        fs::write(dir.join(super::super::build::BUILD_LOCK_FILE), b"lock").expect("write lock");
+        fs::write(dir.join(super::super::build::DELIVERY_MANIFEST_FILE), b"{}").expect("write delivery");
+        fs::write(dir.join(EXECUTION_MANIFEST_FILE_NAME), b"manifest").expect("write manifest");
+
+        let digests = collect_execution_artifact_digests(dir).expect("collect digests");
+        let paths: Vec<&str> = digests.iter().map(|digest| digest.path.as_str()).collect();
+        assert_eq!(paths, vec!["app.js", "app.wasm"], "事务元数据不得伪装成 artifact: {paths:?}");
+    }
 }

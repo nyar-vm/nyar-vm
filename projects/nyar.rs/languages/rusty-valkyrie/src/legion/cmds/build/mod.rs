@@ -367,7 +367,10 @@ fn staging_dir_for(output_dir: &Path) -> PathBuf {
 ///
 /// 消费者只应把这份清单列出的文件当作上一代交付；清单之外的文件是用户内容，
 /// 提交事务不清空它们。文件本身是元数据，不在受管理清单内。
-const DELIVERY_MANIFEST_FILE: &str = ".nyar-delivery.json";
+pub(crate) const DELIVERY_MANIFEST_FILE: &str = ".nyar-delivery.json";
+
+/// 并发提交事务的锁文件：只在一代提交期间存在，不是产物。
+pub(crate) const BUILD_LOCK_FILE: &str = ".nyar-build.lock";
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 struct DeliveryManifest {
@@ -392,7 +395,7 @@ impl Drop for BuildLock {
 }
 
 fn acquire_build_lock(output_dir: &Path) -> LegionResult<BuildLock> {
-    let path = output_dir.join(".nyar-build.lock");
+    let path = output_dir.join(BUILD_LOCK_FILE);
     match fs::File::create_new(&path) {
         Ok(_) => Ok(BuildLock { path }),
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -752,7 +755,7 @@ fn write_execution_manifest(
             abi_digest: export.abi_digest.clone(),
         })
         .collect::<Vec<_>>();
-    ExecutionManifest::from_build_plan(plan, &contracts, &exports, evidence)?.write_to_output_dir(output_dir)
+    ExecutionManifest::from_build_plan(plan, output_dir, &contracts, &exports, evidence)?.write_to_output_dir(output_dir)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
