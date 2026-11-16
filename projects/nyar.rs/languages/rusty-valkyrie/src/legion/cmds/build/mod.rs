@@ -285,10 +285,11 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
         .with_test_entries(plan.project.test_entries.clone())
         .with_selected_host_providers(host_bindings)
         .with_gated_out_host_providers(gated_out_host_providers);
-    // 产物事务：所有分区、宿主包装、ABI sidecar、evidence 与运行合同先写入
-    // 输出目录内的暂存目录；完整产物集合验证成功后整组提交。任一步失败丢弃
-    // 暂存目录，输出目录保留上一份完整交付——失败构建不得留下部分新产物与
-    // 原有文件的混合，也不得给后续文件扫描留下陈旧输入。
+    // 产物事务：并发序列化 → 全部产物、sidecar、evidence 与运行合同写入暂存目录
+    // → 提交前完整性验证 → 受管理 generation 原子提交（可回滚）。消费者只会看到
+    // 完整提交的一代；本代消失的旧受管理制品随提交退出，非受管理的用户文件不动。
+    // 缓存写入失败与交付提交成功分别报告：已提交的交付不会因缓存故障被谎报失败。
+    let _build_lock = acquire_build_lock(&plan.output_dir)?;
     let staging_dir = staging_dir_for(&plan.output_dir);
     let _ = fs::remove_dir_all(&staging_dir);
     fs::create_dir_all(&staging_dir)
@@ -319,10 +320,10 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
 
         // Write execution manifest before collecting the artifact-set so restore can run.
         // 库产物可能没有可执行 run contract（wasm 走 `callExport`），但仍必须写入
-        // 导出索引，因此库构建无条件写 manifest。
+        // 导出索引，因此库构建无条件写 manifest。合法无 manifest 的交付不写它：
+        // 上一代的运行合同属于受管理制品，会随本代提交退出，不再提交后单独补删。
         let is_library = plan.project.artifact_kind == ProjectArtifactKind::Library;
-        let manifest_written = is_library || !artifact.driver.run_contracts.is_empty();
-        if manifest_written {
+        if is_library || !artifact.driver.run_contracts.is_empty() {
             write_execution_manifest(&staging_dir, plan, &artifact.driver.run_contracts, &artifact.driver.library_exports, &artifact.evidence)?;
         }
 
@@ -330,11 +331,7 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
         // 必须在暂存集合中齐备；缺失即整组失败，不提交部分交付。
         collect_build_bundle(&staging_dir, &artifact.driver).map_err(|error| report!("产物集合不完整（暂存目录）：{error}"))?;
 
-        commit_staged_delivery(&staging_dir, &plan.output_dir)?;
-        if !manifest_written {
-            // 合法无 CLI 的交付：随事务清除上一份运行合同，不留陈旧输入。
-            ExecutionManifest::remove_from_output_dir(&plan.output_dir)?;
-        }
+        commit_staged_delivery(&staging_dir, &plan.output_dir, &canonical_triple, &ir_hash)?;
         Ok(artifact.driver)
     })();
     let driver = match outcome {
@@ -344,11 +341,19 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
             return Err(error);
         }
     };
-    let bundle = collect_build_bundle(&plan.output_dir, &driver).map_err(|error| report!("产物集合不完整：{error}"))?;
-    store_cached_build(&cache, &plan.project.name, &canonical_triple, &ir_hash, &bundle)
-        .map_err(|error| report!("产物缓存写入失败：{error}"))?;
-    if verbose {
-        println!("cache: stored (artifact-set)");
+    // 交付已提交；缓存只是加速路径，失败单独报告为警告，不推翻已成功的交付。
+    match collect_build_bundle(&plan.output_dir, &driver)
+        .map_err(|error| report!("产物集合不完整：{error}"))
+        .and_then(|bundle| store_cached_build(&cache, &plan.project.name, &canonical_triple, &ir_hash, &bundle).map_err(|error| report!("产物缓存写入失败：{error}")))
+    {
+        Ok(()) => {
+            if verbose {
+                println!("cache: stored (artifact-set)");
+            }
+        }
+        Err(error) => {
+            eprintln!("warning: 交付已提交，但产物缓存写入失败（下次构建将重新编译）: {error}");
+        }
     }
 
     Ok(driver)
@@ -361,28 +366,148 @@ fn staging_dir_for(output_dir: &Path) -> PathBuf {
     output_dir.join(format!(".nyar-staging-{}-{seq}", std::process::id()))
 }
 
-/// 提交整组暂存产物：逐个移动并覆盖同名旧文件，成功后删除暂存目录。
+/// 受管理制品的 generation 身份文件：记录最近一次成功提交的受管理文件清单。
 ///
-/// 提交阶段本身不再产生新失败面（目标文件被宿主占用等极端情况除外）；
-/// 验证全部发生在提交之前，失败路径只丢弃暂存目录。
-fn commit_staged_delivery(staging_dir: &Path, output_dir: &Path) -> LegionResult<()> {
-    let entries =
-        fs::read_dir(staging_dir).map_err(|e| LegionError::msg(format!("枚举暂存目录失败: {}: {e}", staging_dir.display())))?;
-    for entry in entries {
-        let entry = entry.map_err(|e| LegionError::msg(format!("读取暂存目录项失败: {e}")))?;
-        let from = entry.path();
-        let Some(file_name) = from.file_name() else {
-            continue;
-        };
-        if entry.file_type().map_err(|e| LegionError::msg(format!("暂存目录项类型不可读: {}: {e}", from.display())))?.is_dir() {
-            return Err(LegionError::msg(format!("产物暂存目录不应包含子目录: {}", from.display())));
-        }
-        let to = output_dir.join(file_name);
-        if to.exists() {
-            fs::remove_file(&to).map_err(|e| LegionError::msg(format!("替换旧产物失败: {}: {e}", to.display())))?;
-        }
-        fs::rename(&from, &to).map_err(|e| LegionError::msg(format!("提交产物失败: {} -> {}: {e}", from.display(), to.display())))?;
+/// 消费者只应把这份清单列出的文件当作上一代交付；清单之外的文件是用户内容，
+/// 提交事务不清空它们。文件本身是元数据，不在受管理清单内。
+const DELIVERY_MANIFEST_FILE: &str = ".nyar-delivery.json";
+
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+struct DeliveryManifest {
+    /// 身份 schema 版本。
+    schema_version: u32,
+    /// 本代身份（目标三元组 + IR 摘要）。
+    generation: String,
+    /// 受管理产物文件名（相对输出目录）。
+    files: Vec<String>,
+}
+
+/// 并发序列化：同一输出目录同时只允许一个提交事务。
+#[derive(Debug)]
+struct BuildLock {
+    path: PathBuf,
+}
+
+impl Drop for BuildLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
     }
+}
+
+fn acquire_build_lock(output_dir: &Path) -> LegionResult<BuildLock> {
+    let path = output_dir.join(".nyar-build.lock");
+    match fs::File::create_new(&path) {
+        Ok(_) => Ok(BuildLock { path }),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            Err(LegionError::msg(format!("输出目录正被另一个构建占用，等待其完成后重试: {}", output_dir.display())))
+        }
+        Err(error) => Err(LegionError::msg(format!("创建构建锁失败 {}: {error}", path.display()))),
+    }
+}
+
+fn read_delivery_manifest(output_dir: &Path) -> DeliveryManifest {
+    // 读不到的清单按"无受管理上一代"处理：首次提交或被中断的旧格式交付。
+    fs::read(output_dir.join(DELIVERY_MANIFEST_FILE)).ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+/// 提交整组暂存产物为新一代受管理交付，可回滚。
+///
+/// 顺序：预校验暂存集合 → 把将被覆盖与退出的上一代受管理文件移入备份目录 →
+/// 移入本代文件 → 写 generation 清单 → 清理备份。任何一步失败都把备份移回，
+/// 输出目录恢复上一代完整状态；消费者不会看到半代交付，也不会因本代缺失而
+/// 残留旧受管理制品（运行合同退出同样由删除集覆盖，不再有提交后补删）。
+fn commit_staged_delivery(staging_dir: &Path, output_dir: &Path, triple: &str, ir_hash: &str) -> LegionResult<()> {
+    // 预校验：只允许普通文件，先把本代集合固定下来。
+    let mut staged = Vec::new();
+    for entry in fs::read_dir(staging_dir).map_err(|e| LegionError::msg(format!("枚举暂存目录失败: {}: {e}", staging_dir.display())))? {
+        let entry = entry.map_err(|e| LegionError::msg(format!("读取暂存目录项失败: {e}")))?;
+        let file_type = entry.file_type().map_err(|e| LegionError::msg(format!("暂存目录项类型不可读: {}: {e}", entry.path().display())))?;
+        if !file_type.is_file() {
+            return Err(LegionError::msg(format!("产物暂存目录不应包含子目录: {}", entry.path().display())));
+        }
+        let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+            return Err(LegionError::msg(format!("暂存产物文件名不是合法 UTF-8: {}", entry.path().display())));
+        };
+        if name == DELIVERY_MANIFEST_FILE || name.starts_with(".nyar-") {
+            return Err(LegionError::msg(format!("暂存目录不应包含事务元数据: {name}")));
+        }
+        staged.push((entry.path(), name));
+    }
+    let staged_names: Vec<&str> = staged.iter().map(|(_, name)| name.as_str()).collect();
+
+    let previous = read_delivery_manifest(output_dir);
+    static BACKUP_SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let backup_seq = BACKUP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let backup_dir = output_dir.join(format!(".nyar-backup-{}-{backup_seq}", std::process::id()));
+    fs::create_dir_all(&backup_dir).map_err(|e| LegionError::msg(format!("创建提交备份目录失败: {}: {e}", backup_dir.display())))?;
+
+    // 回滚记录：moved_aside = (备份位置, 原位置)；moved_in = 本代已移入的路径。
+    let mut moved_aside: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let mut moved_in: Vec<PathBuf> = Vec::new();
+    let rollback = |moved_aside: &[(PathBuf, PathBuf)], moved_in: &[PathBuf]| {
+        // 先撤本代已移入的文件，再从备份恢复上一代文件。
+        for to in moved_in.iter().rev() {
+            let _ = fs::remove_file(to);
+        }
+        for (from, to) in moved_aside.iter().rev() {
+            let _ = fs::rename(from, to);
+        }
+        let _ = fs::remove_dir_all(&backup_dir);
+    };
+
+    // 1) 让位：本代将覆盖的文件 + 上一代受管理但本代不再存在的退出项。
+    let retire: Vec<&str> = previous.files.iter().map(String::as_str).filter(|name| !staged_names.contains(name)).collect();
+    let replace = staged_names.clone();
+    for name in replace.iter().chain(retire.iter()) {
+        let existing = output_dir.join(name);
+        if existing.is_file() {
+            let to = backup_dir.join(name);
+            if let Err(error) = fs::rename(&existing, &to) {
+                rollback(&moved_aside, &moved_in);
+                return Err(LegionError::msg(format!("移出旧受管理文件失败 {}: {error}", existing.display())));
+            }
+            moved_aside.push((to, existing));
+        }
+    }
+
+    // 2) 移入本代。
+    for (from, name) in &staged {
+        let to = output_dir.join(name);
+        if let Err(error) = fs::rename(from, &to) {
+            rollback(&moved_aside, &moved_in);
+            return Err(LegionError::msg(format!("提交产物失败: {} -> {}: {error}", from.display(), to.display())));
+        }
+        moved_in.push(to);
+    }
+
+    // 3) 写 generation 清单（受管理集合的最终事实）。
+    let manifest = DeliveryManifest {
+        schema_version: 0,
+        generation: format!("{triple}-{ir_hash}"),
+        files: staged.iter().map(|(_, name)| name.clone()).chain(std::iter::once(DELIVERY_MANIFEST_FILE.to_string())).collect(),
+    };
+    // 清单自身作为受管理文件在下一代表达；此处直接写入输出目录。
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest).map_err(|error| {
+        rollback(&moved_aside, &moved_in);
+        LegionError::msg(format!("序列化 generation 清单失败: {error}"))
+    });
+    match manifest_bytes {
+        Ok(bytes) => {
+            if let Err(error) = fs::write(output_dir.join(DELIVERY_MANIFEST_FILE), bytes) {
+                rollback(&moved_aside, &moved_in);
+                return Err(LegionError::msg(format!("写入 generation 清单失败: {error}")));
+            }
+        }
+        Err(error) => return Err(error),
+    }
+
+    // 4) 清理：备份目录与暂存目录。
+    for (backup, _) in &moved_aside {
+        let _ = fs::remove_file(backup);
+    }
+    let _ = fs::remove_dir_all(&backup_dir);
     fs::remove_dir_all(staging_dir).map_err(|e| LegionError::msg(format!("清理暂存目录失败: {}: {e}", staging_dir.display())))?;
     Ok(())
 }
@@ -391,13 +516,13 @@ fn commit_staged_delivery(staging_dir: &Path, output_dir: &Path) -> LegionResult
 mod artifact_transaction_tests {
     use super::*;
 
-    /// 提交整组暂存产物：新文件进入交付、同名旧文件被替换、暂存目录清空。
+    /// 提交整组暂存产物：新文件进入交付、同名旧文件被替换、generation 清单落盘。
     #[test]
     fn commit_moves_whole_staged_set_and_replaces_old_delivery() {
         let root = tempfile::tempdir().expect("temp dir");
         let output = root.path().join("dist");
         fs::create_dir_all(&output).expect("output dir");
-        fs::write(output.join("stale-only.txt"), b"previous delivery").expect("write stale");
+        fs::write(output.join("stale-only.txt"), b"user file").expect("write user file");
         fs::write(output.join("app.wasm"), b"old bytes").expect("write old artifact");
 
         let staging = staging_dir_for(&output);
@@ -405,12 +530,73 @@ mod artifact_transaction_tests {
         fs::write(staging.join("app.wasm"), b"new bytes").expect("write new artifact");
         fs::write(staging.join("compile-evidence.txt"), b"evidence").expect("write sidecar");
 
-        commit_staged_delivery(&staging, &output).expect("提交整组暂存产物");
+        commit_staged_delivery(&staging, &output, "wasm32-unknown-unknown", "ir1").expect("提交整组暂存产物");
 
         assert_eq!(fs::read(output.join("app.wasm")).expect("read artifact"), b"new bytes", "同名旧产物必须被整组替换");
         assert!(output.join("compile-evidence.txt").is_file(), "sidecar 与产物同批提交");
-        assert!(output.join("stale-only.txt").is_file(), "本次交付未声明的既有文件不被事务破坏");
+        assert!(output.join("stale-only.txt").is_file(), "非受管理的用户文件不被事务清空");
         assert!(!staging.exists(), "提交成功后暂存目录必须清空");
+        let manifest = read_delivery_manifest(&output);
+        assert_eq!(manifest.generation, "wasm32-unknown-unknown-ir1");
+        assert!(manifest.files.iter().any(|name| name == "app.wasm"), "{manifest:?}");
+        assert!(manifest.files.iter().any(|name| name == DELIVERY_MANIFEST_FILE), "清单自身受管理: {manifest:?}");
+    }
+
+    /// 上一代受管理而本代消失的制品（如运行合同）随提交退出；用户文件保留。
+    #[test]
+    fn commit_retires_previous_managed_files() {
+        let root = tempfile::tempdir().expect("temp dir");
+        let output = root.path().join("dist");
+        fs::create_dir_all(&output).expect("output dir");
+        // 手工布置上一代：manifest 声明 app.wasm 与 run-contracts.txt 受管理。
+        fs::write(output.join("app.wasm"), b"g1").expect("write g1");
+        fs::write(output.join("run-contracts.txt"), b"g1 contracts").expect("write g1 contracts");
+        fs::write(output.join("user-notes.md"), b"keep me").expect("write user file");
+        let previous = DeliveryManifest {
+            schema_version: 0,
+            generation: "g1".to_string(),
+            files: vec!["app.wasm".to_string(), "run-contracts.txt".to_string(), DELIVERY_MANIFEST_FILE.to_string()],
+        };
+        fs::write(output.join(DELIVERY_MANIFEST_FILE), serde_json::to_vec(&previous).expect("serialize")).expect("write manifest");
+
+        let staging = staging_dir_for(&output);
+        fs::create_dir_all(&staging).expect("staging dir");
+        fs::write(staging.join("app.wasm"), b"g2").expect("write g2");
+        // 本代没有 run-contracts.txt：上一代受管理副本必须退出。
+
+        commit_staged_delivery(&staging, &output, "wasm32-unknown-unknown", "ir2").expect("提交第二代交付");
+
+        assert_eq!(fs::read(output.join("app.wasm")).expect("read g2"), b"g2");
+        assert!(!output.join("run-contracts.txt").exists(), "本代消失的受管理运行合同必须随提交退出");
+        assert!(output.join("user-notes.md").is_file(), "用户文件不清空");
+    }
+
+    /// 提交中途失败必须回滚到上一代完整状态，不留半代交付。
+    #[test]
+    fn commit_rolls_back_to_previous_generation_on_failure() {
+        let root = tempfile::tempdir().expect("temp dir");
+        let output = root.path().join("dist");
+        fs::create_dir_all(&output).expect("output dir");
+        fs::write(output.join("app.wasm"), b"g1").expect("write g1");
+        // 注入失败：本代第二个目标位置是一个目录，rename 无法覆盖它。
+        fs::create_dir_all(output.join("run-contracts.txt")).expect("blocking directory");
+        let previous = DeliveryManifest {
+            schema_version: 0,
+            generation: "g1".to_string(),
+            files: vec!["app.wasm".to_string(), DELIVERY_MANIFEST_FILE.to_string()],
+        };
+        fs::write(output.join(DELIVERY_MANIFEST_FILE), serde_json::to_vec(&previous).expect("serialize")).expect("write manifest");
+
+        let staging = staging_dir_for(&output);
+        fs::create_dir_all(&staging).expect("staging dir");
+        fs::write(staging.join("app.wasm"), b"g2").expect("write g2");
+        fs::write(staging.join("run-contracts.txt"), b"g2 contracts").expect("write g2 contracts");
+
+        commit_staged_delivery(&staging, &output, "wasm32-unknown-unknown", "ir2").expect_err("目标被占用必须整组失败");
+
+        assert_eq!(fs::read(output.join("app.wasm")).expect("read after rollback"), b"g1", "回滚后上一代产物完整恢复");
+        assert!(output.join(DELIVERY_MANIFEST_FILE).is_file(), "generation 清单回滚保留");
+        assert!(read_delivery_manifest(&output).generation == "g1", "清单仍指向上第一代");
     }
 
     /// 暂存集合出现子目录说明装配违约：提交拒绝，不部分移动。
@@ -422,8 +608,20 @@ mod artifact_transaction_tests {
         let staging = staging_dir_for(&output);
         fs::create_dir_all(staging.join("nested")).expect("staging with subdirectory");
 
-        let error = commit_staged_delivery(&staging, &output).expect_err("子目录必须被拒绝");
+        let error = commit_staged_delivery(&staging, &output, "t", "h").expect_err("子目录必须被拒绝");
         assert!(error.to_string().contains("子目录"), "{error}");
+    }
+
+    /// 同一输出目录的提交事务串行：锁未释放前第二个构建拒绝进入。
+    #[test]
+    fn build_lock_serializes_concurrent_commits() {
+        let root = tempfile::tempdir().expect("temp dir");
+        let output = root.path();
+        let first = acquire_build_lock(output).expect("first lock");
+        let error = acquire_build_lock(output).expect_err("second lock must be rejected while held");
+        assert!(error.to_string().contains("占用"), "{error}");
+        drop(first);
+        acquire_build_lock(output).expect("lock reacquired after release");
     }
 
     /// 并发构建的暂存目录互不覆盖。
