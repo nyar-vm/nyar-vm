@@ -458,6 +458,7 @@ mod tests {
                     new: String::new(),
                     set: String::new(),
                 },
+                container: None,
             },
             WasmAbiType::FixedArray { element: Box::new(WasmAbiType::I64), length: 2 },
             WasmAbiType::Option { inner: Box::new(WasmAbiType::I64), box_contract: None },

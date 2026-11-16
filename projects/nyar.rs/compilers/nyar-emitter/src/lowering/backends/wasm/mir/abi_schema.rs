@@ -79,6 +79,12 @@ pub enum WasmAbiType {
         element: Box<WasmAbiType>,
         /// 物理数组读写操作（wasm 导出名，按元素类型确定性派生）。
         ops: WasmAbiArrayOps,
+        /// `[host_projection]` 声明授权的容器构造合同；普通 `[T]` 为 `None`。
+        ///
+        /// 序列视图的投影只由冻结布局计划的声明事实触发，本层只把声明级
+        /// `Sequence` 结构翻译成 wasm 构造/读回合同，绝不按形状授予序列性。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        container: Option<Box<WasmAbiSequence>>,
     },
 
     /// Fixed-length stack array `[T; N]`。
@@ -270,6 +276,40 @@ pub struct WasmAbiOptionBox {
     pub payload: String,
 }
 
+/// `[host_projection]` 声明授权的序列容器构造/读回合同。
+///
+/// `levels` 按根→叶顺序给出逐层构造事实：宿主先把 JS 数组装配成物理
+/// backing array，再从叶子层向根层逐层调用 `struct.new` 包装，把数组与
+/// 计数填进声明给出的槽位；读回沿 `inner_slot` 链走到叶子层取数组、在
+/// 根层取计数。所有名字由冻结布局身份确定性派生，宿主不按字段名猜测。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WasmAbiSequence {
+    /// 根→叶的构造层级。
+    pub levels: Vec<WasmAbiSequenceLevel>,
+    /// 根层计数字段的 ABI schema（宿主按它编组计数）。
+    pub length_type: Box<WasmAbiType>,
+}
+
+/// 序列容器单层构造合同。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WasmAbiSequenceLevel {
+    /// 本层聚合的 `struct.new` 包装导出名（布局身份确定性派生）。
+    pub constructor: String,
+    /// 本层字段总数；构造参数按声明顺序组满。
+    pub field_count: usize,
+    /// 本层全部字段读回 accessor 导出名（声明顺序，与槽位下标对齐）。
+    pub accessors: Vec<String>,
+    /// backing array 槽位（仅叶子层）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub items_slot: Option<usize>,
+    /// 整数计数槽位（本层有唯一整数字段时）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub length_slot: Option<usize>,
+    /// 嵌套存储字段槽位（仅非叶子层）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inner_slot: Option<usize>,
+}
+
 impl WasmAbiType {
     /// 返回值是否有 Wasm 物理 carrier。
     ///
@@ -331,9 +371,11 @@ fn project_structure(structure: &crate::abi_structure::AbiStructure, layouts: Op
         S::Bool => WasmAbiType::Bool,
         S::Char => WasmAbiType::Char,
         S::Utf8 => WasmAbiType::Utf8,
-        S::Array { element, element_key } => {
-            WasmAbiType::Array { element: Box::new(project_structure(element, layouts)), ops: array_ops_export_names_from_key(element_key) }
-        }
+        S::Array { element, element_key } => WasmAbiType::Array {
+            element: Box::new(project_structure(element, layouts)),
+            ops: array_ops_export_names_from_key(element_key),
+            container: None,
+        },
         S::FixedArray { element, length } => {
             WasmAbiType::FixedArray { element: Box::new(project_structure(element, layouts)), length: *length }
         }
@@ -392,6 +434,45 @@ fn project_structure(structure: &crate::abi_structure::AbiStructure, layouts: Op
                 }
             }
         },
+        S::Sequence(sequence) => {
+            // 声明级序列视图：投影为 `Array` + 逐层容器构造合同。每层的
+            // `struct.new` / 字段 accessor 导出名由该层冻结布局身份派生。
+            let project_level = |level: &crate::abi_structure::SequenceLevel| -> std::result::Result<WasmAbiSequenceLevel, String> {
+                let Some(aggregate_layout) = layouts.and_then(|plan| plan.layouts.iter().find(|item| item.id == level.layout)) else {
+                    return Err(format!("序列层布局 `{}` 未注册", level.layout));
+                };
+                let accessors =
+                    (0..aggregate_layout.fields.len()).map(|index| field_accessor_export_name(aggregate_layout, index)).collect::<Vec<_>>();
+                Ok(WasmAbiSequenceLevel {
+                    constructor: aggregate_constructor_export_name(aggregate_layout),
+                    field_count: level.field_count,
+                    accessors,
+                    items_slot: level.items_slot,
+                    length_slot: level.length_slot,
+                    inner_slot: level.inner_slot,
+                })
+            };
+            let mut levels = Vec::with_capacity(sequence.levels.len());
+            for level in &sequence.levels {
+                match project_level(level) {
+                    Ok(level) => levels.push(level),
+                    Err(reason) => return WasmAbiType::Unsupported { reason },
+                }
+            }
+            let element = project_structure(&sequence.element, layouts);
+            if let Some(reason) = element.unsupported_reason() {
+                return WasmAbiType::Unsupported { reason: format!("序列容器 `{}::{}` 的元素类型没有 Wasm ABI 合同: {reason}", sequence.module_path, sequence.name) };
+            }
+            let length_type = project_structure(&sequence.length_ty, layouts);
+            if let Some(reason) = length_type.unsupported_reason() {
+                return WasmAbiType::Unsupported { reason: format!("序列容器 `{}::{}` 的计数字段没有 Wasm ABI 合同: {reason}", sequence.module_path, sequence.name) };
+            }
+            WasmAbiType::Array {
+                element: Box::new(element),
+                ops: array_ops_export_names_from_key(&sequence.element_key),
+                container: Some(Box::new(WasmAbiSequence { levels, length_type: Box::new(length_type) })),
+            }
+        }
         S::InstanceHandle { name, module_path, .. } => WasmAbiType::InstanceHandle { name: name.clone(), module_path: module_path.clone() },
         S::Unite { identity, name, variants, payloads, .. } => {
             let mut projected = Vec::with_capacity(variants.len());
@@ -586,7 +667,7 @@ mod tests {
         let arr = NyarType::Array(Box::new(element.clone()));
         assert_eq!(
             abi_schema_for_type(&arr),
-            WasmAbiType::Array { element: Box::new(WasmAbiType::I64), ops: array_ops_export_names(&element) }
+            WasmAbiType::Array { element: Box::new(WasmAbiType::I64), ops: array_ops_export_names(&element), container: None }
         );
     }
 
@@ -710,7 +791,7 @@ mod tests {
 
     #[test]
     fn serde_roundtrip_array() {
-        let schema = WasmAbiType::Array { element: Box::new(WasmAbiType::I64), ops: array_ops_export_names(&nyar("i64")) };
+        let schema = WasmAbiType::Array { element: Box::new(WasmAbiType::I64), ops: array_ops_export_names(&nyar("i64")), container: None };
         let json = serde_json::to_string(&schema).unwrap();
         let back: WasmAbiType = serde_json::from_str(&json).unwrap();
         assert_eq!(back, schema);

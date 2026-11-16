@@ -95,6 +95,14 @@ pub struct AggregateLayoutPlan {
     pub declaration_to_layout: BTreeMap<crate::ItemId, LayoutId>,
     /// 按 declaration 登记的 value 存储结构；禁止靠短名判断 `MirStorageKind::Value`。
     pub value_type_declarations: BTreeSet<crate::ItemId>,
+    /// 声明携带 `[host_projection]` 的聚合声明身份；实例布局登记按声明身份继承该授权。
+    /// 这是声明式事实：目标层只据此决定「该类型在跨 ABI 位置投影为宿主序列」，
+    /// 绝不反向按字段形状授予序列性。
+    pub host_projection_declarations: BTreeSet<crate::ItemId>,
+    /// 已声明宿主序列的类型所对应的冻结布局身份集合（声明本体与全部闭合实例）。
+    /// 目标层据此把 `Reference` 存储聚合投影为序列视图；不在集合内的布局维持
+    /// 既有存储语义，形状只用于在已声明类型内部定位 items/length 槽位。
+    pub host_sequence_projections: BTreeSet<LayoutId>,
 }
 
 /// Sum type variant layout for nominal lowering.

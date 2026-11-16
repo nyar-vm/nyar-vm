@@ -391,6 +391,9 @@ function marshalLibraryArg(schema, value, path) {{
         return boxNew(marshalLibraryArg(schema.inner, value, path));
     }}
 
+    // ── Array / 声明级序列视图：JS 数组 → VM 物理数组，必要时再逐层装配成容器 ──
+    // 构造只走 wasm 导出（`array.new_default` / `array.set` / `struct.new`
+    // 包装），宿主不复刻布局；schema 里的 ops/container 合同是唯一调度依据。
     if (kind === "Array") {{
         if (!Array.isArray(value)) {{
             throw new Error(
@@ -409,7 +412,37 @@ function marshalLibraryArg(schema, value, path) {{
         for (let i = 0; i < value.length; i++) {{
             set(items, i, marshalLibraryArg(schema.element, value[i], `${{path}}[${{i}}]`));
         }}
-        return items;
+        if (!schema.container) return items;
+        const seq = schema.container;
+        const levels = seq.levels;
+        if (!Array.isArray(levels) || levels.length === 0) {{
+            throw new Error(
+                `[wasm-js-glue]${{describePath(path)}}: Cannot marshal ${{kind}}: container schema carries no construction levels. Schema: ${{JSON.stringify(schema)}}`
+            );
+        }}
+        const lengthArg = marshalLibraryArg(
+            seq.length_type,
+            abiKind(seq.length_type) === "I64" ? BigInt(value.length) : value.length,
+            `${{path}}.length`
+        );
+        let built = items;
+        for (let level = levels.length - 1; level >= 0; level--) {{
+            const node = levels[level];
+            const ctorArgs = new Array(node.field_count).fill(null);
+            if (node.items_slot != null) ctorArgs[node.items_slot] = items;
+            if (node.length_slot != null) ctorArgs[node.length_slot] = lengthArg;
+            if (node.inner_slot != null) ctorArgs[node.inner_slot] = built;
+            for (let slot = 0; slot < node.field_count; slot++) {{
+                if (ctorArgs[slot] == null) {{
+                    throw new Error(
+                        `[wasm-js-glue]${{describePath(path)}}: Cannot marshal ${{kind}}: container level ${{level}} slot ${{slot}} has no construction contract. Schema: ${{JSON.stringify(schema)}}`
+                    );
+                }}
+            }}
+            const constructor = bridgeExport(node.constructor, "container constructor", path);
+            built = constructor(...ctorArgs);
+        }}
+        return built;
     }}
 
     // ── InstanceHandle：不透明实例句柄原样透传 ─────────────────────────────
@@ -526,6 +559,9 @@ function demarshalLibraryReturn(schema, raw, path) {{
         return demarshalLibraryReturn(schema.inner, boxGet(raw), path);
     }}
 
+    // ── Array / 声明级序列视图：物理数组 → JS 数组；容器先按声明层级读回 ──
+    // 序列容器只经 schema 声明的 accessor/ops 读取，按冻结布局事实逐层定位
+    // backing array 与计数；不按类型名识别容器。
     if (kind === "Array") {{
         if (raw == null) {{
             throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot demarshal ${{kind}}: wasm returned a null reference`);
@@ -535,6 +571,52 @@ function demarshalLibraryReturn(schema, raw, path) {{
             throw new Error(
                 `[wasm-js-glue]${{describePath(path)}}: Cannot demarshal ${{kind}}: ABI schema has no physical array ops contract. Schema: ${{JSON.stringify(schema)}}`
             );
+        }}
+        if (schema.container) {{
+            const seq = schema.container;
+            const levels = seq.levels;
+            if (!Array.isArray(levels) || levels.length === 0) {{
+                throw new Error(
+                    `[wasm-js-glue]${{describePath(path)}}: Cannot demarshal ${{kind}}: container schema carries no construction levels. Schema: ${{JSON.stringify(schema)}}`
+                );
+            }}
+            const root = levels[0];
+            if (root.length_slot == null || !Array.isArray(root.accessors) || typeof root.accessors[root.length_slot] !== "string") {{
+                throw new Error(
+                    `[wasm-js-glue]${{describePath(path)}}: Cannot demarshal ${{kind}}: container root carries no length accessor contract. Schema: ${{JSON.stringify(schema)}}`
+                );
+            }}
+            const readLength = bridgeExport(root.accessors[root.length_slot], "container length accessor", path);
+            const length = Number(demarshalLibraryReturn(seq.length_type, readLength(raw), `${{path}}.length`));
+            let cursor = raw;
+            let items = null;
+            for (const node of levels) {{
+                if (!Array.isArray(node.accessors)) break;
+                if (node.items_slot != null) {{
+                    if (typeof node.accessors[node.items_slot] !== "string") {{
+                        throw new Error(
+                            `[wasm-js-glue]${{describePath(path)}}: Cannot demarshal ${{kind}}: container leaf carries no items accessor contract. Schema: ${{JSON.stringify(schema)}}`
+                        );
+                    }}
+                    items = bridgeExport(node.accessors[node.items_slot], "container items accessor", path)(cursor);
+                    break;
+                }}
+                if (node.inner_slot == null || typeof node.accessors[node.inner_slot] !== "string") {{
+                    throw new Error(
+                        `[wasm-js-glue]${{describePath(path)}}: Cannot demarshal ${{kind}}: container level carries no nested storage accessor. Schema: ${{JSON.stringify(schema)}}`
+                    );
+                }}
+                cursor = bridgeExport(node.accessors[node.inner_slot], "container inner accessor", path)(cursor);
+            }}
+            if (items == null) {{
+                throw new Error(`[wasm-js-glue]${{describePath(path)}}: Cannot demarshal ${{kind}}: container backing array is a null reference`);
+            }}
+            const get = bridgeExport(ops.get, "array.get", path);
+            const output = new Array(length);
+            for (let i = 0; i < length; i++) {{
+                output[i] = demarshalLibraryReturn(schema.element, get(items, i), `${{path}}[${{i}}]`);
+            }}
+            return output;
         }}
         const length = Number(bridgeExport(ops.length, "array.len", path)(raw));
         const get = bridgeExport(ops.get, "array.get", path);

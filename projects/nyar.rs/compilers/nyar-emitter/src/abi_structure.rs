@@ -72,6 +72,12 @@ pub enum AbiStructure {
     },
     /// 具名 / 泛型聚合（值存储）。
     Aggregate(AggregateStructure),
+    /// `[host_projection]` 声明授权的聚合宿主序列投影。
+    ///
+    /// 序列性只由声明授予：本变体仅当冻结布局计划把该布局登记进
+    /// `host_sequence_projections` 时产生；形状只用于在已声明类型内部
+    /// 定位 backing array 与计数槽位。
+    Sequence(SequenceStructure),
     /// 引用存储名义实例的共享身份（不是字段快照）。
     InstanceHandle {
         /// 冻结布局身份。
@@ -135,6 +141,44 @@ pub struct AbiVariant {
     pub name: String,
     /// 判别 tag。
     pub tag: u32,
+}
+
+/// 宿主序列投影的共享结构事实。
+///
+/// `levels` 是从声明根聚合到 backing array 叶子层的逐层构造路径：每层携带
+/// 自己的冻结布局身份与槽位事实，构造与读回都只经这些身份定位，不按字段名
+/// 或类型名匹配。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SequenceStructure {
+    /// 根容器冻结布局身份。
+    pub layout: LayoutId,
+    /// 容器简单名。
+    pub name: String,
+    /// 容器完整命名空间路径。
+    pub module_path: String,
+    /// 根→叶的构造/读回层级。
+    pub levels: Vec<SequenceLevel>,
+    /// backing array 元素结构。
+    pub element: Box<AbiStructure>,
+    /// 元素类型 canonical 拼写：数组物理名字的稳定身份种子。
+    pub element_key: String,
+    /// 根层计数字段结构。
+    pub length_ty: Box<AbiStructure>,
+}
+
+/// 宿主序列投影中单个聚合层的构造槽位事实。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SequenceLevel {
+    /// 本层聚合的冻结布局身份。
+    pub layout: LayoutId,
+    /// 本层字段总数（构造参数目）。
+    pub field_count: usize,
+    /// backing array 字段槽位（仅叶子层有）。
+    pub items_slot: Option<usize>,
+    /// 整数计数字段槽位（本层存在唯一整数字段时有）。
+    pub length_slot: Option<usize>,
+    /// 嵌套存储聚合字段槽位（仅非叶子层有）。
+    pub inner_slot: Option<usize>,
 }
 
 impl AbiStructure {
@@ -317,6 +361,16 @@ fn aggregate_structure(
     else {
         return AbiStructure::Unsupported { reason: format!("layout `{layout_id}` 未注册，无法派生字段访问合同") };
     };
+    // `[host_projection]` 声明授权宿主序列投影：只按冻结投影集合触发，
+    // 形状仅在已声明类型内部定位 backing array 与计数槽位。声明是授权不是
+    // 强制：布局事实不完整（如文本编码实例缺登记）时回退既有存储语义，
+    // 构建与句柄合同保持原状，绝不因投影缺事实打断整条交付。
+    if layouts.host_sequence_projections.contains(&layout_id) {
+        let projection = host_sequence_projection(aggregate, name.clone(), module_path.clone(), layouts, layout_by_type, sums);
+        if !matches!(projection, AbiStructure::Unsupported { .. }) {
+            return projection;
+        }
+    }
     // 引用存储名义实例是共享身份，不是字段快照：宿主必须拿到同一
     // 引用，按字段复制会让 `mut self` 方法改在副本上。
     if aggregate.storage == StorageKind::Reference {
@@ -340,6 +394,104 @@ fn aggregate_structure(
 /// 只由类型结构决定，不看模块名或题目形状。
 pub fn canonical_type_spelling(ty: &NyarType) -> String {
     format!("{ty:?}")
+}
+
+/// 布局字段是否为整数计数字段候选。
+fn is_integer_layout_type(ty: &NyarType) -> bool {
+    matches!(ty, NyarType::Integer8 { .. } | NyarType::Integer16 { .. } | NyarType::Integer32 { .. } | NyarType::Integer64 { .. })
+}
+
+/// 字段类型解析出的布局身份（名义字段自带；`Apply` 走 canonical 冻结索引）。
+fn field_layout_id(ty: &NyarType, layout_by_type: &BTreeMap<NyarType, LayoutId>) -> Option<LayoutId> {
+    match ty {
+        NyarType::Nominal { layout, .. } => Some(*layout),
+        other => layout_by_type.get(other).copied(),
+    }
+}
+
+/// 嵌套存储层的构造/读回路径深度上限；超出即声明有误，失败闭合。
+const HOST_PROJECTION_MAX_DEPTH: usize = 8;
+
+/// 为已声明 `[host_projection]` 的聚合构造宿主序列投影。
+///
+/// 下降规则：每层先按布局事实定位唯一的 backing array 槽位（`NyarType::Array`）
+/// 与唯一的整数计数槽位；本层没有数组时，沿唯一携带布局身份的名义字段下降一层。
+/// 任何歧义（数组/计数字段多于一个、名义存储字段多于一个、路径成环、深度超限、
+/// 根层无计数字段）都结构化失败——声明只授权「这是一个宿主序列」，槽位定位仍
+/// 必须得到唯一答案，禁止猜。
+fn host_sequence_projection(
+    root: &nyar_types::AggregateLayout,
+    name: String,
+    module_path: String,
+    layouts: &AggregateLayoutPlan,
+    layout_by_type: &BTreeMap<NyarType, LayoutId>,
+    sums: &BTreeMap<NyarType, SumTypeLayout>,
+) -> AbiStructure {
+    let unsupported = |reason: String| AbiStructure::Unsupported { reason: format!("宿主序列投影 `{name}` 失败闭合：{reason}") };
+    let mut levels: Vec<SequenceLevel> = Vec::new();
+    let mut visited = std::collections::BTreeSet::new();
+    let mut current = root;
+    loop {
+        if !visited.insert(current.id) {
+            return unsupported("嵌套存储路径成环，没有唯一的 backing array 路径".to_string());
+        }
+        if levels.len() >= HOST_PROJECTION_MAX_DEPTH {
+            return unsupported(format!("嵌套存储深度超过上限 {HOST_PROJECTION_MAX_DEPTH}"));
+        }
+        let items_slots: Vec<usize> = current.fields.iter().enumerate().filter(|(_, field)| matches!(field.ty, NyarType::Array(_))).map(|(index, _)| index).collect();
+        if items_slots.len() > 1 {
+            return unsupported("同一层存在多个数组字段，无法唯一确定 backing array".to_string());
+        }
+        let length_slots: Vec<usize> = current.fields.iter().enumerate().filter(|(_, field)| is_integer_layout_type(&field.ty)).map(|(index, _)| index).collect();
+        if length_slots.len() > 1 {
+            return unsupported("同一层存在多个整数字段，无法唯一确定计数槽位".to_string());
+        }
+        let length_slot = length_slots.first().copied();
+        if let Some(items_slot) = items_slots.first().copied() {
+            // 叶子层：backing array 就在本层。
+            levels.push(SequenceLevel { layout: current.id, field_count: current.fields.len(), items_slot: Some(items_slot), length_slot, inner_slot: None });
+            let NyarType::Array(element) = &current.fields[items_slot].ty else {
+                return unsupported("叶子层 backing array 字段事实缺失".to_string());
+            };
+            let element_structure = abi_structure_for_type_with_layouts(element, layouts, layout_by_type, sums);
+            if let Some(reason) = element_structure.unsupported_reason() {
+                return unsupported(format!("元素类型没有 ABI 合同: {reason}"));
+            }
+            let Some(root_length_slot) = levels[0].length_slot else {
+                return unsupported("根层没有整数计数字段，无法读回长度".to_string());
+            };
+            let length_ty_structure = abi_structure_for_type_with_layouts(&root.fields[root_length_slot].ty, layouts, layout_by_type, sums);
+            if let Some(reason) = length_ty_structure.unsupported_reason() {
+                return unsupported(format!("计数字段没有 ABI 合同: {reason}"));
+            }
+            return AbiStructure::Sequence(SequenceStructure {
+                layout: root.id,
+                name,
+                module_path,
+                levels,
+                element: Box::new(element_structure),
+                element_key: canonical_type_spelling(element),
+                length_ty: Box::new(length_ty_structure),
+            });
+        }
+        // 非叶子层：沿唯一携带布局身份的名义字段下降。
+        let inner_slots: Vec<(usize, LayoutId)> = current
+            .fields
+            .iter()
+            .enumerate()
+            .filter_map(|(index, field)| field_layout_id(&field.ty, layout_by_type).map(|id| (index, id)))
+            .collect();
+        if inner_slots.len() != 1 {
+            let spellings = current.fields.iter().map(|field| format!("{}: {:?}", field.name, field.ty)).collect::<Vec<_>>().join(" | ");
+            return unsupported(format!("层 `{}` 既无 backing array，也没有可唯一定位的嵌套存储字段（字段：{spellings}）", current.id));
+        }
+        let (inner_slot, inner_layout) = inner_slots[0];
+        levels.push(SequenceLevel { layout: current.id, field_count: current.fields.len(), items_slot: None, length_slot, inner_slot: Some(inner_slot) });
+        let Some(next) = layouts.layouts.iter().find(|item| item.id == inner_layout) else {
+            return unsupported(format!("嵌套存储字段的布局 `{inner_layout}` 未注册"));
+        };
+        current = next;
+    }
 }
 
 /// sum 身份事实：类型名、是否 unite、全部变体名与判别 tag。

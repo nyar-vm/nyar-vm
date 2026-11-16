@@ -218,6 +218,23 @@ impl Projection<'_> {
                 OvmAbiType::Tuple { fields: fields.iter().map(|field| self.project(field, TextSlot::Nested)).collect::<Result<Vec<_>>>()? }
             }
             AbiStructure::Aggregate(aggregate) => self.project_aggregate(aggregate)?,
+            AbiStructure::Sequence(sequence) => {
+                // OVM lane 目前不消费宿主序列构造合同：声明级 `[host_projection]`
+                // 授权不改变 OVM 的实例身份语义，这里按引用实例句柄维持既有投影，
+                // 与同布局未投影时的行为逐字一致，绝不按字段重建实例。
+                let aggregate = self
+                    .plan
+                    .aggregate_layouts()
+                    .layouts
+                    .iter()
+                    .find(|item| item.id == sequence.layout)
+                    .ok_or_else(|| format!("layout `{}` 未注册，无法投影序列声明 `{}`", sequence.layout, sequence.name))?;
+                OvmAbiType::InstanceHandle {
+                    layout: layout_index(sequence.layout, aggregate.fields.len(), self.module_layouts, self.layout_indices)?,
+                    name: sequence.name.clone(),
+                    module_path: sequence.module_path.clone(),
+                }
+            }
             AbiStructure::InstanceHandle { layout, name, module_path } => {
                 let aggregate = self
                     .plan

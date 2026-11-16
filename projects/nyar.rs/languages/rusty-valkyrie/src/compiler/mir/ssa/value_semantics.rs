@@ -190,6 +190,28 @@ fn variant_record_as_struct(namespace: &[Identifier], hir_enum: &HirEnum, varian
     }
 }
 
+/// 声明是否携带 `[host_projection]` 类型级属性：宿主序列投影的声明式授权。
+///
+/// 序列性只由声明授予，绝不按字段形状反推；目标层消费的是这一份冻结事实。
+fn has_host_projection(structure: &HirStruct) -> bool {
+    structure.annotations.iter().any(|attribute| attribute.name.parts().first().is_some_and(|id| id.as_str() == "host_projection"))
+}
+
+/// 声明携带 `[host_projection]` 时，把其**实际登记**的布局身份绑定为宿主序列投影。
+///
+/// 以 `declaration_to_layout` 为准，登记顺序导致重复声明被丢弃时不会留下悬空投影。
+fn bind_host_projection_layout(plan: &mut AggregateLayoutPlan, structure: &HirStruct) {
+    if !has_host_projection(structure) {
+        return;
+    }
+    let Some(declaration) = structure.constructor_declaration else {
+        return;
+    };
+    if let Some(layout_id) = plan.declaration_to_layout.get(&declaration).copied() {
+        plan.host_sequence_projections.insert(layout_id);
+    }
+}
+
 /// 从 HIR 收集聚合布局计划：结构体、导入结构体与 singleton 载体。
 ///
 /// 字段无法解析为平台布局形状时（缺声明拼写、含未代入 `Self`/泛型）不再 panic：
@@ -228,6 +250,11 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
     for hir_struct in structs.iter().copied().chain(imported_structs).chain(singleton_structs.iter()) {
         if let Some(declaration) = hir_struct.constructor_declaration {
             declaration_spellings.insert(declaration, declaration_spelling(hir_struct));
+            // `[host_projection]` 是声明属性：闭合泛型实例的布局登记在 canonical
+            // 阶段按声明身份继承该授权，这里先冻结声明级事实。
+            if has_host_projection(hir_struct) {
+                plan.host_projection_declarations.insert(declaration);
+            }
         }
     }
     // sum 声明（enum/unite）也是名义字段的合法载体：变体记录可以嵌套另一个 sum 字段，
@@ -286,6 +313,7 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
             Ok(layout) => {
                 registered.push((hir_struct, storage));
                 register_declared_layout(&mut plan, hir_struct, layout);
+                bind_host_projection_layout(&mut plan, hir_struct);
             }
             Err(reason) => diagnostics.push(unresolved_layout_diagnostic(hir_struct, &reason)),
         }
@@ -314,6 +342,7 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
                 Ok(layout) => {
                     registered.push((hir_struct, storage));
                     register_declared_layout(&mut plan, hir_struct, layout);
+                    bind_host_projection_layout(&mut plan, hir_struct);
                 }
                 Err(reason) => diagnostics.push(unresolved_layout_diagnostic(hir_struct, &reason)),
             }
@@ -444,6 +473,12 @@ pub fn instance_layout_for_type(
     }
     let id = next_layout_id(plan);
     plan.layouts.push(AggregateLayout { id, name: structure.name.clone(), namespace: structure.namespace.clone(), key: None, storage, fields });
+    // 闭合实例继承声明级 `[host_projection]` 授权：投影集合按实例布局身份登记。
+    if let Some(declaration) = structure.declaration
+        && plan.host_projection_declarations.contains(&declaration)
+    {
+        plan.host_sequence_projections.insert(id);
+    }
     Some(InstanceLayout { id, field_types })
 }
 
