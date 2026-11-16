@@ -5,7 +5,7 @@
 use nyar::Identifier;
 use nyar_emitter::{
     FragmentSubmission, TargetExecutionPlan,
-    contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef},
+    contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, Value, ValueOrigin, ValueRef},
     testing::lower_fragment_to_wasm_mir_module,
 };
 use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldLayout, LayoutId, NyarType, StorageKind};
@@ -43,6 +43,50 @@ fn lower(function: ExecutableFunction, layouts: Option<AggregateLayoutPlan>) -> 
         plan.testing_aggregate_layouts(layouts);
     }
     lower_fragment_to_wasm_mir_module(&FragmentSubmission::from_backend_plan(plan), "main")
+}
+
+/// fail-closed：WASI 进程入口形参是冻结合同——只接受「空」或「单个首位动态
+/// `[utf8]` argv」。标量形参、argv 不在首位或携带额外形参等形状缺参数来源事实，
+/// 写出前必须结构化拒绝，禁止按形状认 argv 或补默认值。
+#[test]
+fn wasi_rejects_entry_parameter_shapes_that_are_not_declared_argv() {
+    let entry_with_params = |params: Vec<NyarType>| {
+        let value_types: BTreeMap<ValueRef, NyarType> =
+            params.iter().enumerate().map(|(index, ty)| (ValueRef(index as u32), ty.clone())).collect();
+        let parameters: Vec<ValueRef> = (0..params.len() as u32).map(ValueRef).collect();
+        let values: Vec<Value> = params
+            .iter()
+            .enumerate()
+            .map(|(index, _)| Value { id: ValueRef(index as u32), origin: ValueOrigin::Parameter { index, name: format!("p{index}") } })
+            .collect();
+        ExecutableFunction {
+            symbol: "main".to_string(),
+            return_type: NyarType::Unit,
+            param_types: params,
+            value_types,
+            value_layouts: BTreeMap::new(),
+            return_layout: None,
+            entry: BlockRef(0),
+            values,
+            blocks: vec![Block {
+                id: BlockRef(0),
+                label: "entry".to_string(),
+                parameters,
+                instructions: Vec::new(),
+                terminator: Terminator::Return { value: None },
+            }],
+        }
+    };
+    let argv_array = NyarType::Array(Box::new(NyarType::Utf8));
+    for (label, params) in [("标量形参", vec![I32]), ("argv 不在首位且携带额外形参", vec![I32, argv_array])] {
+        let main_name = nyar::QualifiedName::new(vec![Identifier::new("main")]);
+        let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), entry_with_params(params))]));
+        plan.testing_module_name("wasi_entry_contract").testing_entry_operation(main_name);
+        let submission = FragmentSubmission::from_backend_plan(plan);
+        let error = nyar_emitter::testing::lower_fragment_to_wasm_module(&submission, nyar::HostProjectionBoundary::WasiComponent)
+            .expect_err(&format!("{label}：非法 WASI 入口合同必须结构化拒绝"));
+        assert!(error.contains("进程入口合同非法"), "{label}: {error}");
+    }
 }
 
 /// fail-closed：非空值聚合的 `AggregateCopy` 缺地址槽时不能静默跳过

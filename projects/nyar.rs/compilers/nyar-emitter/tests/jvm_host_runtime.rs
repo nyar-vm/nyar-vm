@@ -17,6 +17,16 @@ fn java_available() -> bool {
 }
 
 #[test]
+fn rejects_dangling_frozen_launcher_before_writing() {
+    let output_dir = tempdir().expect("temp dir");
+    let mut input = demo_jvm_backend_input(output_dir.path());
+    input.entry_launcher = Some("nyar/invoke/ghost".to_string());
+    let backend = JvmBinaryBackend::new();
+    let error = backend.validate(&input).expect_err("manifest 指向不存在的 launcher 必须拒绝，不得扫描补造");
+    assert!(error.to_string().contains("不在主类或 companion 类中"), "{error}");
+}
+
+#[test]
 fn emits_runnable_jar_verified_by_host_java() {
     if !java_available() {
         eprintln!("skip jvm host runtime: java not on PATH");
@@ -38,7 +48,9 @@ fn emits_runnable_jar_verified_by_host_java() {
 
     let jar_bytes = std::fs::read(&jar_path).expect("read jar");
     let package = JvmJarPackage::from_bytes("demo.jar", &jar_bytes).expect("decode jar");
-    assert_eq!(package.main_class.as_deref(), Some("demo.Main"));
+    // `Main-Class` 只能指向 lowering 冻结的入口 launcher，不再是扫描补造的模块类。
+    assert_eq!(package.main_class.as_deref(), Some("nyar.invoke.main"));
+    package.read_class("nyar/invoke/main").expect("read class").expect("frozen launcher class present");
     let main_class = package.read_class("demo/Main").expect("read class").expect("demo/Main present");
     let main_index = main_class.methods.iter().position(|method| method.name == "main").expect("main method");
     let code = main_class.raw_method_code.get(main_index).and_then(|code| code.as_ref()).expect("main code");

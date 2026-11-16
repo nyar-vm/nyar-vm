@@ -113,6 +113,7 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter {
             request.host_boundary,
             request.output_dir,
             request.host_flavor,
+            request.artifact_purpose,
             request.wasm_package_kind,
         )
     }

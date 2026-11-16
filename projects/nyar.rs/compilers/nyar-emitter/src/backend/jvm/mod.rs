@@ -16,14 +16,11 @@ use nyar::{
 
 pub use crate::transitional::binary::{
     class::{
-        ConstantPoolBuilder, JvmClassError, JvmClassFile, JvmCodeBody, JvmFieldSignature, JvmInstruction, JvmMethodDescriptor, JvmMethodRef,
-        JvmMethodSignature, JvmTypeDescriptor, decode_instructions, encode_instructions,
+        ConstantPoolBuilder, JvmClassError, JvmClassFile, JvmCodeBody, JvmFieldRef, JvmFieldSignature, JvmInstruction, JvmMethodDescriptor,
+        JvmMethodRef, JvmMethodSignature, JvmTypeDescriptor, decode_instructions, encode_instructions,
     },
     jar::{JvmJarEntry, JvmJarError, JvmJarPackage},
 };
-
-const JVM_ACC_PUBLIC: u16 = 0x0001;
-const JVM_ACC_STATIC: u16 = 0x0008;
 
 /// `JVM` 二进制后端输入。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,19 +76,22 @@ impl JvmBinaryBackend {
         if input.class_file.methods.is_empty() {
             return Err(format!("JVM 后端至少需要一个方法"));
         }
+        // manifest 与运行合同消费的冻结 launcher 必须真实存在于镜像内，
+        // 禁止指向不存在的类再靠扫描补造。
+        if let Some(launcher) = &input.entry_launcher {
+            let present = input.class_file.internal_name == launcher.as_str()
+                || input.companion_classes.iter().any(|class| class.internal_name == *launcher);
+            if !present {
+                return Err(format!("JVM 冻结入口 launcher 类 `{launcher}` 不在主类或 companion 类中"));
+            }
+        }
         Ok(())
     }
 
     fn compile_artifact(&self, input: JvmBinaryBackendInput, options: &CompilationOptions) -> Result<ArtifactSet> {
         std::fs::create_dir_all(&input.output_dir).map_err(|e| format!("创建输出目录失败：{}: {e}", input.output_dir.display()))?;
 
-        let mut class_file = input.class_file;
-        // 镜像入口属性只从冻结的入口事实派生：有 managed ABI 时由 launcher 类承担
-        // argv 编组，不再往模块类里合成忽略 argv 的 `main(String[])`。
-        if input.managed_abi.is_none() {
-            ensure_java_launcher_entry(&mut class_file);
-        }
-
+        let class_file = input.class_file;
         let class_bytes = class_file.to_bytes().map_err(|error| format!("JVM class 编码失败：{error}"))?;
 
         if input.emit_class_file {
@@ -115,15 +115,10 @@ impl JvmBinaryBackend {
 
         let jar_path = input.output_dir.join(format!("{}.jar", options.artifact_name));
         let mut package = JvmJarPackage::new(format!("{}.jar", options.artifact_name));
-        // `Main-Class` 是镜像属性，只能指向已冻结的入口载体：
-        // - 单个导出入口 → 该入口的 launcher 类（唯一能正确编组 argv 的入口）；
-        // - 多个导出入口 → 没有唯一默认入口，jar 作为库产物，不伪造 `Main-Class`；
-        // - 无导出入口 → 模块类（此时由 `ensure_java_launcher_entry` 提供零参包装）。
-        package.main_class = match &input.managed_abi {
-            Some(abi) if abi.entries.len() == 1 => Some(internal_name_to_binary_name(&abi.entries[0].launcher_class)),
-            Some(_) => None,
-            None => Some(internal_name_to_binary_name(&class_file.internal_name)),
-        };
+        // `Main-Class` 是镜像属性，只能指向 lowering 冻结的程序入口 launcher；
+        // 导出面不伪造入口（入口与导出是两个独立事实）。没有冻结入口的 jar
+        // 不写 `Main-Class`，由宿主按 managed ABI 或装载合同消费。
+        package.main_class = input.entry_launcher.as_ref().map(|launcher| internal_name_to_binary_name(launcher));
         package.push_class(&class_file).map_err(|error| format!("JAR 打包失败：{error}"))?;
         for companion in &input.companion_classes {
             package.push_class(companion).map_err(|error| format!("JAR 打包 singleton 类失败：{error}"))?;
@@ -174,37 +169,4 @@ impl TargetCodeGenBackend for JvmBinaryBackend {
 /// 将 `JVM` 内部类名转换为 Java 二进制类名。
 pub fn internal_name_to_binary_name(internal_name: &str) -> String {
     internal_name.trim_end_matches(".class").replace('/', ".")
-}
-
-fn ensure_java_launcher_entry(class_file: &mut JvmClassFile) {
-    let launcher_descriptor = JvmMethodDescriptor::new(
-        vec![JvmTypeDescriptor::array(JvmTypeDescriptor::Object("java/lang/String".to_string()))],
-        JvmTypeDescriptor::Void,
-    );
-    if class_file.methods.iter().any(|method| method.name == "main" && method.descriptor == launcher_descriptor) {
-        return;
-    }
-
-    let Some(entry_method) =
-        class_file.methods.iter().find(|method| method.name == "main" && method.descriptor.parameter_types.is_empty()).cloned()
-    else {
-        return;
-    };
-
-    let mut instructions = vec![JvmInstruction::InvokeStatic(JvmMethodRef {
-        owner: class_file.internal_name.clone(),
-        name: entry_method.name.clone(),
-        descriptor: entry_method.descriptor.clone(),
-    })];
-    if entry_method.descriptor.return_type != JvmTypeDescriptor::Void {
-        instructions.push(JvmInstruction::Pop);
-    }
-    instructions.push(JvmInstruction::Return);
-
-    class_file.methods.push(JvmMethodSignature {
-        name: "main".to_string(),
-        descriptor: launcher_descriptor,
-        access_flags: JVM_ACC_PUBLIC | JVM_ACC_STATIC,
-        code: Some(JvmCodeBody { max_stack: 1, max_locals: 1, instructions }),
-    });
 }

@@ -38,6 +38,11 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
         }
         let entry_launcher = input.entry_launcher.clone();
         let provided_contracts = std::mem::take(&mut input.run_contracts);
+        // 可执行产物必须消费 lowering 冻结的入口 launcher；入口无法包装为
+        // argv launcher 时明确失败，禁止后端按方法名扫描补造第二入口权威。
+        if request.purpose == nyar::ArtifactPurpose::Application && entry_launcher.is_none() && provided_contracts.is_empty() {
+            return Err("`Application` 的 `jvm` 产物缺少冻结入口 launcher：程序入口无法编组 argv，拒绝产出可执行 jar".to_string());
+        }
         let mut managed_abi = input.managed_abi.take();
         if let Some(contract) = managed_abi.as_mut() {
             // 产物文件名由驱动层决定；契约摘要必须覆盖最终文件名。
@@ -64,10 +69,19 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
                 Some(_) => {}
             }
         }
-        // 库产物没有零参 `main` 时 `JvmBinaryBackend` 不补造 launcher；此时每个
-        // managed ABI 入口各自持有可执行的 argv launcher 类与 run contract。
+        // 运行合同与 JAR manifest 消费同一个冻结入口 launcher；没有程序入口的
+        // 库产物由每个 managed ABI 入口各自持有可执行的 argv launcher 与 run contract。
         let run_contracts = if !provided_contracts.is_empty() {
             provided_contracts
+        }
+        else if let Some(launcher) = &entry_launcher {
+            // 入口身份来自 lowering 冻结的计划；launcher 是明确的 argv 分发类。
+            vec![DriverRunContract {
+                logical_entry: "main".to_string(),
+                physical_entry: format!("{}.jar", request.artifact_name),
+                invocation: "java".to_string(),
+                validate: format!("java -cp {}.jar {}", request.artifact_name, launcher.replace('/', ".")),
+            }]
         }
         else if let Some(contract) = &managed_abi {
             contract
@@ -80,15 +94,6 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
                     validate: format!("java -cp {}.jar {}", request.artifact_name, entry.launcher_class.replace('/', ".")),
                 })
                 .collect()
-        }
-        else if let Some(launcher) = &entry_launcher {
-            // 入口身份来自 lowering 冻结的计划；launcher 是明确的 argv 分发类。
-            vec![DriverRunContract {
-                logical_entry: "main".to_string(),
-                physical_entry: format!("{}.jar", request.artifact_name),
-                invocation: "java".to_string(),
-                validate: format!("java -cp {}.jar {}", request.artifact_name, launcher.replace('/', ".")),
-            }]
         }
         else {
             Vec::new()

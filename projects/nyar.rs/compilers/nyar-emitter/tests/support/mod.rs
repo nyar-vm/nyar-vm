@@ -6,7 +6,9 @@ use nyar::{
 };
 use nyar_emitter::{
     LoweredBackendInput,
-    nyar_backend_jvm::{JvmClassFile, JvmCodeBody, JvmInstruction, JvmMethodDescriptor, JvmMethodSignature, JvmTypeDescriptor},
+    nyar_backend_jvm::{
+        JvmClassFile, JvmCodeBody, JvmFieldRef, JvmInstruction, JvmMethodDescriptor, JvmMethodRef, JvmMethodSignature, JvmTypeDescriptor,
+    },
     nyar_backend_wasi::WasmBinaryModule,
 };
 
@@ -191,13 +193,46 @@ pub fn demo_jvm_backend_input(output_dir: &Path) -> nyar_emitter::nyar_backend_j
         access_flags: 0x0001 | 0x0008,
         code: Some(JvmCodeBody { max_stack: 1, max_locals: 0, instructions: vec![JvmInstruction::IConst(1), JvmInstruction::IReturn] }),
     });
+    // 冻结入口 launcher 夹具：与 lowering 的 `build_managed_launcher_class` 同形，
+    // manifest、运行合同与镜像消费同一个 argv 分发类。
+    let mut launcher = JvmClassFile::new("nyar/invoke/main");
+    launcher.methods.push(JvmMethodSignature {
+        name: "main".to_string(),
+        descriptor: JvmMethodDescriptor::new(
+            vec![JvmTypeDescriptor::array(JvmTypeDescriptor::Object("java/lang/String".to_string()))],
+            JvmTypeDescriptor::Void,
+        ),
+        access_flags: 0x0001 | 0x0008,
+        code: Some(JvmCodeBody {
+            max_stack: 3,
+            max_locals: 1,
+            instructions: vec![
+                JvmInstruction::GetStatic(JvmFieldRef {
+                    owner: "java/lang/System".to_string(),
+                    name: "out".to_string(),
+                    descriptor: JvmTypeDescriptor::Object("java/io/PrintStream".to_string()),
+                }),
+                JvmInstruction::InvokeStatic(JvmMethodRef {
+                    owner: "demo/Main".to_string(),
+                    name: "main".to_string(),
+                    descriptor: JvmMethodDescriptor::new(Vec::new(), JvmTypeDescriptor::Int),
+                }),
+                JvmInstruction::InvokeVirtual(JvmMethodRef {
+                    owner: "java/io/PrintStream".to_string(),
+                    name: "println".to_string(),
+                    descriptor: JvmMethodDescriptor::new(vec![JvmTypeDescriptor::Int], JvmTypeDescriptor::Void),
+                }),
+                JvmInstruction::Return,
+            ],
+        }),
+    });
     nyar_emitter::nyar_backend_jvm::JvmBinaryBackendInput {
         class_file,
         output_dir: output_dir.to_path_buf(),
         emit_class_file: true,
-        companion_classes: Vec::new(),
+        companion_classes: vec![launcher],
         managed_abi: None,
-        entry_launcher: None,
+        entry_launcher: Some("nyar/invoke/main".to_string()),
         run_contracts: Vec::new(),
     }
 }

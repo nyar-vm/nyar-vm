@@ -4,7 +4,7 @@ use crate::{
     EmitterError, Result,
     nyar_backend_wasi::{WasmBinaryBackendInput, WasmBinaryModule},
 };
-use nyar::{HostProjectionBoundary, TargetBackendFamily};
+use nyar::{ArtifactPurpose, HostProjectionBoundary, TargetBackendFamily};
 #[cfg(feature = "ovm-lane")]
 use acorn_odin::OdinModuleData;
 
@@ -118,10 +118,11 @@ pub fn lower_fragment_to_driver_input(
     host_boundary: HostProjectionBoundary,
     output_dir: PathBuf,
     host_flavor: &str,
+    artifact_purpose: ArtifactPurpose,
     wasm_package_kind: crate::nyar_backend_wasi::WasmPackageKind,
 ) -> std::result::Result<DriverBackendInput, crate::FragmentLoweringError> {
     features::semantic_mir_contract::validate_submission(submission).map_err(crate::FragmentLoweringError::SemanticContract)?;
-    build_driver_input(submission, backend_family, host_boundary, output_dir, host_flavor, wasm_package_kind)
+    build_driver_input(submission, backend_family, host_boundary, output_dir, host_flavor, artifact_purpose, wasm_package_kind)
         .map_err(crate::FragmentLoweringError::from)
 }
 
@@ -131,17 +132,18 @@ fn build_driver_input(
     host_boundary: HostProjectionBoundary,
     output_dir: PathBuf,
     host_flavor: &str,
+    artifact_purpose: ArtifactPurpose,
     wasm_package_kind: crate::nyar_backend_wasi::WasmPackageKind,
 ) -> Result<DriverBackendInput> {
     match backend_family {
         TargetBackendFamily::Wasm => {
             let wasi_preview = crate::nyar_backend_wasi::WasiPreview::from_host_flavor(host_flavor);
             let (module, imports) = wasm::lower_fragment_to_wasm_module_for(submission, host_boundary, wasi_preview, wasm_package_kind)?;
-            // WASI component model: `_start` is always nullary (argv is read via
-            // `wasi:cli/environment.get-arguments`), so any WASI partition with an
-            // executable entry should be packaged as a command component.
-            let has_executable_entry = !submission.backend_plan.instances().is_empty();
-            let package_as_wasi_command = host_boundary == HostProjectionBoundary::WasiComponent && has_executable_entry;
+            // WASI command world 由冻结的产物用途决定：只有进程镜像（`Application` /
+            // `TestBundle`）打包为 command component，`Library` 打包为库组件。
+            // 禁止按「是否存在函数实例」猜测 command——库片段同样有函数实例。
+            let package_as_wasi_command = host_boundary == HostProjectionBoundary::WasiComponent
+                && matches!(artifact_purpose, ArtifactPurpose::Application | ArtifactPurpose::TestBundle);
             Ok(DriverBackendInput::Wasm(WasmBinaryBackendInput {
                 module,
                 output_dir,

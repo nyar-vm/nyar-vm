@@ -698,6 +698,7 @@ impl LoweredBackendInput {
         host_boundary: HostProjectionBoundary,
         output_dir: &Path,
         host_flavor: &str,
+        artifact_purpose: nyar::ArtifactPurpose,
         wasm_package_kind: nyar_backend_wasi::WasmPackageKind,
     ) -> Result<Self> {
         validate_backend_input(BackendInputShape::default()).map_err(|error| format!("backend boundary 输入形状不合法: {error:?}"))?;
@@ -713,6 +714,7 @@ impl LoweredBackendInput {
                 host_boundary,
                 output_dir.to_path_buf(),
                 host_flavor,
+                artifact_purpose,
                 wasm_package_kind,
             )
             .map_err(|error| error.to_string())?,

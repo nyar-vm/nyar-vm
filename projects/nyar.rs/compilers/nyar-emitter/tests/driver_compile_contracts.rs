@@ -21,10 +21,8 @@ use nyar_emitter::LoweredBackendInput;
 fn creates_jvm_run_contract_via_bundled_compiler() {
     let output_dir = tempdir().expect("temp dir");
     let options = compilation_options(BinaryTarget::new(TargetFamily::Jvm, BinaryArch::Any, BinaryFlavor::ManagedClr), "demo");
-    let mut backend_input = demo_jvm_backend_input(output_dir.path());
     // 程序入口 launcher 由 lowering 冻结为显式类名；驱动层不扫描方法名。
-    backend_input.entry_launcher = Some("nyar/invoke/main".to_string());
-    let input = nyar_emitter::LoweredBackendInput::jvm(backend_input);
+    let input = nyar_emitter::LoweredBackendInput::jvm(demo_jvm_backend_input(output_dir.path()));
     let report = compile_lowered_backend_input("demo", jvm_requirement(options.target.clone()), input, false, &options, ArtifactPurpose::Application).expect("compile ok");
 
     let contract = report.run_contracts.into_iter().next().expect("missing run contract");
@@ -32,6 +30,20 @@ fn creates_jvm_run_contract_via_bundled_compiler() {
     assert_eq!(contract.invocation, "java");
     assert_eq!(contract.validate, "java -cp demo.jar nyar.invoke.main");
     assert_eq!(contract.logical_entry, "main");
+}
+
+#[test]
+fn jvm_application_without_frozen_launcher_is_rejected() {
+    let output_dir = tempdir().expect("temp dir");
+    let options = compilation_options(BinaryTarget::new(TargetFamily::Jvm, BinaryArch::Any, BinaryFlavor::ManagedClr), "demo");
+    let mut backend_input = demo_jvm_backend_input(output_dir.path());
+    // 入口无法包装为 argv launcher 时不携带冻结身份；驱动必须明确拒绝，
+    // 禁止后端扫描方法名补造第二入口权威。
+    backend_input.entry_launcher = None;
+    let input = nyar_emitter::LoweredBackendInput::jvm(backend_input);
+    let error = compile_lowered_backend_input("demo", jvm_requirement(options.target.clone()), input, false, &options, ArtifactPurpose::Application)
+        .expect_err("Application 缺少冻结入口 launcher 必须拒绝");
+    assert!(error.to_string().contains("缺少冻结入口 launcher"), "{error}");
 }
 
 #[test]

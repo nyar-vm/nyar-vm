@@ -131,7 +131,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         // 导出名不是 `main` 就失去 `callee_import_index` 注册路径。
         collect_wasm_host_imports(submission, !string_literals.is_empty())
     };
-    // WASI 宿主负责提供进程 argv：入口声明 `[utf8]`（字符串数组）形参时，
+    // WASI 宿主负责提供进程 argv：入口声明单个首位动态 `[utf8]` argv 形参时，
     // 入口包装体必须从 `wasi:cli/environment#get-arguments` 取值。该导入属于
     // 宿主边界本身，不由用户源码显式声明——否则 argv 形参永远只会拿到空数组。
     if wasi_mode && wasi_entry_declares_argv(submission) {
@@ -583,13 +583,13 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         if let Some((_, _, index)) =
             exports.iter().find(|(name, kind, _)| *name == "_start" && *kind == WasmExternalKind::Func.as_u8()).copied()
         {
-            // Entry may be `[] -> []` / `[] -> i32`, or still carry guest argv as GC array
-            // (e.g. a guest entry taking `[utf8]` and returning unit). WIT `run: func() -> result` and core
-            // `_start` are zero-arg. Synthesize nullary wrappers that push typed defaults
-            // (empty `[utf8]` via `array.new_default`, not `ref.null` -?null traps on
-            // `ref.cast`/`array.len`), call entry, drop any return, then Ok(0) for CLI run.
-            // (Nonzero guest status belongs on `wasi:cli/exit`, not this empty `result`.)
-            // Full argv via `get-arguments` cabi is follow-up; empty argv still exercises help.
+            // WASI 进程入口合同冻结：形参只能是「空」或「单个首位动态 `[utf8]`
+            // argv」。argv 载体来自 `wasi:cli/environment#get-arguments`，由宿主提供。
+            // 其余形状缺参数来源事实，属非法或不支持的入口合同，写出前结构化拒绝：
+            // 禁止按形状在任意位置认 argv、禁止补零/补空数组/补空引用、禁止从物理
+            // anyref 反推。WIT `run: func() -> result` 与 core `_start` 是零参，携带
+            // argv 的入口经无参包装体调用。（非零退出状态属 `wasi:cli/exit`，不在
+            // 这个空 `result` 里。）
             let entry_instance = submission.backend_plan.entry_operation().expect("WASI 入口必须保留 Compiler 实例身份");
             let entry_return = return_types_by_instance.get(&entry_instance).copied();
             let entry_mir_params: Vec<NyarType> = submission
@@ -603,58 +603,51 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
 
             let get_arguments_import = host_imports.iter().position(|(_, field)| field == "get-arguments").map(|index| index as u32);
             let argv_array_ty = gc_array_type_indices.get("Utf8").copied();
-            let entry_needs_argv = entry_mir_params.iter().any(
-                |ty| matches!(ty, NyarType::Array(element) | NyarType::FixedArray { element, .. } if is_js_glue_host_string_type(element.as_ref())),
-            ) || (entry_mir_params.is_empty()
-                && entry_wasm_params.iter().any(|ty| *ty == VALTYPE_ANYREF || *ty == WASM_GC_ANYREF));
+            let entry_argv_plan = match entry_mir_params.as_slice() {
+                [] => None,
+                [NyarType::Array(element)] if is_js_glue_host_string_type(element.as_ref()) => {
+                    match (get_arguments_import, argv_array_ty) {
+                        (Some(import_index), Some(array_ty)) => Some((import_index, array_ty)),
+                        _ => {
+                            return Err(
+                                "WASI 进程入口声明了 `[utf8]` argv，但 `get-arguments` 宿主导入或 `[utf8]` GC 数组类型缺失：缺少载体事实，拒绝补空数组"
+                                    .to_string(),
+                            );
+                        }
+                    }
+                }
+                other => {
+                    return Err(format!(
+                        "WASI 进程入口合同非法：形参只能是空或单个首位 `[utf8]` argv，实际为 {other:?}；拒绝按形状猜 argv 或补默认值"
+                    ));
+                }
+            };
+            if entry_argv_plan.is_none() && !entry_wasm_params.is_empty() {
+                return Err(format!(
+                    "WASI 入口 `{entry_instance}` 未声明形参但物理签名要求 {} 个输入：缺少载体事实，拒绝按物理类型补零或补空引用",
+                    entry_wasm_params.len()
+                ));
+            }
 
             let build_entry_wrapper_body = |with_ok_i32: bool| -> Vec<u8> {
                 use WasmBodyInstruction as I;
-                let use_get_arguments = get_arguments_import.zip(argv_array_ty).filter(|_| entry_needs_argv);
                 // 函数体头部（locals 声明）不是指令，仍按 Wasm 二进制形写出；
                 // 指令序列统一经目标 LIR 与 `encode_wasm_body` 编码。
                 let mut body = Vec::new();
-                if let Some((_imp, arr_ty)) = use_get_arguments {
-                    // locals: 7×i32 + 1×(ref null $arr_ty)
-                    encode_uleb128(2, &mut body);
-                    encode_uleb128(7, &mut body);
-                    body.push(VALTYPE_I32);
-                    encode_uleb128(1, &mut body);
-                    body.push(VALTYPE_REF_NULL);
-                    encode_sleb128_i32(arr_ty as i32, &mut body);
-                }
-                else {
-                    encode_uleb128(0, &mut body);
-                }
                 let mut lir = Vec::new();
-                if let Some((import_index, array_ty)) = use_get_arguments {
-                    lir.extend(wasi_argv_from_get_arguments_instructions(import_index, array_ty));
-                    // Remaining non-argv params (rare): still push defaults after argv.
-                    for ty in entry_mir_params.iter().skip(1) {
-                        lir.extend(wasi_entry_default_arg_instructions(ty, &gc_array_type_indices));
+                match entry_argv_plan {
+                    Some((import_index, array_ty)) => {
+                        // locals: 7×i32 + 1×(ref null $arr_ty)
+                        encode_uleb128(2, &mut body);
+                        encode_uleb128(7, &mut body);
+                        body.push(VALTYPE_I32);
+                        encode_uleb128(1, &mut body);
+                        body.push(VALTYPE_REF_NULL);
+                        encode_sleb128_i32(array_ty as i32, &mut body);
+                        lir.extend(wasi_argv_from_get_arguments_instructions(import_index, array_ty));
                     }
-                }
-                else if !entry_mir_params.is_empty() {
-                    for ty in &entry_mir_params {
-                        lir.extend(wasi_entry_default_arg_instructions(ty, &gc_array_type_indices));
-                    }
-                }
-                else {
-                    for &param_ty in &entry_wasm_params {
-                        match param_ty {
-                            VALTYPE_I64 => lir.push(I::I64Const(0)),
-                            VALTYPE_F32 => lir.push(I::F32Const(0.0)),
-                            VALTYPE_F64 => lir.push(I::F64Const(0.0)),
-                            VALTYPE_ANYREF | WASM_GC_ANYREF => match argv_array_ty {
-                                Some(array_ty) => {
-                                    lir.push(I::I32Const(0));
-                                    lir.push(I::ArrayNewDefault(array_ty));
-                                }
-                                None => lir.push(I::RefNullAnyref),
-                            },
-                            VALTYPE_EXTERNREF | WASM_GC_EXTERNREF => lir.push(I::RefNullExternref),
-                            _ => lir.push(I::I32Const(0)),
-                        }
+                    None => {
+                        encode_uleb128(0, &mut body);
                     }
                 }
                 lir.push(I::U32 { opcode: WasmOpcode::Call, operand: index });
@@ -669,8 +662,8 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
                 body
             };
 
-            // Nullary `_start` / `run` when entry still carries params (WASI command world).
-            if !entry_mir_params.is_empty() || !entry_wasm_params.is_empty() {
+            // 携带冻结 argv 合同时，`_start` / `run` 必须重定向到无参包装体。
+            if entry_argv_plan.is_some() {
                 let start_type_index = u32::try_from(type_indices.len()).expect("type index overflow");
                 type_indices.push(wasm_function_type(&[], &[]));
                 function_indices.push(start_type_index);
@@ -1530,20 +1523,19 @@ pub(super) fn emit_wasi_entry_default_arg(ty: &NyarType, gc_array_type_indices: 
 /// Out-pointer slot in the reserved `[0, WASI_STRING_DATA_OFFSET)` region for `get-arguments`.
 pub(super) const WASI_GET_ARGUMENTS_OUT_PTR: i32 = 16;
 
-/// 入口是否以字符串数组（`[utf8]`）形参接收进程 argv。
+/// 入口是否按已声明的进程入口合同接收 argv：形参恰为单个首位动态 `[utf8]`。
 ///
 /// 该判定与入口包装体构建 argv 的条件一致；它决定 `get-arguments` 是否作为
-/// 宿主边界导入被加入模块，而不是要求用户源码显式声明该导入。
+/// 宿主边界导入被加入模块，而不是要求用户源码显式声明该导入。固定长度数组
+/// 与任意位置的字符串数组形参都不是 argv 载体，禁止按形状认领。
 fn wasi_entry_declares_argv(submission: &FragmentSubmission) -> bool {
     submission
         .backend_plan
         .entry_operation()
         .and_then(|instance| submission.backend_plan.get_function(&instance))
         .is_some_and(|view| {
-            view.function.param_types.iter().any(|ty| match ty {
-                NyarType::Array(element) | NyarType::FixedArray { element, .. } => is_js_glue_host_string_type(element.as_ref()),
-                _ => false,
-            })
+            matches!(view.function.param_types.as_slice(),
+                [NyarType::Array(element)] if is_js_glue_host_string_type(element.as_ref()))
         })
 }
 
@@ -1645,35 +1637,6 @@ pub(super) fn wasi_argv_from_get_arguments_instructions(
         local(WasmOpcode::LocalGet, 7),
     ];
     lir
-}
-
-/// WASI 入口缺失实参的默认值：同样产出目标 LIR，由包装体统一编码。
-pub(super) fn wasi_entry_default_arg_instructions(
-    ty: &NyarType,
-    gc_array_type_indices: &BTreeMap<String, u32>,
-) -> Vec<WasmBodyInstruction> {
-    use WasmBodyInstruction as I;
-    match ty {
-        NyarType::Array(element) | NyarType::FixedArray { element, .. } => {
-            let key = wasm_array_element_type_key(element);
-            let Some(type_index) = gc_array_type_indices.get(&key).copied()
-            else {
-                panic!("WASI entry array parameter `{key}` 缺少已注册的 array type");
-            };
-            vec![I::I32Const(0), I::ArrayNewDefault(type_index)]
-        }
-        NyarType::Float64 => vec![I::F64Const(0.0)],
-        // f32 有独立载体：默认值按真实 f32 位模式发射（+0.0），不得借 f64 载体。
-        NyarType::Float32 => vec![I::F32Const(0.0)],
-        NyarType::Integer64 { .. } | NyarType::Integer128 { .. } => vec![I::I64Const(0)],
-        NyarType::Unit => vec![I::RefNullAnyref],
-        NyarType::Bottom => vec![I::I32Const(0)],
-        other if is_js_glue_host_string_type(other) => vec![I::I32Const(0)],
-        other if type_is_wasm_gc_heap_reference(other) => {
-            panic!("WASI entry heap 参数 `{other:?}` 缺少 array type 合同")
-        }
-        _ => vec![I::I32Const(0)],
-    }
 }
 
 pub(super) fn append_wasm_spy_metadata_sections(

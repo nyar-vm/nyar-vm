@@ -43,6 +43,7 @@ fn native_family_exposes_capability_and_requires_adapter_prepared_input() {
         HostProjectionBoundary::Native,
         PathBuf::new(),
         "",
+        nyar::ArtifactPurpose::Application,
         WasmPackageKind::Binary,
     );
     let error = result.expect_err("generic native lowering must refuse without a resolved target");
@@ -57,6 +58,7 @@ fn jvm_lowering_rejects_fragment_without_executable_operations() {
         HostProjectionBoundary::Jvm,
         PathBuf::new(),
         "",
+        nyar::ArtifactPurpose::Application,
         WasmPackageKind::Binary,
     );
     let error = result.expect_err("empty fragment must not produce a class");
@@ -77,6 +79,7 @@ fn clr_lowering_rejects_fragment_without_executable_operations() {
         HostProjectionBoundary::Clr,
         PathBuf::new(),
         "",
+        nyar::ArtifactPurpose::Application,
         WasmPackageKind::Binary,
     );
     let error = result.expect_err("empty fragment must not produce an MSIL module");

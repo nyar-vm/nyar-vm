@@ -192,10 +192,8 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
     }
 
     // 程序入口只由计划身份决定；入口名不参与「是否有 launcher」的判定。
+    // 入口同时是导出入口时复用 ABI 入口已构建的 launcher，不重复构建。
     let entry_binding = plan.entry_operation().and_then(|entry| {
-        if plan.export_names().contains_key(&entry) {
-            return None;
-        }
         plan.abi_name_for_instance(entry).map(|name| {
             let logical = name.parts().last().map(|part| part.as_str().to_string()).unwrap_or_else(|| "main".to_string());
             (entry, logical)
@@ -232,6 +230,7 @@ fn build_managed_abi_surface(
     let mut entries = Vec::with_capacity(export_names.len());
     let mut companion_classes = Vec::with_capacity(export_names.len());
     let mut used_launcher_names = BTreeSet::new();
+    let mut entry_launcher = None;
     for (instance, logical_entry) in export_names {
         let method = method_plans
             .get(instance)
@@ -255,6 +254,10 @@ fn build_managed_abi_surface(
         let parameter_types = logical_params.iter().map(managed_logical_type_name).collect::<Result<Vec<_>>>()?;
         let return_type = managed_logical_type_name(logical_return)?;
         let launcher_class = managed_launcher_internal_name(logical_entry, &mut used_launcher_names)?;
+        if entry.as_ref().is_some_and(|(entry_instance, _)| entry_instance == instance) {
+            // 程序入口同时是导出入口：复用该 ABI 入口的 launcher 身份。
+            entry_launcher = Some(launcher_class.clone());
+        }
         let launcher = build_managed_launcher_class(&launcher_class, &class_file.internal_name, method)?;
         entries.push(ManagedAbiEntry {
             logical_entry: logical_entry.clone(),
@@ -271,27 +274,29 @@ fn build_managed_abi_surface(
     //
     // argv launcher 只在入口签名可被 `main(String[])` 表达时生成；引用形参等
     // 无法从 argv 编组的入口仍按普通函数降低，但不伪造 launcher（包装能力
-    // 属于平台，不能替入口发明形参）。
-    let mut entry_launcher = None;
+    // 属于平台，不能替入口发明形参）。入口同时是导出入口时已在 ABI 循环中
+    // 复用 launcher，不再重复构建。
     if let Some((instance, logical_entry)) = entry {
-        let method = method_plans
-            .get(&instance)
-            .ok_or_else(|| format!("JVM 程序入口 `{logical_entry}` 的实例 `{instance:?}` 没有已降低方法"))?;
-        let lowered = class_file
-            .methods
-            .iter()
-            .find(|candidate| candidate.name == method.name && candidate.descriptor == method.descriptor)
-            .ok_or_else(|| format!("JVM 程序入口 `{logical_entry}` 的方法 `{}` 不在主类中", method.name))?;
-        let argv_expressible = logical_signatures
-            .get(&instance)
-            .is_some_and(|(params, return_type)| params.iter().chain(std::iter::once(return_type)).all(|ty| managed_logical_type_name(ty).is_ok()));
-        if argv_expressible {
-            if lowered.access_flags & (JVM_ACC_PUBLIC | JVM_ACC_STATIC) != (JVM_ACC_PUBLIC | JVM_ACC_STATIC) {
-                return Err(format!("JVM 程序入口 `{logical_entry}` 的方法 `{}` 不是 `public static`，拒绝生成 launcher", method.name));
+        if entry_launcher.is_none() {
+            let method = method_plans
+                .get(&instance)
+                .ok_or_else(|| format!("JVM 程序入口 `{logical_entry}` 的实例 `{instance:?}` 没有已降低方法"))?;
+            let lowered = class_file
+                .methods
+                .iter()
+                .find(|candidate| candidate.name == method.name && candidate.descriptor == method.descriptor)
+                .ok_or_else(|| format!("JVM 程序入口 `{logical_entry}` 的方法 `{}` 不在主类中", method.name))?;
+            let argv_expressible = logical_signatures.get(&instance).is_some_and(|(params, return_type)| {
+                params.iter().chain(std::iter::once(return_type)).all(|ty| managed_logical_type_name(ty).is_ok())
+            });
+            if argv_expressible {
+                if lowered.access_flags & (JVM_ACC_PUBLIC | JVM_ACC_STATIC) != (JVM_ACC_PUBLIC | JVM_ACC_STATIC) {
+                    return Err(format!("JVM 程序入口 `{logical_entry}` 的方法 `{}` 不是 `public static`，拒绝生成 launcher", method.name));
+                }
+                let launcher_class = managed_launcher_internal_name(&logical_entry, &mut used_launcher_names)?;
+                companion_classes.push(build_managed_launcher_class(&launcher_class, &class_file.internal_name, method)?);
+                entry_launcher = Some(launcher_class);
             }
-            let launcher_class = managed_launcher_internal_name(&logical_entry, &mut used_launcher_names)?;
-            companion_classes.push(build_managed_launcher_class(&launcher_class, &class_file.internal_name, method)?);
-            entry_launcher = Some(launcher_class);
         }
     }
     let managed_abi = if entries.is_empty() {
