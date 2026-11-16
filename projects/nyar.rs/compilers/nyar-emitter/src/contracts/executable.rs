@@ -148,10 +148,11 @@ pub enum InstructionKind {
         /// 结果类型（Semantic MIR 已冻结 `TypeId` 的目标投影）。
         ty: NyarType,
     },
-    /// Store into a named local (`let` binding).
+    /// Store into a local (`let` binding).
+    ///
+    /// 绑定名是语言前端事实，留在语言侧 MIR；公共载荷只携带 SSA 搬运与冻结类型，
+    /// 不得把变量名当跨 lane 语义（没有任何后端按名字消费）。
     StoreVar {
-        /// Variable name.
-        name: String,
         /// Value to store.
         value: Operand,
         /// Optional static type.
@@ -362,15 +363,6 @@ pub enum Terminator {
         payload: Option<Operand>,
         /// Resume target.
         resume_target: BlockRef,
-    },
-    /// State-machine dispatch on a state value.
-    StateDispatch {
-        /// State SSA value.
-        state: ValueRef,
-        /// `(state_id, target)` cases.
-        cases: Vec<(u32, BlockRef)>,
-        /// Default target.
-        default_target: BlockRef,
     },
     /// Unreachable terminator.
     Unreachable,

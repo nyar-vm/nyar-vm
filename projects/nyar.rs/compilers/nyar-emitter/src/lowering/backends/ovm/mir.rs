@@ -873,7 +873,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 }
                 self.emitter.emit_plain(OdinHeadCode::Pop);
             }
-            MirInstructionKind::StoreVar { name, value, .. } => {
+            MirInstructionKind::StoreVar { value, .. } => {
                 let output_ty = output.and_then(|value| self.value_slot_type(value));
                 self.emit_operand_typed(value, output_ty.as_ref())?;
                 if let Some(output) = output {
@@ -882,7 +882,6 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 else {
                     self.emitter.emit_plain(OdinHeadCode::Pop);
                 }
-                let _ = name;
             }
             MirInstructionKind::Copy { source } => {
                 let output_ty = output.and_then(|value| self.value_slot_type(value));
@@ -1316,23 +1315,6 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     count => panic!("ovm `raise` resume 块只接受至多一个 resume 形参，实际 {count}: {}", self.mir_fn.symbol),
                 }
                 self.emitter.emit_jump_to_block(OdinHeadCode::Jump, *resume_target);
-            }
-            MirTerminator::StateDispatch { state, cases, default_target } => {
-                // 状态机入口：读取 state local，与每个 case_key 比较；
-                // 匹配则跳到对应 target，否则跳到 default_target。
-                for (case_key, target) in cases {
-                    // `case_key` 是 `u32`，`as i32` 会把 ≥ 2^31 的键静默折回负值。
-                    // 没有任何生产者把它约束在 i32 内，因此超界必须结构化失败，
-                    // 不得发出一个永远匹配不上的错误常量。
-                    let case_key = i32::try_from(*case_key).map_err(|_| {
-                        format!("OVM StateDispatch 的 case_key {} 超出 i32 表示范围（symbol=`{}`）", *case_key, self.mir_fn.symbol)
-                    })?;
-                    self.emit_operand(&MirOperand::Value(*state))?;
-                    self.emitter.emit_const_i32(case_key);
-                    self.emitter.emit_plain(OdinHeadCode::I32Eq);
-                    self.emitter.emit_jump_to_block(OdinHeadCode::JumpIfTrue, *target);
-                }
-                self.emitter.emit_jump_to_block(OdinHeadCode::Jump, *default_target);
             }
             MirTerminator::Unreachable => {
                 // 不可达块不得物化为裸 `Return`：加载期 verifier 按 CFG 可达性把每条

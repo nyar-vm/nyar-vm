@@ -612,8 +612,8 @@ fn lower_operation(
             }
         }
         ValkyrieMirOperation::Copy { source } => InstructionKind::Copy { source: value(*source) },
-        ValkyrieMirOperation::StoreVar { name, value: stored, ty } => {
-            InstructionKind::StoreVar { name: name.clone(), value: value(*stored), ty: ty.map(|id| lower_type(program, id)).transpose()? }
+        ValkyrieMirOperation::StoreVar { name: _, value: stored, ty } => {
+            InstructionKind::StoreVar { value: value(*stored), ty: ty.map(|id| lower_type(program, id)).transpose()? }
         }
         ValkyrieMirOperation::AggregateCopy { source, destination } => {
             let source_type = value_type(*source)?;

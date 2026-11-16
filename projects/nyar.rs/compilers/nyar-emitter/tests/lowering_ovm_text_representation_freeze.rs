@@ -192,11 +192,7 @@ fn literal_to_managed_return_function() -> ExecutableFunction {
                 },
                 Instruction {
                     results: vec![ValueRef(1)],
-                    ..Instruction::from_kind(InstructionKind::StoreVar {
-                        name: "text".to_string(),
-                        value: Operand::Value(ValueRef(0)),
-                        ty: Some(utf8()),
-                    })
+                    ..Instruction::from_kind(InstructionKind::StoreVar { value: Operand::Value(ValueRef(0)), ty: Some(utf8()) })
                 },
             ],
             terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(1))) },

@@ -251,26 +251,11 @@ pub fn collect_reachable_blocks(function: &ExecutableFunction) -> Vec<Executable
                 stack.push(*then_target);
             }
             ExecutableTerminator::Raise { resume_target, .. } => stack.push(*resume_target),
-            ExecutableTerminator::StateDispatch { cases, default_target, .. } => {
-                stack.push(*default_target);
-                for (_, target) in cases {
-                    stack.push(*target);
-                }
-            }
             ExecutableTerminator::Unreachable => {}
         }
     }
     order.reverse();
     order
-}
-
-pub fn executable_has_state_machine(function: &ExecutableFunction) -> bool {
-    function.blocks.iter().any(|block| {
-        matches!(
-            block.terminator,
-            ExecutableTerminator::StateDispatch { .. } | ExecutableTerminator::Raise { .. }
-        )
-    })
 }
 
 #[cfg(test)]

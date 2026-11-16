@@ -558,7 +558,6 @@ fn validate_terminator(function: &ExecutableFunction, block: &crate::contracts::
         crate::contracts::Terminator::Jump { arguments, .. } => arguments.iter().collect(),
         crate::contracts::Terminator::Branch { condition, .. } => vec![condition],
         crate::contracts::Terminator::Raise { payload: Some(payload), .. } => vec![payload],
-        crate::contracts::Terminator::StateDispatch { .. } => Vec::new(),
         _ => Vec::new(),
     };
     for operand in operands {
@@ -571,16 +570,6 @@ fn validate_terminator(function: &ExecutableFunction, block: &crate::contracts::
                     detail: format!("semantic type missing for terminator value {value:?} in block {}", block.id.0),
                 });
             }
-        }
-    }
-    if let crate::contracts::Terminator::StateDispatch { state, .. } = &block.terminator {
-        if !function.value_types.contains_key(state) {
-            return Err(SemanticMirContractError {
-                code: "SMIR001",
-                function: function.symbol.clone(),
-                location: format!("block {} terminator state", block.id.0),
-                detail: format!("semantic type missing for terminator state {state:?} in block {}", block.id.0),
-            });
         }
     }
     match &block.terminator {
