@@ -31,7 +31,7 @@ pub fn validate_host_logic_bytes(bytes: &[u8], platform: &str, backend: &str, ta
                 )));
             }
         }
-        HostArtifactKind::NativeExecutable => {}
+        HostArtifactKind::MachineCodeExecutable => {}
         HostArtifactKind::Wasm => {}
     }
     Ok(())
