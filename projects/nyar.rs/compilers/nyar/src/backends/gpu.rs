@@ -124,7 +124,7 @@ impl BundledGpuDescriptor {
                 lane: TargetLane::Gpu,
                 input_kind: Some(self.input_kind),
                 supported_projection_families,
-                supported_host_boundaries: vec![HostProjectionBoundary::Native],
+                supported_host_boundaries: vec![HostProjectionBoundary::MachineCode],
                 supported_targets,
                 required_capabilities,
                 reference_management: Some(ReferenceManagement::PerceusRc),

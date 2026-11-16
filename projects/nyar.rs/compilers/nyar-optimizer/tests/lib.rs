@@ -109,7 +109,7 @@ fn flat_equation_union_still_works() {
         rewrite_theory,
         projection_policy: ProjectionPolicy {
             family: FutamuraProjectionFamily::Gpu,
-            host_boundary: HostProjectionBoundary::Native,
+            host_boundary: HostProjectionBoundary::MachineCode,
             reference_management: ReferenceManagement::PerceusRc,
             prefer_small_artifacts: false,
             preserve_effect_boundaries: true,

@@ -256,13 +256,13 @@ fn driver_rejects_host_extension_input_without_identity_facts() {
     let lowered = lower_fragment_to_native_extension(&submission, &node(NativePlatform::windows_x64()), "demo").expect("扩展降低");
     let output_dir = tempfile::tempdir().expect("temp dir");
     let requirement = PartitionBackendRequirement {
-        backend_name: "native".to_string(),
-        interpreter: Identifier::new("native.image"),
+        backend_name: "machine-code".to_string(),
+        interpreter: Identifier::new("machine.image"),
         fragment: Identifier::new("functions"),
-        lane: TargetLane::Native,
+        lane: TargetLane::MachineCode,
         input_kind: BackendInputKind::PeImage,
-        target: BinaryTarget::new(TargetFamily::Native, BinaryArch::X64, BinaryFlavor::Native),
-        host_boundary: HostProjectionBoundary::Native,
+        target: BinaryTarget::new(TargetFamily::MachineCode, BinaryArch::X64, BinaryFlavor::MachineCode),
+        host_boundary: HostProjectionBoundary::MachineCode,
         reference_management: ReferenceManagement::PerceusRc,
     };
     let options = CompilationOptions {

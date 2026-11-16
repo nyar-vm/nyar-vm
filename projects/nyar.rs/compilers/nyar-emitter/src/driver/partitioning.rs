@@ -7,7 +7,7 @@ pub(crate) fn backend_family_for_partition(partition: &ArtifactPartition) -> Tar
         TargetLane::Clr => TargetBackendFamily::Clr,
         TargetLane::Jvm => TargetBackendFamily::Jvm,
         TargetLane::Wasm => TargetBackendFamily::Wasm,
-        TargetLane::Native => TargetBackendFamily::Native,
+        TargetLane::MachineCode => TargetBackendFamily::MachineCode,
         TargetLane::Vm => TargetBackendFamily::Ovm,
         TargetLane::Gpu => TargetBackendFamily::Gpu,
     }

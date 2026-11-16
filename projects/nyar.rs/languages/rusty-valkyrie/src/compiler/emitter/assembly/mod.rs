@@ -92,7 +92,7 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter {
 
     fn prepare(&self, request: &TargetInputRequest<'_>) -> nyar_emitter::Result<LoweredBackendInput> {
         let submission = FragmentSubmission::from_backend_plan((*self.plan).clone());
-        if request.backend_family == nyar::TargetBackendFamily::Native {
+        if request.backend_family == nyar::TargetBackendFamily::MachineCode {
             // 原生镜像由 native lane 的 LIR/编码服务产出；适配器只提交目标输入
             // 与已冻结的宿主合同，不自行拼接机器码或 PE/ELF 容器。
             if request.artifact_purpose == nyar::ArtifactPurpose::HostExtension {

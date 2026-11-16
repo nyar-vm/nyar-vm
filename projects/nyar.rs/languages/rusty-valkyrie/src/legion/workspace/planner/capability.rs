@@ -111,7 +111,7 @@ pub(crate) fn target_host_capability_space(target: CanonicalTarget) -> BTreeSet<
         TargetBackendFamily::Jvm => {
             space.insert("jvm".to_string());
         }
-        TargetBackendFamily::Native => {
+        TargetBackendFamily::MachineCode => {
             space.insert("native".to_string());
         }
         TargetBackendFamily::Ovm => {
@@ -180,7 +180,7 @@ pub(crate) fn provider_matches_target(provider: &PlannedHostProvider, available:
         // `[wasm_operator]` / `[vm_opcode]` 等无宿主导入的 adaptor：由 backend family 门控，不靠 `js.*` capability。
         return matches!(
             target.to_profile(None).backend_family,
-            TargetBackendFamily::Wasm | TargetBackendFamily::Ovm | TargetBackendFamily::Native
+            TargetBackendFamily::Wasm | TargetBackendFamily::Ovm | TargetBackendFamily::MachineCode
         );
     }
     required.iter().all(|capability| capability_available(capability, available))

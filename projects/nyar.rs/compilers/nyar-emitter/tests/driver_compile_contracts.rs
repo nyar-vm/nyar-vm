@@ -49,7 +49,7 @@ fn jvm_application_without_frozen_launcher_is_rejected() {
 #[test]
 fn creates_node_and_wasi_run_contracts_via_bundled_compiler() {
     let output_dir = tempdir().expect("temp dir");
-    let node_options = compilation_options(BinaryTarget::new(TargetFamily::Wasm, BinaryArch::Any, BinaryFlavor::Native), "demo_node");
+    let node_options = compilation_options(BinaryTarget::new(TargetFamily::Wasm, BinaryArch::Any, BinaryFlavor::MachineCode), "demo_node");
     let node_input = demo_wasm_input(output_dir.path(), HostProjectionBoundary::WasmJsGlue);
     let node_report = compile_lowered_backend_input(
         "demo_node",
@@ -65,7 +65,7 @@ fn creates_node_and_wasi_run_contracts_via_bundled_compiler() {
     assert_eq!(node_contract.physical_entry, "demo_node.mjs");
     assert_eq!(node_contract.invocation, "node");
 
-    let wasi_options = compilation_options(BinaryTarget::new(TargetFamily::Wasm, BinaryArch::Any, BinaryFlavor::Native), "demo_wasi");
+    let wasi_options = compilation_options(BinaryTarget::new(TargetFamily::Wasm, BinaryArch::Any, BinaryFlavor::MachineCode), "demo_wasi");
     let wasi_input = demo_wasm_input(output_dir.path(), HostProjectionBoundary::WasiComponent);
     let wasi_report = compile_lowered_backend_input(
         "demo_wasi",
@@ -95,7 +95,7 @@ fn creates_node_and_wasi_run_contracts_via_bundled_compiler() {
 #[test]
 fn creates_wasip3_run_contract_and_packages_component() {
     let output_dir = tempdir().expect("temp dir");
-    let options = compilation_options(BinaryTarget::new(TargetFamily::Wasm, BinaryArch::Any, BinaryFlavor::Native), "demo_wasip3");
+    let options = compilation_options(BinaryTarget::new(TargetFamily::Wasm, BinaryArch::Any, BinaryFlavor::MachineCode), "demo_wasip3");
     let input = demo_wasm_input_with_preview(
         output_dir.path(),
         HostProjectionBoundary::WasiComponent,
@@ -133,7 +133,7 @@ fn creates_wasip3_run_contract_and_packages_component() {
 #[test]
 fn packages_wasi_component_with_mirrored_imports() {
     let output_dir = tempdir().expect("temp dir");
-    let options = compilation_options(BinaryTarget::new(TargetFamily::Wasm, BinaryArch::Any, BinaryFlavor::Native), "demo_wasi_imports");
+    let options = compilation_options(BinaryTarget::new(TargetFamily::Wasm, BinaryArch::Any, BinaryFlavor::MachineCode), "demo_wasi_imports");
     let imports = vec![
         ("wasi:clocks/monotonic-clock".to_string(), "now".to_string()),
         ("wasi:io/streams".to_string(), "blocking-write-and-flush".to_string()),
@@ -165,7 +165,7 @@ fn packages_wasi_component_with_mirrored_imports() {
 #[test]
 fn rejects_unsupported_backend_requirement() {
     let output_dir = tempdir().expect("temp dir");
-    let target = BinaryTarget::new(TargetFamily::Gpu, BinaryArch::X64, BinaryFlavor::Native);
+    let target = BinaryTarget::new(TargetFamily::Gpu, BinaryArch::X64, BinaryFlavor::MachineCode);
     let options = compilation_options(target.clone(), "demo");
     let input = LoweredBackendInput::jvm(demo_jvm_backend_input(output_dir.path()));
     let requirement = PartitionBackendRequirement {
@@ -174,7 +174,7 @@ fn rejects_unsupported_backend_requirement() {
         fragment: nyar::Identifier::new("functions"),
         lane: TargetLane::Clr,
         input_kind: BackendInputKind::WasmModule,
-        target: BinaryTarget::new(TargetFamily::Wasm, BinaryArch::Any, BinaryFlavor::Native),
+        target: BinaryTarget::new(TargetFamily::Wasm, BinaryArch::Any, BinaryFlavor::MachineCode),
         host_boundary: HostProjectionBoundary::WasmJsGlue,
         reference_management: ReferenceManagement::HostGc,
     };
@@ -216,7 +216,7 @@ fn backend_rejects_open_effect_dispatch_when_route_cannot_lower_it() {
 #[test]
 fn node_launcher_is_free_of_banner_and_cli_pollution() {
     let output_dir = tempdir().expect("temp dir");
-    let node_options = compilation_options(BinaryTarget::new(TargetFamily::Wasm, BinaryArch::Any, BinaryFlavor::Native), "demo_node");
+    let node_options = compilation_options(BinaryTarget::new(TargetFamily::Wasm, BinaryArch::Any, BinaryFlavor::MachineCode), "demo_node");
     let node_input = demo_wasm_input(output_dir.path(), HostProjectionBoundary::WasmJsGlue);
     let _report = compile_lowered_backend_input(
         "demo_node",
@@ -245,7 +245,7 @@ fn node_launcher_is_free_of_banner_and_cli_pollution() {
 #[test]
 fn node_launcher_renders_only_declared_imports() {
     let output_dir = tempdir().expect("temp dir");
-    let node_options = compilation_options(BinaryTarget::new(TargetFamily::Wasm, BinaryArch::Any, BinaryFlavor::Native), "demo_imports");
+    let node_options = compilation_options(BinaryTarget::new(TargetFamily::Wasm, BinaryArch::Any, BinaryFlavor::MachineCode), "demo_imports");
     let imports = vec![("env".to_string(), "emit_byte".to_string()), ("env".to_string(), "emit_i32".to_string())];
     let node_input = demo_wasm_input_with_imports(output_dir.path(), HostProjectionBoundary::WasmJsGlue, imports);
     let _report = compile_lowered_backend_input(
@@ -272,7 +272,7 @@ fn node_launcher_renders_only_declared_imports() {
 #[test]
 fn node_launcher_without_imports_has_clean_stdout() {
     let output_dir = tempdir().expect("temp dir");
-    let node_options = compilation_options(BinaryTarget::new(TargetFamily::Wasm, BinaryArch::Any, BinaryFlavor::Native), "demo_clean");
+    let node_options = compilation_options(BinaryTarget::new(TargetFamily::Wasm, BinaryArch::Any, BinaryFlavor::MachineCode), "demo_clean");
     let node_input = demo_wasm_input(output_dir.path(), HostProjectionBoundary::WasmJsGlue);
     let _report = compile_lowered_backend_input(
         "demo_clean",

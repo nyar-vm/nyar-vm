@@ -36,8 +36,8 @@ pub enum TargetBackendFamily {
     Jvm,
     /// `WASM`
     Wasm,
-    /// 原生目标。
-    Native,
+    /// 机器码目标：由真实架构与 ABI 决定编码，不表示任何具体平台。
+    MachineCode,
     /// GPU / Shader
     Gpu,
     /// 未知。
@@ -60,8 +60,8 @@ pub enum TargetHostKind {
     DotNet,
     /// `JavaScript` 宿主。
     JavaScript,
-    /// 原生宿主。
-    Native,
+    /// 机器码宿主：OS 直接装载 `PE` / `ELF` 镜像。
+    MachineCode,
     /// 浏览器宿主。
     Browser,
     /// `WASI`
@@ -478,7 +478,7 @@ impl TargetProfile {
             TargetHostKind::Jvm => RunnerFamily::Jvm,
             TargetHostKind::Wasi => RunnerFamily::Wasi,
             TargetHostKind::Browser | TargetHostKind::JavaScript => RunnerFamily::Node,
-            TargetHostKind::Native if self.canonical_target.specification == CanonicalSpecification::Windows => RunnerFamily::Windows,
+            TargetHostKind::MachineCode if self.canonical_target.specification == CanonicalSpecification::Windows => RunnerFamily::Windows,
             _ => RunnerFamily::Clr,
         }
     }
@@ -532,7 +532,7 @@ impl CanonicalTarget {
             CanonicalArch::Clr => TargetBackendFamily::Clr,
             CanonicalArch::Jvm => TargetBackendFamily::Jvm,
             CanonicalArch::Wasm32 | CanonicalArch::Wasm64 => TargetBackendFamily::Wasm,
-            _ => TargetBackendFamily::Native,
+            _ => TargetBackendFamily::MachineCode,
         }
     }
 
@@ -559,7 +559,7 @@ impl CanonicalTarget {
             | CanonicalSpecification::Linux
             | CanonicalSpecification::MacOs
             | CanonicalSpecification::Android
-            | CanonicalSpecification::Ios => TargetHostKind::Native,
+            | CanonicalSpecification::Ios => TargetHostKind::MachineCode,
             CanonicalSpecification::Unknown if abi.is_wasi_component() => TargetHostKind::Wasi,
             _ => TargetHostKind::Unknown,
         }
@@ -619,7 +619,7 @@ impl CanonicalTarget {
             | CanonicalSpecification::Linux
             | CanonicalSpecification::MacOs
             | CanonicalSpecification::Android
-            | CanonicalSpecification::Ios => HostProjectionBoundary::Native,
+            | CanonicalSpecification::Ios => HostProjectionBoundary::MachineCode,
             // WASI component abi 覆盖：arch=Wasm32, spec=Unknown, abi=WasiP3
             CanonicalSpecification::Unknown if abi.is_wasi_component() => HostProjectionBoundary::WasiComponent,
             // **Neutral Wasm**：arch=Wasm32, spec=Unknown, vendor=Unknown, abi=WebAssembly
@@ -628,13 +628,13 @@ impl CanonicalTarget {
             CanonicalSpecification::Unknown if matches!(self.arch, CanonicalArch::Wasm32 | CanonicalArch::Wasm64) => {
                 HostProjectionBoundary::WasmJsGlue
             }
-            _ => HostProjectionBoundary::Native,
+            _ => HostProjectionBoundary::MachineCode,
         }
     }
 
     fn derive_reference_management(self) -> ReferenceManagement {
         match self.derive_backend_family() {
-            TargetBackendFamily::Native | TargetBackendFamily::Gpu => ReferenceManagement::PerceusRc,
+            TargetBackendFamily::MachineCode | TargetBackendFamily::Gpu => ReferenceManagement::PerceusRc,
             _ => ReferenceManagement::HostGc,
         }
     }

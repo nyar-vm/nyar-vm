@@ -361,7 +361,7 @@ fn native_backend_rejects_image_container_mismatching_target_os_or_abi() {
     let directory = tempfile::tempdir().expect("temp dir");
     let backend = NativeBinaryBackend::new();
     let mut options = CompilationOptions {
-        target: BinaryTarget::new(TargetFamily::Native, BinaryArch::X64, BinaryFlavor::Native),
+        target: BinaryTarget::new(TargetFamily::MachineCode, BinaryArch::X64, BinaryFlavor::MachineCode),
         artifact_name: "native-target-check".to_string(),
         emit_debug_symbols: false,
         optimize: false,

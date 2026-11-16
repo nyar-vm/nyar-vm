@@ -15,8 +15,8 @@ pub enum TargetLane {
     Jvm,
     /// `WASM`
     Wasm,
-    /// `native`
-    Native,
+    /// 机器码 lane：真实架构 + ABI 决定编码，OS 决定容器，合同决定宿主包装。
+    MachineCode,
     /// `CPU/VM`
     Vm,
     /// `GPU / Shader`

@@ -43,7 +43,7 @@ static OVM_COMPILER: ovm::OvmFamilyCompiler = ovm::OvmFamilyCompiler;
 static DRIVER_COMPILERS: [DriverCompilerRegistration; 5] = [
     DriverCompilerRegistration { name: "clr-binary", priority: 100, supports: clr::supports_requirement, compiler: &CLR_COMPILER },
     DriverCompilerRegistration { name: "jvm-jar", priority: 100, supports: jvm::supports_requirement, compiler: &JVM_COMPILER },
-    DriverCompilerRegistration { name: "native", priority: 100, supports: native::supports_requirement, compiler: &NATIVE_COMPILER },
+    DriverCompilerRegistration { name: "machine-code", priority: 100, supports: native::supports_requirement, compiler: &NATIVE_COMPILER },
     DriverCompilerRegistration { name: "wasm-binary", priority: 100, supports: wasm::supports_requirement, compiler: &WASM_COMPILER },
     DriverCompilerRegistration { name: "ovm", priority: 100, supports: ovm::supports_requirement, compiler: &OVM_COMPILER },
 ];
@@ -52,7 +52,7 @@ static DRIVER_COMPILERS: [DriverCompilerRegistration; 5] = [
 static DRIVER_COMPILERS: [DriverCompilerRegistration; 4] = [
     DriverCompilerRegistration { name: "clr-binary", priority: 100, supports: clr::supports_requirement, compiler: &CLR_COMPILER },
     DriverCompilerRegistration { name: "jvm-jar", priority: 100, supports: jvm::supports_requirement, compiler: &JVM_COMPILER },
-    DriverCompilerRegistration { name: "native", priority: 100, supports: native::supports_requirement, compiler: &NATIVE_COMPILER },
+    DriverCompilerRegistration { name: "machine-code", priority: 100, supports: native::supports_requirement, compiler: &NATIVE_COMPILER },
     DriverCompilerRegistration { name: "wasm-binary", priority: 100, supports: wasm::supports_requirement, compiler: &WASM_COMPILER },
 ];
 

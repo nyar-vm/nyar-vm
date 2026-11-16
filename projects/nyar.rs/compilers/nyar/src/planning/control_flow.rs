@@ -36,7 +36,7 @@ pub fn suspend_consumption_model_for_lane(
 pub fn suspend_consumption_model(lane: TargetLane) -> SuspendConsumptionModel {
     match lane {
         TargetLane::Vm => SuspendConsumptionModel::FirstClass,
-        TargetLane::Clr | TargetLane::Jvm | TargetLane::Wasm | TargetLane::Native | TargetLane::Gpu => SuspendConsumptionModel::StateMachine,
+        TargetLane::Clr | TargetLane::Jvm | TargetLane::Wasm | TargetLane::MachineCode | TargetLane::Gpu => SuspendConsumptionModel::StateMachine,
     }
 }
 

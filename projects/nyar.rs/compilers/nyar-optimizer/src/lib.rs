@@ -230,8 +230,8 @@ pub enum FutamuraProjectionFamily {
     Jvm,
     /// `futa_wasm`
     Wasm,
-    /// `futa_native`
-    Native,
+    /// `futa_machine_code`
+    MachineCode,
     /// `futa_vm`
     Ovm,
     /// `futa_gpu`
@@ -245,7 +245,7 @@ impl FutamuraProjectionFamily {
             Self::Clr => "futa_clr",
             Self::Jvm => "futa_jvm",
             Self::Wasm => "futa_wasm",
-            Self::Native => "futa_native",
+            Self::MachineCode => "futa_machine_code",
             Self::Ovm => "futa_vm",
             Self::Gpu => "futa_gpu",
         }
@@ -263,8 +263,8 @@ pub enum HostProjectionBoundary {
     WasmJsGlue,
     /// `WASI component model` 宿主边界。
     WasiComponent,
-    /// 原生宿主边界。
-    Native,
+    /// 机器码宿主边界：OS 直接装载 `PE` / `ELF`，宿主包装由产物合同决定。
+    MachineCode,
     /// `NyarVM` 宿主边界。
     Vm,
 }

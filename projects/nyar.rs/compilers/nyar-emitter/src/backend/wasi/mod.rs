@@ -91,7 +91,7 @@ impl WasmBinaryBackend {
             descriptor: BackendDescriptor {
                 name: "wasm-binary".to_string(),
                 input_kind: BackendInputKind::WasmModule,
-                supported_targets: vec![BinaryTarget::new(nyar::TargetFamily::Wasm, nyar::BinaryArch::Any, nyar::BinaryFlavor::Native)],
+                supported_targets: vec![BinaryTarget::new(nyar::TargetFamily::Wasm, nyar::BinaryArch::Any, nyar::BinaryFlavor::MachineCode)],
             },
         }
     }

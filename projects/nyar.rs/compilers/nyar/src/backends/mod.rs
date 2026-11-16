@@ -201,7 +201,7 @@ pub fn projection_family_for_backend(backend_family: TargetBackendFamily) -> Bac
         TargetBackendFamily::Clr => Ok(FutamuraProjectionFamily::Clr),
         TargetBackendFamily::Jvm => Ok(FutamuraProjectionFamily::Jvm),
         TargetBackendFamily::Wasm => Ok(FutamuraProjectionFamily::Wasm),
-        TargetBackendFamily::Native => Ok(FutamuraProjectionFamily::Native),
+        TargetBackendFamily::MachineCode => Ok(FutamuraProjectionFamily::MachineCode),
         TargetBackendFamily::Gpu => Ok(FutamuraProjectionFamily::Gpu),
         TargetBackendFamily::Ovm => Ok(FutamuraProjectionFamily::Ovm),
         TargetBackendFamily::Unknown => Err(BackendError::from("未解析的后端家族不能进入 projection 装配".to_owned())),

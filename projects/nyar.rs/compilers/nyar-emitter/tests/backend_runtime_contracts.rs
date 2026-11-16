@@ -127,7 +127,7 @@ fn pe_offset(bytes: &[u8]) -> usize {
 
 fn native_options(arch: BinaryArch) -> CompilationOptions {
     CompilationOptions {
-        target: BinaryTarget::new(TargetFamily::Native, arch, BinaryFlavor::Native),
+        target: BinaryTarget::new(TargetFamily::MachineCode, arch, BinaryFlavor::MachineCode),
         artifact_name: "probe".to_string(),
         emit_debug_symbols: false,
         optimize: false,

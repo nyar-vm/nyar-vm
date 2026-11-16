@@ -345,7 +345,7 @@ impl BundledBackendCapabilityDescriptor {
 const WASM_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::WasmJsGlue, HostProjectionBoundary::WasiComponent];
 const JVM_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::Jvm];
 const CLR_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::Clr];
-const NATIVE_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::Native];
+const MACHINE_CODE_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::MachineCode];
 #[cfg(feature = "ovm-lane")]
 const VM_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::Vm];
 
@@ -374,14 +374,14 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             reference_management: ReferenceManagement::HostGc,
             backend_route: BackendRoute::StaticOnly,
         }),
-        TargetBackendFamily::Native => Some(BundledBackendCapabilityDescriptor {
+        TargetBackendFamily::MachineCode => Some(BundledBackendCapabilityDescriptor {
             backend_family,
-            backend_name: "native",
-            interpreter: "native.image",
-            lane: TargetLane::Native,
+            backend_name: "machine-code",
+            interpreter: "machine.image",
+            lane: TargetLane::MachineCode,
             input_kind: Some(BackendInputKind::PeImage),
-            target_family: TargetFamily::Native,
-            supported_host_boundaries: NATIVE_HOST_BOUNDARIES,
+            target_family: TargetFamily::MachineCode,
+            supported_host_boundaries: MACHINE_CODE_HOST_BOUNDARIES,
             reference_management: ReferenceManagement::PerceusRc,
             backend_route: BackendRoute::StaticOnly,
         }),
@@ -403,7 +403,7 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             lane: TargetLane::Gpu,
             input_kind: Some(BackendInputKind::SpirvModule),
             target_family: TargetFamily::Gpu,
-            supported_host_boundaries: NATIVE_HOST_BOUNDARIES,
+            supported_host_boundaries: MACHINE_CODE_HOST_BOUNDARIES,
             reference_management: ReferenceManagement::PerceusRc,
             backend_route: BackendRoute::StaticOnly,
         }),
@@ -471,7 +471,7 @@ pub fn sum_tag_width(family: TargetBackendFamily) -> u32 {
         | TargetBackendFamily::Clr
         | TargetBackendFamily::Jvm
         | TargetBackendFamily::Ovm
-        | TargetBackendFamily::Native
+        | TargetBackendFamily::MachineCode
         | TargetBackendFamily::Gpu
         | TargetBackendFamily::Unknown => 4,
     }
@@ -898,7 +898,7 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
         let host_flavor = request.bundle.target_host_flavor().ok_or_else(|| format!("分区计划缺少目标 host flavor"))?;
         let backend_family = backend_family_for_partition(partition);
         // 宿主扩展只由 native lane 承载：其余 lane 在写出前拒绝，不降级成平台产物。
-        if purpose == nyar::ArtifactPurpose::HostExtension && backend_family != nyar::TargetBackendFamily::Native {
+        if purpose == nyar::ArtifactPurpose::HostExtension && backend_family != nyar::TargetBackendFamily::MachineCode {
             return Err(format!(
                 "宿主扩展只由 native lane 承载；分区 `{}` 的后端家族 `{backend_family:?}` 不支持该产物用途",
                 partition.name

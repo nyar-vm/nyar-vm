@@ -340,7 +340,7 @@ pub struct NativeTextProgramImage {
 
 /// 按解析后的规范目标四元组降低为原生镜像。
 ///
-/// 四元组是唯一分派依据；`TargetFamily::Native` 只说明产物形态，不能用来选编码、
+/// 四元组是唯一分派依据；`TargetFamily::MachineCode` 只说明产物形态，不能用来选编码、
 /// 容器或 ABI。未实现的目标四元组必须失败闭合，指名具体四元组。
 pub(crate) fn lower_fragment_to_native_image(submission: &FragmentSubmission, target: CanonicalTarget) -> Result<NativeLoweredFragment> {
     match target.arch {

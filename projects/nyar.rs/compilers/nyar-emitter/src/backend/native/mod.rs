@@ -54,12 +54,12 @@ impl NativeBinaryBackend {
     pub fn new() -> Self {
         Self {
             descriptor: BackendDescriptor {
-                name: "native".to_string(),
+                name: "machine-code".to_string(),
                 input_kind: BackendInputKind::CoffObject,
                 supported_targets: vec![
-                    BinaryTarget::new(TargetFamily::Native, BinaryArch::X64, BinaryFlavor::Native),
+                    BinaryTarget::new(TargetFamily::MachineCode, BinaryArch::X64, BinaryFlavor::MachineCode),
                     // Arm64 仅对 ELF 共享库可识别；PE ARM64 不在解析支持集内。
-                    BinaryTarget::new(TargetFamily::Native, BinaryArch::Arm64, BinaryFlavor::Native),
+                    BinaryTarget::new(TargetFamily::MachineCode, BinaryArch::Arm64, BinaryFlavor::MachineCode),
                 ],
             },
         }
@@ -82,7 +82,7 @@ impl NativeBinaryBackend {
     }
 
     fn compile_artifact(&self, input: NativeBinaryBackendInput, options: &CompilationOptions) -> Result<ArtifactSet> {
-        if options.target.family != TargetFamily::Native {
+        if options.target.family != TargetFamily::MachineCode {
             return Err(format!("Native 后端只接受 `Native` 目标族，实际得到 {:?}", options.target.family));
         }
         let facts = classify_native_image(&input.executable).map_err(|error| format!("Native 后端 executable 格式无效: {error}"))?;
@@ -203,7 +203,7 @@ fn compile_pe(input: NativeBinaryBackendInput, options: &CompilationOptions, fac
         kind: artifact_kind(facts),
         format: ArtifactFormat::Pe,
         target: options.target.clone(),
-        lane: TargetLane::Native,
+        lane: TargetLane::MachineCode,
     });
     // 已链接镜像不携带原始 object 的完整节、符号与重定位事实。
     // 这里不再从 `.text` 反抽伪造 `.obj`：真实 COFF 目标文件必须由 object
@@ -231,7 +231,7 @@ fn compile_elf(input: NativeBinaryBackendInput, options: &CompilationOptions, fa
         kind: artifact_kind(facts),
         format: ArtifactFormat::Elf,
         target: options.target.clone(),
-        lane: TargetLane::Native,
+        lane: TargetLane::MachineCode,
     });
     Ok(artifacts)
 }

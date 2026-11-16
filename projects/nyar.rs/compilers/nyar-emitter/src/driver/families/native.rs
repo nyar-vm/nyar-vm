@@ -1,4 +1,4 @@
-//! `native` 家族后端编译器：唯一宿主边界是 [`HostProjectionBoundary::Native`]。
+//! `native` 家族后端编译器：唯一宿主边界是 [`HostProjectionBoundary::MachineCode`]。
 //!
 //! 输入是语言 × 目标适配器已经编码好的原生镜像；本家族只负责按冻结的目标四元组
 //! 选择容器并写出产物，不重新生成机器码，也不解释语言语义。
@@ -19,27 +19,27 @@ pub(super) struct NativeFamilyCompiler;
 
 /// 判断给定的后端需求是否可由 `native` 家族满足。
 pub(super) fn supports_requirement(requirement: &PartitionBackendRequirement) -> bool {
-    bundled_backend_capability_descriptor(TargetBackendFamily::Native).is_some_and(|descriptor| descriptor.supports_requirement(requirement))
+    bundled_backend_capability_descriptor(TargetBackendFamily::MachineCode).is_some_and(|descriptor| descriptor.supports_requirement(requirement))
 }
 
 impl BundledBackendCompiler for NativeFamilyCompiler {
     fn compile(&self, request: DriverCompileRequest<'_>) -> Result<DriverCompileReport> {
         let DriverBackendInput::Native(input) = request.input
         else {
-            return Err(format!("`native` 家族请求必须携带 `NativeBinaryBackendInput`"));
+            return Err(format!("`machine-code` 家族请求必须携带 `NativeBinaryBackendInput`"));
         };
         let requirement = &request.requirement;
-        if requirement.lane != TargetLane::Native {
-            return Err(format!("`native` 后端需求 lane 不一致：requirement={:?}", requirement.lane));
+        if requirement.lane != TargetLane::MachineCode {
+            return Err(format!("`machine-code` 后端需求 lane 不一致：requirement={:?}", requirement.lane));
         }
         if requirement.input_kind != BackendInputKind::PeImage {
-            return Err(format!("`native` 后端需求输入种类不一致：requirement={:?}", requirement.input_kind));
+            return Err(format!("`machine-code` 后端需求输入种类不一致：requirement={:?}", requirement.input_kind));
         }
-        if requirement.target.family != TargetFamily::Native {
-            return Err(format!("`native` 后端需求目标家族不一致：requirement={:?}", requirement.target.family));
+        if requirement.target.family != TargetFamily::MachineCode {
+            return Err(format!("`machine-code` 后端需求目标家族不一致：requirement={:?}", requirement.target.family));
         }
-        if requirement.host_boundary != HostProjectionBoundary::Native {
-            return Err(format!("`native` 后端输入宿主与规划需求不一致：requirement={:?}", requirement.host_boundary));
+        if requirement.host_boundary != HostProjectionBoundary::MachineCode {
+            return Err(format!("`machine-code` 后端输入宿主与规划需求不一致：requirement={:?}", requirement.host_boundary));
         }
         let backend = NativeBinaryBackend::new();
         backend.validate(&input).map_err(|error| error.to_string())?;
@@ -48,7 +48,7 @@ impl BundledBackendCompiler for NativeFamilyCompiler {
         // 包装层不得把可执行镜像改标为库或扩展。
         match request.purpose {
             nyar::ArtifactPurpose::Library => {
-                return Err("`native` 库交付尚未接线；拒绝把可执行镜像改标为库产物".to_string());
+                return Err("`machine-code` 库交付尚未接线；拒绝把可执行镜像改标为库产物".to_string());
             }
             nyar::ArtifactPurpose::HostExtension => {
                 if input.artifact_extension.is_none() {

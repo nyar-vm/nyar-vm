@@ -468,7 +468,7 @@ fn resolve_reference_management(
     family: FutamuraProjectionFamily,
 ) -> ReferenceManagement {
     match (family, preferred) {
-        (FutamuraProjectionFamily::Native, _) => ReferenceManagement::PerceusRc,
+        (FutamuraProjectionFamily::MachineCode, _) => ReferenceManagement::PerceusRc,
         (_, Some(value)) => value,
         _ => fallback,
     }
@@ -480,7 +480,7 @@ fn resolve_partition_reference_management(
     fallback: ReferenceManagement,
     family: FutamuraProjectionFamily,
 ) -> ReferenceManagement {
-    if family == FutamuraProjectionFamily::Native {
+    if family == FutamuraProjectionFamily::MachineCode {
         return ReferenceManagement::PerceusRc;
     }
 

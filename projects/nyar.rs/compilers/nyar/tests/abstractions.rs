@@ -65,7 +65,7 @@ fn binary_target_preserves_specification_and_abi() {
 /// 未细化规格的后端声明只约束家族/架构/口味，不被请求目标的 OS/ABI 误判。
 #[test]
 fn coarse_backend_target_matches_refined_request() {
-    let coarse = BinaryTarget::new(TargetFamily::Native, BinaryArch::X64, BinaryFlavor::Native);
+    let coarse = BinaryTarget::new(TargetFamily::MachineCode, BinaryArch::X64, BinaryFlavor::MachineCode);
     let refined = CanonicalTarget::parse("x86_64-pc-windows-msvc").unwrap().to_binary_target();
     assert!(coarse.matches(&refined));
 

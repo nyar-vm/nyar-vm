@@ -16,8 +16,9 @@ pub enum TargetFamily {
     Jvm,
     /// `WASM`
     Wasm,
-    /// `native`
-    Native,
+    /// 机器码产物家族：编码由真实架构与 ABI 决定，容器由 OS 与产物合同决定；
+    /// 它不是平台身份（`native` / `node` / `python` 只是作者面占位符）。
+    MachineCode,
     /// `CPU/VM`
     Ovm,
     /// `GPU / Shader`
@@ -113,8 +114,8 @@ pub enum ObjectKind {
 pub enum BinaryFlavor {
     /// 纯托管 `CLR` 镜像。
     ManagedClr,
-    /// 非托管原生镜像。
-    Native,
+    /// 非托管机器码镜像（`PE` / `ELF`）。
+    MachineCode,
     /// 混合模式。
     Mixed,
 }
@@ -537,7 +538,7 @@ impl CanonicalTarget {
             CanonicalArch::Jvm => TargetFamily::Jvm,
             CanonicalArch::Wasm32 | CanonicalArch::Wasm64 => TargetFamily::Wasm,
             CanonicalArch::Ovm => TargetFamily::Ovm,
-            _ => TargetFamily::Native,
+            _ => TargetFamily::MachineCode,
         };
         let arch = match self.arch {
             CanonicalArch::X86 => BinaryArch::X86,
@@ -547,7 +548,7 @@ impl CanonicalTarget {
         };
         let flavor = match family {
             TargetFamily::Clr | TargetFamily::Jvm | TargetFamily::Ovm => BinaryFlavor::ManagedClr,
-            _ => BinaryFlavor::Native,
+            _ => BinaryFlavor::MachineCode,
         };
         BinaryTarget {
             family,
