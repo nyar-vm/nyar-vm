@@ -2,12 +2,48 @@
 //!
 //! 宿主扩展的包装体构造（注册入口、方法回调、模块定义与 `.data` 布局、文本
 //! arena 合同、宿主导入面）是**目标侧承载能力**：语言适配器只提交已冻结的
-//! 导出身份（符号名、整数形参个数、返回载体类别）与模块名，不各自复制一套
-//! 宿主 ABI。残差语言把 `main` 暴露成 `value` 是**语言约定**，由适配器在构造
-//! [`HostMethod`] 集合时决定，本模块不要求任何特定函数名。
+//! 导出事实（[`HostProperty`] / [`HostMethod`]：符号、整数形参个数、类型化返回
+//! 载体）与模块名，不各自复制一套宿主 ABI。
+//!
+//! 本模块**不要求任何特定函数名**：残差语言把 `main` 暴露成属性 `value` 是
+//! 适配器自己的约定，以 [`HostProperty`] 提交；只有方法导出的语言（例如正式
+//! 编译 lane 的托管导出面）可以不提交任何属性。
+//!
+//! 宿主边界合同（所有权、错误与生命周期）：
+//!
+//! - 整数按完整 `i64` 域跨越边界（`napi_create_int64` / `PyLong_FromLongLong`），
+//!   不经过 32 位 C `long` 或 JS number 截断；
+//! - 布尔按宿主原生布尔类型跨越（`napi_get_boolean` / `PyBool_FromLong`），
+//!   不与整数混为同一返回类别；
+//! - 字符串返回携带镜像内描述符，宿主侧复制成原生字符串；描述符属于镜像、
+//!   永不单独释放，不存在跨 CRT 的所有权转移；
+//! - 实参解析失败不静默成 `0`：Node 抛 `TypeError`、CPython 原样传播宿主异常，
+//!   `PyModuleDef_Init` / 装箱失败按宿主错误返回。
 
 use super::host::NativePlatform;
 use super::{NativeDataTarget, NativeTextInstruction, NativeTextProgramFunction};
+
+/// 宿主边界值种类：每个宿主闭合的编组能力在这里显式建模。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostValueKind {
+    /// 完整 `i64` 域整数。
+    Int64,
+    /// 原生布尔。
+    Bool,
+    /// 镜像字符串描述符 → 宿主字符串。
+    Utf8,
+}
+
+/// 一个模块级属性导出：宿主读取 `<module>.<name>` 时得到 `symbol` 的返回值。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostProperty {
+    /// 宿主可见属性名。
+    pub name: String,
+    /// 镜像内零参符号名。
+    pub symbol: String,
+    /// 返回载体。
+    pub returns: HostValueKind,
+}
 
 /// 一个可暴露给宿主扩展模块的方法（适配器提交的冻结导出事实）。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,11 +52,11 @@ pub struct HostMethod {
     pub name: String,
     /// 整数形参个数。
     pub parameters: usize,
-    /// 返回值是否为镜像字符串描述符（宿主侧转换为原生字符串）。
-    pub returns_string: bool,
+    /// 返回载体。
+    pub returns: HostValueKind,
 }
 
-/// CPython 单阶段模块定义（`PyModuleDef`）在 `.data` 中的镜像长度。
+/// CPython 多阶段模块定义（`PyModuleDef`）头部在 `.data` 中的镜像长度。
 ///
 /// x86-64 布局（全部 8 字节字段）：
 ///
@@ -28,11 +64,10 @@ pub struct HostMethod {
 ///   m_index = 0, m_copy = NULL }`（即 `PyModuleDef_HEAD_INIT`）；
 /// - `40`：`m_name`，`R_X86_64_RELATIVE` 指向紧随其后的模块名；
 /// - `48`：`m_doc = NULL`；
-/// - `56`：`m_size = -1`（单阶段初始化，无每模块状态）；
+/// - `56`：`m_size = 0`（多阶段初始化，模块状态由宿主管理）；
 /// - `64`：`m_methods`，有方法时指向 NUL 结尾的 `PyMethodDef` 数组；
-/// - `72..104`：`m_slots`/`m_traverse`/`m_clear`/`m_free = NULL`；
-/// - `104`：模块名（NUL 结尾），随后是常量名 `value`、各方法名与
-///   `PyArg_ParseTuple` 格式串，最后是方法表。
+/// - `72..104`：`m_slots` 指向 `Py_mod_exec` 槽表，其余为 `NULL`；
+/// - `104` 起：模块名、各属性名、各方法名与 `PyArg_ParseTuple` 格式串、方法表。
 const PY_MODULE_DEF_BASE_LEN: u32 = 104;
 
 /// `PyMethodDef` 每项 32 字节：`ml_name`、`ml_meth`、`ml_flags`、`ml_doc`。
@@ -69,7 +104,7 @@ pub fn append_text_arena(data: &mut Vec<u8>) -> u32 {
 
 /// 入口处重置 arena 游标：`[arena_offset] = 0`。
 ///
-/// `reset_slot` 是包装体可用的临时帧槽；必须在调用任何残差函数之前执行。
+/// `reset_slot` 是包装体可用的临时帧槽；必须在调用任何被包装符号之前执行。
 pub fn reset_text_arena(reset_slot: u16, arena_offset: u32) -> Vec<NativeTextInstruction> {
     use NativeTextInstruction as Lir;
     vec![
@@ -91,11 +126,21 @@ pub fn is_c_identifier(name: &str) -> bool {
     chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
+/// 任一导出是否以布尔跨越宿主边界（决定 `napi_get_boolean` / `PyBool_FromLong` 导入）。
+pub fn any_returns_bool(properties: &[HostProperty], methods: &[HostMethod]) -> bool {
+    properties.iter().any(|property| property.returns == HostValueKind::Bool)
+        || methods.iter().any(|method| method.returns == HostValueKind::Bool)
+}
+
+/// 任一导出是否返回镜像字符串描述符（决定字符串复制导入）。
+pub fn any_returns_utf8(methods: &[HostMethod]) -> bool {
+    methods.iter().any(|method| method.returns == HostValueKind::Utf8)
+}
+
 fn python_wrapper_name(method: &str) -> String {
     format!("__nyar_py_wrap_{method}")
 }
 
-/// Node-API 包装体符号名。
 fn node_wrapper_name(method: &str) -> String {
     format!("__nyar_node_wrap_{method}")
 }
@@ -112,14 +157,18 @@ fn push_cstring(data: &mut Vec<u8>, value: &str) {
     data.push(0);
 }
 
-/// 构造 `.data`：多阶段模块定义、模块名、常量名、方法名/格式串、方法表与
+/// 构造 `.data`：多阶段模块定义、模块名、属性名、方法名/格式串、方法表与
 /// `PyModuleDef_Slot` 表（`Py_mod_exec`）。
 ///
 /// 多阶段初始化由宿主创建模块并按槽位执行：`PyInit_<module>` 只返回定义地址，
 /// 模块实例与每解释器状态由 CPython 管理（`m_size = 0`）。
 ///
-/// 返回数据块、自相对重定位、常量名偏移与每个方法的格式串偏移（包装体需要）。
-pub fn python_module_data(module_name: &str, methods: &[HostMethod]) -> (Vec<u8>, Vec<(u32, NativeDataTarget)>, u32, Vec<u32>) {
+/// 返回数据块、自相对重定位、每个属性的名字偏移与每个方法的格式串偏移（包装体需要）。
+pub fn python_module_data(
+    module_name: &str,
+    properties: &[HostProperty],
+    methods: &[HostMethod],
+) -> (Vec<u8>, Vec<(u32, NativeDataTarget)>, Vec<u32>, Vec<u32>) {
     let mut data = vec![0u8; PY_MODULE_DEF_BASE_LEN as usize];
     let mut relocations = Vec::new();
     data[..8].copy_from_slice(&1i64.to_le_bytes()); // ob_refcnt = 1
@@ -129,8 +178,11 @@ pub fn python_module_data(module_name: &str, methods: &[HostMethod]) -> (Vec<u8>
     push_cstring(&mut data, module_name);
     relocations.push((40, NativeDataTarget::Data(name_offset)));
 
-    let value_offset = data.len() as u32;
-    push_cstring(&mut data, "value");
+    let mut property_name_offsets = Vec::with_capacity(properties.len());
+    for property in properties {
+        property_name_offsets.push(data.len() as u32);
+        push_cstring(&mut data, &property.name);
+    }
 
     let mut method_name_offsets = Vec::with_capacity(methods.len());
     let mut format_offsets = Vec::with_capacity(methods.len());
@@ -167,18 +219,24 @@ pub fn python_module_data(module_name: &str, methods: &[HostMethod]) -> (Vec<u8>
     relocations.push((72, NativeDataTarget::Data(slots_offset)));
     relocations.push((slots_offset + 8, NativeDataTarget::Function(PYTHON_EXEC_NAME.to_string())));
 
-    (data, relocations, value_offset, format_offsets)
+    (data, relocations, property_name_offsets, format_offsets)
 }
 
 /// `PyObject* wrapper(PyObject* self, PyObject* args)`：以 `PyArg_ParseTuple` 解析
-/// 整数实参并调用同名残差函数，结果经 `PyLong_FromLongLong` 变成 Python `int`。
+/// 整数实参并调用同名符号，结果按类型化载体跨越边界：
+/// `Int64 → PyLong_FromLongLong`、`Bool → PyBool_FromLong`、`Utf8 → PyUnicode_FromStringAndSize`。
 ///
-/// 必须使用 64 位装箱：Windows 的 C `long` 是 32 位，`PyLong_FromLong` 会把
-/// `4294967297` 静默截成 `1`，而残差载体是 `i64`。
+/// 整数必须使用 64 位装箱：Windows 的 C `long` 是 32 位，`PyLong_FromLong` 会把
+/// `4294967297` 静默截成 `1`。
 ///
 /// `PyArg_ParseTuple` 返回 0 表示解析失败（类型/个数不符），此时宿主已经设置异常，
-/// 包装体原样返回 `NULL`，不伪造结果。布尔按 1/0 返回。
-pub fn python_method_wrapper(method: &str, parameters: usize, format_offset: u32, dll: &str, returns_string: bool, arena: Option<u32>) -> NativeTextProgramFunction {
+/// 包装体原样返回 `NULL`，不伪造结果。
+pub fn python_method_wrapper(
+    method: &HostMethod,
+    format_offset: u32,
+    dll: &str,
+    arena: Option<u32>,
+) -> NativeTextProgramFunction {
     use NativeTextInstruction as Lir;
     const ARGS_SLOT: u16 = 0;
     const FORMAT_SLOT: u16 = 1;
@@ -186,7 +244,7 @@ pub fn python_method_wrapper(method: &str, parameters: usize, format_offset: u32
     const FIRST_ARGUMENT_SLOT: u16 = 3;
     const FAIL_LABEL: u32 = 0;
     let argument_slot = |index: usize| FIRST_ARGUMENT_SLOT + index as u16;
-    let descriptor_slot = FIRST_ARGUMENT_SLOT + parameters as u16;
+    let descriptor_slot = FIRST_ARGUMENT_SLOT + method.parameters as u16;
     let pointer_slot = descriptor_slot + 1;
     let length_slot = descriptor_slot + 2;
 
@@ -202,7 +260,7 @@ pub fn python_method_wrapper(method: &str, parameters: usize, format_offset: u32
         Lir::StoreSlot(FORMAT_SLOT),
         Lir::LoadSlotToArg { slot: FORMAT_SLOT, index: 1 },
     ]);
-    for index in 0..parameters {
+    for index in 0..method.parameters {
         // `PyArg_ParseTuple` 把第 index 个 `long` 写入该帧槽的地址。
         instructions.push(Lir::LoadSlotAddress(argument_slot(index)));
         instructions.push(Lir::StoreSlot(TEMP_SLOT));
@@ -211,38 +269,46 @@ pub fn python_method_wrapper(method: &str, parameters: usize, format_offset: u32
     instructions.push(Lir::CallImport { module: dll.to_string(), field: "PyArg_ParseTuple".to_string() });
     // 返回 0 = 解析失败（异常已由宿主设置）。
     instructions.push(Lir::JumpIfZero(FAIL_LABEL));
-    for index in 0..parameters {
+    for index in 0..method.parameters {
         instructions.push(Lir::LoadSlotToArg { slot: argument_slot(index), index: index as u8 });
     }
-    instructions.push(Lir::Call(method.to_string()));
-    if returns_string {
-        // 残差返回的是镜像内字符串描述符地址；宿主侧复制成 `str`，描述符本身
-        // 属于镜像、永不释放，因此不需要跨 CRT 的所有权转移。
-        instructions.extend([
-            Lir::StoreSlot(descriptor_slot),
-            Lir::LoadSlot(descriptor_slot),
-            Lir::AddRaxImmediate(8),
-            Lir::StoreSlot(pointer_slot),
-            Lir::LoadSlot(descriptor_slot),
-            Lir::LoadDescriptorLength,
-            Lir::StoreSlot(length_slot),
-            Lir::LoadSlotToArg { slot: pointer_slot, index: 0 },
-            Lir::LoadSlotToArg { slot: length_slot, index: 1 },
-            Lir::CallImport { module: dll.to_string(), field: "PyUnicode_FromStringAndSize".to_string() },
-            Lir::Return,
-        ]);
-    }
-    else {
-        instructions.push(Lir::StoreSlot(TEMP_SLOT));
-        instructions.push(Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 0 });
-        instructions.push(Lir::CallImport { module: dll.to_string(), field: "PyLong_FromLongLong".to_string() });
-        instructions.push(Lir::Return);
+    instructions.push(Lir::Call(method.name.clone()));
+    match method.returns {
+        HostValueKind::Utf8 => {
+            // 符号返回的是镜像内字符串描述符地址；宿主侧复制成 `str`，描述符本身
+            // 属于镜像、永不释放，因此不需要跨 CRT 的所有权转移。
+            instructions.extend([
+                Lir::StoreSlot(descriptor_slot),
+                Lir::LoadSlot(descriptor_slot),
+                Lir::AddRaxImmediate(8),
+                Lir::StoreSlot(pointer_slot),
+                Lir::LoadSlot(descriptor_slot),
+                Lir::LoadDescriptorLength,
+                Lir::StoreSlot(length_slot),
+                Lir::LoadSlotToArg { slot: pointer_slot, index: 0 },
+                Lir::LoadSlotToArg { slot: length_slot, index: 1 },
+                Lir::CallImport { module: dll.to_string(), field: "PyUnicode_FromStringAndSize".to_string() },
+                Lir::Return,
+            ]);
+        }
+        HostValueKind::Bool => {
+            instructions.push(Lir::StoreSlot(TEMP_SLOT));
+            instructions.push(Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 0 });
+            instructions.push(Lir::CallImport { module: dll.to_string(), field: "PyBool_FromLong".to_string() });
+            instructions.push(Lir::Return);
+        }
+        HostValueKind::Int64 => {
+            instructions.push(Lir::StoreSlot(TEMP_SLOT));
+            instructions.push(Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 0 });
+            instructions.push(Lir::CallImport { module: dll.to_string(), field: "PyLong_FromLongLong".to_string() });
+            instructions.push(Lir::Return);
+        }
     }
     instructions.push(Lir::Label(FAIL_LABEL));
     instructions.push(Lir::LoadI64(0));
     instructions.push(Lir::Return);
 
-    NativeTextProgramFunction { name: python_wrapper_name(method), slot_count: length_slot + 1, instructions }
+    NativeTextProgramFunction { name: python_wrapper_name(&method.name), slot_count: length_slot + 1, instructions }
 }
 
 /// `PyInit_<module>` 入口：多阶段初始化返回经 `PyModuleDef_Init` 初始化的定义地址。
@@ -267,13 +333,13 @@ pub fn python_module_registration(module_name: &str, dll: &str) -> NativeTextPro
 
 /// `int __nyar_py_exec(PyObject* module)`：`Py_mod_exec` 槽位的执行体。
 ///
-/// 模块实例由宿主创建；这里安装残差 `main` 的结果常量 `value`（方法表由
-/// `_PyModule_ExecDef` 依据 `m_methods` 先行安装）。成功返回 0，失败返回 -1，
-/// 不吞掉宿主错误。
+/// 模块实例由宿主创建；这里逐个安装属性（方法表由 `_PyModule_ExecDef` 依据
+/// `m_methods` 先行安装）。成功返回 0，失败返回 -1，不吞掉宿主错误。
 ///
-/// `value` 先经 `PyLong_FromLongLong` 装箱再交给 `PyModule_AddObject`：
-/// `PyModule_AddIntConstant` 走 C `long`，在 Windows 上只有 32 位，会把 i64 截断。
-pub fn python_module_exec(value_offset: u32, dll: &str, arena: Option<u32>) -> NativeTextProgramFunction {
+/// `Int64` 先经 `PyLong_FromLongLong` 装箱再交给 `PyModule_AddObject`：
+/// `PyModule_AddIntConstant` 走 C `long`，在 Windows 上只有 32 位，会把 i64 截断；
+/// `Bool` 经 `PyBool_FromLong` 得到原生 `bool`，不与整数混为同一返回类别。
+pub fn python_module_exec(properties: &[HostProperty], property_name_offsets: &[u32], dll: &str, arena: Option<u32>) -> NativeTextProgramFunction {
     use NativeTextInstruction as Lir;
     const MODULE_SLOT: u16 = 0;
     const VALUE_SLOT: u16 = 1;
@@ -287,46 +353,54 @@ pub fn python_module_exec(value_offset: u32, dll: &str, arena: Option<u32>) -> N
         // 入口实参已落槽：重置使用 rax/rcx 不会破坏 Win64 的 rcx 形参。
         instructions.extend(reset_text_arena(TEMP_SLOT, arena));
     }
-    instructions.extend([
-        Lir::Call("main".to_string()),
-        Lir::StoreSlot(VALUE_SLOT),
-        Lir::LoadI64(0),
-        Lir::StoreSlot(ZERO_SLOT),
-        // `PyLong_FromLongLong(value)`：64 位有符号整数，不经过 C `long`。
-        Lir::LoadSlotToArg { slot: VALUE_SLOT, index: 0 },
-        Lir::CallImport { module: dll.to_string(), field: "PyLong_FromLongLong".to_string() },
-        Lir::StoreSlot(OBJECT_SLOT),
-        // `NULL` 表示装箱失败（异常已由宿主设置）。
-        Lir::LoadSlot(OBJECT_SLOT),
-        Lir::LoadSlotToRcx(ZERO_SLOT),
-        Lir::Ne,
-        Lir::JumpIfZero(FAIL_LABEL),
-        // `PyModule_AddObject(module, "value", object)`：成功时接管对象引用。
-        Lir::LoadSlotToArg { slot: MODULE_SLOT, index: 0 },
-        Lir::LoadDataAddress(value_offset),
-        Lir::StoreSlot(TEMP_SLOT),
-        Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 1 },
-        Lir::LoadSlotToArg { slot: OBJECT_SLOT, index: 2 },
-        Lir::CallImport { module: dll.to_string(), field: "PyModule_AddObject".to_string() },
-        Lir::StoreSlot(RESULT_SLOT),
-        Lir::LoadSlot(RESULT_SLOT),
-        Lir::LoadSlotToRcx(ZERO_SLOT),
-        Lir::Eq,
-        Lir::JumpIfZero(FAIL_LABEL),
-        Lir::LoadI64(0),
-        Lir::Return,
-        Lir::Label(FAIL_LABEL),
-        Lir::LoadI64(-1),
-        Lir::Return,
-    ]);
+    instructions.push(Lir::LoadI64(0));
+    instructions.push(Lir::StoreSlot(ZERO_SLOT));
+    for (property, name_offset) in properties.iter().zip(property_name_offsets) {
+        instructions.extend([
+            Lir::Call(property.symbol.clone()),
+            Lir::StoreSlot(VALUE_SLOT),
+            // 装箱：整数走 64 位有符号，布尔走原生 `bool`。
+            Lir::LoadSlotToArg { slot: VALUE_SLOT, index: 0 },
+            Lir::CallImport {
+                module: dll.to_string(),
+                field: match property.returns {
+                    HostValueKind::Bool => "PyBool_FromLong",
+                    _ => "PyLong_FromLongLong",
+                }
+                .to_string(),
+            },
+            Lir::StoreSlot(OBJECT_SLOT),
+            // `NULL` 表示装箱失败（异常已由宿主设置）。
+            Lir::LoadSlot(OBJECT_SLOT),
+            Lir::LoadSlotToRcx(ZERO_SLOT),
+            Lir::Ne,
+            Lir::JumpIfZero(FAIL_LABEL),
+            // `PyModule_AddObject(module, name, object)`：成功时接管对象引用。
+            Lir::LoadSlotToArg { slot: MODULE_SLOT, index: 0 },
+            Lir::LoadDataAddress(*name_offset),
+            Lir::StoreSlot(TEMP_SLOT),
+            Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 1 },
+            Lir::LoadSlotToArg { slot: OBJECT_SLOT, index: 2 },
+            Lir::CallImport { module: dll.to_string(), field: "PyModule_AddObject".to_string() },
+            Lir::StoreSlot(RESULT_SLOT),
+            Lir::LoadSlot(RESULT_SLOT),
+            Lir::LoadSlotToRcx(ZERO_SLOT),
+            Lir::Eq,
+            Lir::JumpIfZero(FAIL_LABEL),
+        ]);
+    }
+    instructions.extend([Lir::LoadI64(0), Lir::Return, Lir::Label(FAIL_LABEL), Lir::LoadI64(-1), Lir::Return]);
     NativeTextProgramFunction { name: PYTHON_EXEC_NAME.to_string(), slot_count: 6, instructions }
 }
 
-/// Node-API 数据段：`value` 属性名、错误消息与各方法名（全部 NUL 结尾）。
-pub fn node_module_data(methods: &[HostMethod]) -> (Vec<u8>, u32, Vec<u32>, u32) {
+/// Node-API 数据段：属性名、错误消息与各方法名（全部 NUL 结尾）。
+pub fn node_module_data(properties: &[HostProperty], methods: &[HostMethod]) -> (Vec<u8>, Vec<u32>, Vec<u32>, u32) {
     let mut data = Vec::new();
-    let value_name_offset = data.len() as u32;
-    push_cstring(&mut data, "value");
+    let mut property_name_offsets = Vec::with_capacity(properties.len());
+    for property in properties {
+        property_name_offsets.push(data.len() as u32);
+        push_cstring(&mut data, &property.name);
+    }
     let error_message_offset = data.len() as u32;
     push_cstring(&mut data, "expected integer arguments");
     let mut method_name_offsets = Vec::with_capacity(methods.len());
@@ -334,16 +408,18 @@ pub fn node_module_data(methods: &[HostMethod]) -> (Vec<u8>, u32, Vec<u32>, u32)
         method_name_offsets.push(data.len() as u32);
         push_cstring(&mut data, &method.name);
     }
-    (data, value_name_offset, method_name_offsets, error_message_offset)
+    (data, property_name_offsets, method_name_offsets, error_message_offset)
 }
 
-/// `napi_register_module_v1(env, exports)` 入口：把残差 `main` 的整数值写成
-/// `exports.value`，并为每个残差函数注册同名回调，最后返回 `exports` 对象。
+/// `napi_register_module_v1(env, exports)` 入口：把每个属性的零参符号结果写成
+/// `exports.<name>`，并为每个方法注册同名回调，最后返回 `exports` 对象。
 ///
-/// 与 CPython lane 共用同一产品面：宿主侧看到 `{ value, <residual functions> }`。
+/// 属性集合由适配器提交：残差语言可以暴露 `{ value }`，正式编译 lane 可以只
+/// 暴露方法；本模块不要求任何特定符号名。
 pub fn node_addon_registration(
+    properties: &[HostProperty],
+    property_name_offsets: &[u32],
     methods: &[HostMethod],
-    value_name_offset: u32,
     method_name_offsets: &[u32],
     platform: NativePlatform,
     dll: &str,
@@ -367,25 +443,34 @@ pub fn node_addon_registration(
     if let Some(arena) = arena {
         instructions.extend(reset_text_arena(TEMP_SLOT, arena));
     }
-    instructions.extend([
-        Lir::Call("main".to_string()),
-        Lir::StoreSlot(VALUE_SLOT),
-        // `napi_create_int64(env, value, &out)`。
-        Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
-        Lir::LoadSlotToArg { slot: VALUE_SLOT, index: 1 },
-        Lir::LoadSlotAddress(OUT_SLOT),
-        Lir::StoreSlot(TEMP_SLOT),
-        Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
-        Lir::CallImport { module: dll.to_string(), field: "napi_create_int64".to_string() },
-        // `napi_set_named_property(env, exports, "value", out)`。
-        Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
-        Lir::LoadSlotToArg { slot: EXPORTS_SLOT, index: 1 },
-        Lir::LoadDataAddress(value_name_offset),
-        Lir::StoreSlot(TEMP_SLOT),
-        Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
-        Lir::LoadSlotToArg { slot: OUT_SLOT, index: 3 },
-        Lir::CallImport { module: dll.to_string(), field: "napi_set_named_property".to_string() },
-    ]);
+    for (property, name_offset) in properties.iter().zip(property_name_offsets) {
+        instructions.extend([
+            Lir::Call(property.symbol.clone()),
+            Lir::StoreSlot(VALUE_SLOT),
+            // `napi_create_int64(env, value, &out)` / `napi_get_boolean(env, value, &out)`。
+            Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+            Lir::LoadSlotToArg { slot: VALUE_SLOT, index: 1 },
+            Lir::LoadSlotAddress(OUT_SLOT),
+            Lir::StoreSlot(TEMP_SLOT),
+            Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+            Lir::CallImport {
+                module: dll.to_string(),
+                field: match property.returns {
+                    HostValueKind::Bool => "napi_get_boolean",
+                    _ => "napi_create_int64",
+                }
+                .to_string(),
+            },
+            // `napi_set_named_property(env, exports, name, out)`。
+            Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+            Lir::LoadSlotToArg { slot: EXPORTS_SLOT, index: 1 },
+            Lir::LoadDataAddress(*name_offset),
+            Lir::StoreSlot(TEMP_SLOT),
+            Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+            Lir::LoadSlotToArg { slot: OUT_SLOT, index: 3 },
+            Lir::CallImport { module: dll.to_string(), field: "napi_set_named_property".to_string() },
+        ]);
+    }
     for (method, name_offset) in methods.iter().zip(method_name_offsets) {
         // `napi_create_function(env, name, len, wrapper, data, &fn)`。
         instructions.extend([
@@ -430,7 +515,9 @@ pub fn node_addon_registration(
 }
 
 /// `napi_value wrapper(napi_env env, napi_callback_info info)`：把 Node 实参解析成
-/// `i64` 后调用同名残差函数，结果用 `napi_create_int64` 包成 JS number。
+/// `i64` 后调用同名符号，结果按类型化载体跨越边界：
+/// `Int64 → napi_create_int64`（完整 i64 域，不经过 JS number 截断）、
+/// `Bool → napi_get_boolean`、`Utf8 → napi_create_string_utf8`。
 ///
 /// 参数个数不符或不是整数时抛 `TypeError` 并返回 `NULL`，不把错误静默成 0。
 pub fn node_method_wrapper(method: &HostMethod, error_message_offset: u32, platform: NativePlatform, dll: &str, arena: Option<u32>) -> NativeTextProgramFunction {
@@ -520,41 +607,48 @@ pub fn node_method_wrapper(method: &HostMethod, error_message_offset: u32, platf
         instructions.push(Lir::LoadSlotToArg { slot: out_slot(index), index: index as u8 });
     }
     instructions.push(Lir::Call(method.name.clone()));
-    if method.returns_string {
-        // 镜像内字符串描述符 → Node 字符串；描述符永不释放，无需所有权转移。
-        instructions.extend([
-            Lir::StoreSlot(DESCRIPTOR_SLOT),
-            Lir::LoadSlot(DESCRIPTOR_SLOT),
-            Lir::AddRaxImmediate(8),
-            Lir::StoreSlot(POINTER_SLOT),
-            Lir::LoadSlot(DESCRIPTOR_SLOT),
-            Lir::LoadDescriptorLength,
-            Lir::StoreSlot(LENGTH_SLOT),
-            // `napi_create_string_utf8(env, ptr, len, &out)`。
-            Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
-            Lir::LoadSlotToArg { slot: POINTER_SLOT, index: 1 },
-            Lir::LoadSlotToArg { slot: LENGTH_SLOT, index: 2 },
-            Lir::LoadSlotAddress(STRING_SLOT),
-            Lir::StoreSlot(TEMP_SLOT),
-            Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 3 },
-            Lir::CallImport { module: dll.to_string(), field: "napi_create_string_utf8".to_string() },
-            Lir::LoadSlot(STRING_SLOT),
-            Lir::Return,
-        ]);
-    }
-    else {
-        instructions.extend([
-            Lir::StoreSlot(RESULT_SLOT),
-            // `napi_create_int64(env, value, &result)`。
-            Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
-            Lir::LoadSlotToArg { slot: RESULT_SLOT, index: 1 },
-            Lir::LoadSlotAddress(RESULT_SLOT),
-            Lir::StoreSlot(TEMP_SLOT),
-            Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
-            Lir::CallImport { module: dll.to_string(), field: "napi_create_int64".to_string() },
-            Lir::LoadSlot(RESULT_SLOT),
-            Lir::Return,
-        ]);
+    match method.returns {
+        HostValueKind::Utf8 => {
+            // 镜像内字符串描述符 → Node 字符串；描述符永不释放，无需所有权转移。
+            instructions.extend([
+                Lir::StoreSlot(DESCRIPTOR_SLOT),
+                Lir::LoadSlot(DESCRIPTOR_SLOT),
+                Lir::AddRaxImmediate(8),
+                Lir::StoreSlot(POINTER_SLOT),
+                Lir::LoadSlot(DESCRIPTOR_SLOT),
+                Lir::LoadDescriptorLength,
+                Lir::StoreSlot(LENGTH_SLOT),
+                // `napi_create_string_utf8(env, ptr, len, &out)`。
+                Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+                Lir::LoadSlotToArg { slot: POINTER_SLOT, index: 1 },
+                Lir::LoadSlotToArg { slot: LENGTH_SLOT, index: 2 },
+                Lir::LoadSlotAddress(STRING_SLOT),
+                Lir::StoreSlot(TEMP_SLOT),
+                Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 3 },
+                Lir::CallImport { module: dll.to_string(), field: "napi_create_string_utf8".to_string() },
+                Lir::LoadSlot(STRING_SLOT),
+                Lir::Return,
+            ]);
+        }
+        HostValueKind::Bool | HostValueKind::Int64 => {
+            let field = match method.returns {
+                HostValueKind::Bool => "napi_get_boolean",
+                HostValueKind::Int64 => "napi_create_int64",
+                HostValueKind::Utf8 => unreachable!("matched above"),
+            };
+            instructions.extend([
+                Lir::StoreSlot(RESULT_SLOT),
+                // `napi_create_int64(env, value, &result)` / `napi_get_boolean(env, value, &result)`。
+                Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+                Lir::LoadSlotToArg { slot: RESULT_SLOT, index: 1 },
+                Lir::LoadSlotAddress(RESULT_SLOT),
+                Lir::StoreSlot(TEMP_SLOT),
+                Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+                Lir::CallImport { module: dll.to_string(), field: field.to_string() },
+                Lir::LoadSlot(RESULT_SLOT),
+                Lir::Return,
+            ]);
+        }
     }
     // `napi_throw_type_error(env, NULL, message)`。
     instructions.extend([

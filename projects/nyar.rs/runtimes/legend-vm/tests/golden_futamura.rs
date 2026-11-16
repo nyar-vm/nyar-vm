@@ -925,7 +925,8 @@ mod python_extension_abi {
     fn python_method_compares_runtime_strings() {
         let source = "function equal()\n  return (\"a\" .. \"b\") == \"ab\"\nend\nfunction less()\n  return (\"ab\" .. \"c\") < \"abd\"\nend\nfunction longer()\n  return (\"ab\" .. \"c\") < \"ab\"\nend\nreturn 42\n";
         let dir = extension_dir(source, "compare");
-        assert_eq!(run_python(&dir, "print(demo.equal()); print(demo.less()); print(demo.longer())"), "1\n1\n0");
+        // 布尔按宿主原生 `bool` 跨越边界（`PyBool_FromLong`），不再被压成 1/0。
+        assert_eq!(run_python(&dir, "print(demo.equal()); print(demo.less()); print(demo.longer())"), "True\nTrue\nFalse");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1115,7 +1116,8 @@ mod windows_extension_abi {
         let library = python_library();
         let bytes = emit_native_python_extension(&residual, NativePlatform::windows_x64(), Some(&library)).expect("emit pyd");
         std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
-        assert_eq!(run_python(&dir, "print(demo.equal()); print(demo.less()); print(demo.longer())"), "1\n1\n0", "字符串比较必须按内容字节序");
+        // 布尔按宿主原生 `bool` 跨越边界（`PyBool_FromLong`），不再被压成 1/0。
+        assert_eq!(run_python(&dir, "print(demo.equal()); print(demo.less()); print(demo.longer())"), "True\nTrue\nFalse", "字符串比较必须按内容字节序");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

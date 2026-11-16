@@ -15,11 +15,11 @@ use nyar::{
 };
 
 pub use crate::lowering::backends::native::{
-    HostMethod, NATIVE_TEXT_ARENA_CAPACITY, NativeAbi, NativeDataTarget, NativeHostModule, NativePlatform, NativeProductTarget,
-    NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage, append_text_arena, encode_native_text_program,
-    encode_native_text_program_with_data, encode_native_text_program_with_dependencies, encode_native_text_program_with_imports, is_c_identifier,
-    node_addon_registration, node_method_wrapper, node_module_data, python_method_wrapper, python_module_data, python_module_exec,
-    python_module_registration, reset_text_arena,
+    HostMethod, HostProperty, HostValueKind, NATIVE_TEXT_ARENA_CAPACITY, NativeAbi, NativeDataTarget, NativeHostModule, NativePlatform,
+    NativeProductTarget, NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage, any_returns_bool, any_returns_utf8,
+    append_text_arena, encode_native_text_program, encode_native_text_program_with_data, encode_native_text_program_with_dependencies,
+    encode_native_text_program_with_imports, is_c_identifier, node_addon_registration, node_method_wrapper, node_module_data,
+    python_method_wrapper, python_module_data, python_module_exec, python_module_registration, reset_text_arena,
 };
 pub use executable::{NativeExecutableError, NativeExecutableKind, NativeImageFacts, classify_native_executable, classify_native_image};
 

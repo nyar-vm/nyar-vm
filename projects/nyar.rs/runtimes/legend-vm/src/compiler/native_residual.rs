@@ -17,9 +17,10 @@ use miette::{Result, miette};
 use nyar_analyzer::residual::ResidualSink;
 pub use nyar_emitter::nyar_backend_native::{NativeHostModule, NativePlatform, NativeProductTarget};
 use nyar_emitter::nyar_backend_native::{
-    HostMethod, NATIVE_TEXT_ARENA_CAPACITY, NativeDataTarget, NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage,
-    append_text_arena, encode_native_text_program_with_dependencies, is_c_identifier, node_addon_registration, node_method_wrapper,
-    node_module_data, python_method_wrapper, python_module_data, python_module_exec, python_module_registration,
+    HostMethod, HostProperty, HostValueKind, NATIVE_TEXT_ARENA_CAPACITY, NativeDataTarget, NativeTextInstruction, NativeTextProgramFunction,
+    NativeTextProgramImage, any_returns_bool, any_returns_utf8, append_text_arena, encode_native_text_program_with_dependencies, is_c_identifier,
+    node_addon_registration, node_method_wrapper, node_module_data, python_method_wrapper, python_module_data, python_module_exec,
+    python_module_registration,
 };
 
 use super::PeCompiler;
@@ -910,11 +911,14 @@ pub fn lower_native_residual_to_program(
     // 目标的产物不需要可写数据。
     let mut data = Vec::new();
     let mut data_relocations: Vec<(u32, NativeDataTarget)> = Vec::new();
-    let mut string_methods = false;
+    let mut utf8_exports = false;
+    let mut bool_exports = false;
     let mut functions: Vec<NativeTextProgramFunction>;
     match host {
         Some(NativeHostModule::Node) => {
-            require_extension_main("Node addon", module, &probe_lowered)?;
+            // 残差语言约定：把 `main` 的整数/布尔结果暴露成属性 `value`；
+            // 承载服务本身不要求任何特定符号名。
+            let properties = extension_value_property("Node addon", module, &probe_lowered)?;
             let methods = extension_methods(
                 module,
                 &probe_lowered,
@@ -922,19 +926,28 @@ pub fn lower_native_residual_to_program(
                 "Node-API 回调的 `argv` 窗口最多解析整数实参",
                 target.method_parameter_limit(),
             )?;
-            let (node_data, value_name_offset, method_name_offsets, error_message_offset) = node_module_data(&methods);
+            let (node_data, property_name_offsets, method_name_offsets, error_message_offset) = node_module_data(&properties, &methods);
             data = node_data;
             let arena_offset = Some(append_text_arena(&mut data));
-            string_methods = methods.iter().any(|method| method.returns_string);
+            utf8_exports = any_returns_utf8(&methods);
+            bool_exports = any_returns_bool(&properties, &methods);
             let lowered = lower_all(module, has_print, sink_from_parameter, &target, &known_returns, arena_offset)?;
             functions = lowered.iter().map(|(function, _)| function.clone()).collect();
             for method in &methods {
                 functions.push(node_method_wrapper(method, error_message_offset, target.platform(), &host_library, arena_offset));
             }
-            functions.push(node_addon_registration(&methods, value_name_offset, &method_name_offsets, target.platform(), &host_library, arena_offset));
+            functions.push(node_addon_registration(
+                &properties,
+                &property_name_offsets,
+                &methods,
+                &method_name_offsets,
+                target.platform(),
+                &host_library,
+                arena_offset,
+            ));
         }
         Some(NativeHostModule::Python) => {
-            require_extension_main("CPython extension", module, &probe_lowered)?;
+            let properties = extension_value_property("CPython extension", module, &probe_lowered)?;
             if !is_c_identifier(&module.name) {
                 return Err(format!(
                     "CPython 扩展模块名 `{}` 不是合法 C 标识符：`PyInit_<module>` 必须能在 C 中声明",
@@ -948,24 +961,18 @@ pub fn lower_native_residual_to_program(
                 "`PyArg_ParseTuple` 包装最多闭合整数实参",
                 target.method_parameter_limit(),
             )?;
-            let (definition, relocations, value_offset, format_offsets) = python_module_data(&module.name, &methods);
+            let (definition, relocations, property_name_offsets, format_offsets) = python_module_data(&module.name, &properties, &methods);
             data = definition;
             data_relocations = relocations;
             let arena_offset = Some(append_text_arena(&mut data));
-            string_methods = methods.iter().any(|method| method.returns_string);
+            utf8_exports = any_returns_utf8(&methods);
+            bool_exports = any_returns_bool(&properties, &methods);
             let lowered = lower_all(module, has_print, sink_from_parameter, &target, &known_returns, arena_offset)?;
             functions = lowered.iter().map(|(function, _)| function.clone()).collect();
             for (method, format_offset) in methods.iter().zip(format_offsets) {
-                functions.push(python_method_wrapper(
-                    &method.name,
-                    method.parameters,
-                    format_offset,
-                    &host_library,
-                    method.returns_string,
-                    arena_offset,
-                ));
+                functions.push(python_method_wrapper(method, format_offset, &host_library, arena_offset));
             }
-            functions.push(python_module_exec(value_offset, &host_library, arena_offset));
+            functions.push(python_module_exec(&properties, &property_name_offsets, &host_library, arena_offset));
             functions.push(python_module_registration(&module.name, &host_library));
         }
         None => {
@@ -990,8 +997,11 @@ pub fn lower_native_residual_to_program(
                     imports.push((host_library.clone(), symbol.to_string()));
                 }
             }
-            if string_methods {
+            if utf8_exports {
                 imports.push((host_library.clone(), "napi_create_string_utf8".to_string()));
+            }
+            if bool_exports {
+                imports.push((host_library.clone(), "napi_get_boolean".to_string()));
             }
         }
         Some(NativeHostModule::Python) => {
@@ -1004,8 +1014,11 @@ pub fn lower_native_residual_to_program(
             if has_methods {
                 imports.push((host_library.clone(), "PyArg_ParseTuple".to_string()));
             }
-            if string_methods {
+            if utf8_exports {
                 imports.push((host_library.clone(), "PyUnicode_FromStringAndSize".to_string()));
+            }
+            if bool_exports {
+                imports.push((host_library.clone(), "PyBool_FromLong".to_string()));
             }
         }
         None => {}
@@ -1021,27 +1034,34 @@ pub fn lower_native_residual_to_program(
     )
 }
 
-/// 扩展模块入口的共同前提：`main` 存在、无宿主输入、返回可暴露的整数/布尔。
-fn require_extension_main(
+/// 残差语言约定：把 `main` 的整数/布尔结果暴露成模块属性 `value`。
+///
+/// `main` 必须存在、无宿主输入、返回可暴露的整数/布尔；属性事实交给目标侧
+/// 承载服务，服务本身不认识 `main`/`value` 这两个名字。
+fn extension_value_property(
     target: &str,
     module: &NativeResidualModule,
     lowered: &[(NativeTextProgramFunction, Option<ProductValueKind>)],
-) -> Result<(), String> {
+) -> Result<Vec<HostProperty>, String> {
     let main_return = lowered
         .iter()
         .find(|(function, _)| function.name == "main")
         .and_then(|(_, kind)| kind.clone())
         .ok_or_else(|| format!("{target} residual has no `main` return value"))?;
-    if !matches!(main_return, ProductValueKind::Int | ProductValueKind::Bool) {
-        return Err(format!(
-            "{target} residual `main` returns `{main_return:?}`; only integer/boolean results can be exposed to the host"
-        ));
-    }
+    let returns = match main_return {
+        ProductValueKind::Int => HostValueKind::Int64,
+        ProductValueKind::Bool => HostValueKind::Bool,
+        other => {
+            return Err(format!(
+                "{target} residual `main` returns `{other:?}`; only integer/boolean results can be exposed to the host"
+            ));
+        }
+    };
     let main = module.function("main").ok_or_else(|| format!("{target} residual has no `main`"))?;
     if !main.parameters.is_empty() {
         return Err(format!("{target} residual `main` must not take parameters: the extension entry receives no guest inputs"));
     }
-    Ok(())
+    Ok(vec![HostProperty { name: "value".to_string(), symbol: "main".to_string(), returns }])
 }
 
 /// 收集可暴露方法（语言侧策略）：除 `main` 外的残差函数，返回整数/布尔或
@@ -1061,11 +1081,12 @@ fn extension_methods(
         if function.name == "main" {
             continue;
         }
-        let returns_string = match return_kind {
-            Some(ProductValueKind::Int | ProductValueKind::Bool) => false,
-            // 静态字符串描述符由宿主侧转换（`PyUnicode_FromStringAndSize` /
+        let returns = match return_kind {
+            Some(ProductValueKind::Int) => HostValueKind::Int64,
+            Some(ProductValueKind::Bool) => HostValueKind::Bool,
+            // 字符串描述符由宿主侧复制（`PyUnicode_FromStringAndSize` /
             // `napi_create_string_utf8`）；描述符属于镜像，不需要释放。
-            Some(ProductValueKind::Str(_)) => true,
+            Some(ProductValueKind::Str(_)) => HostValueKind::Utf8,
             other => {
                 return Err(format!(
                     "{host}方法 `{}` 的返回载体是 `{other:?}`：只支持整数/布尔或静态字符串",
@@ -1080,7 +1101,7 @@ fn extension_methods(
                 function.name
             ));
         }
-        methods.push(HostMethod { name: function.name.clone(), parameters, returns_string });
+        methods.push(HostMethod { name: function.name.clone(), parameters, returns });
     }
     Ok(methods)
 }
