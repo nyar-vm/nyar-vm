@@ -18,11 +18,16 @@
 //! Node `.node` / Python `.pyd` 只是同一 ISA 上的宿主装载与 ABI 包装形态，不是独立
 //! 指令集；宿主调用属于导入合同，不属于算子编码。
 
+mod carrier;
 mod host;
 mod x64_lir;
 mod x64_program;
 pub mod x86_64;
 
+pub use carrier::{
+    HostMethod, NATIVE_TEXT_ARENA_CAPACITY, PYTHON_EXEC_NAME, append_text_arena, is_c_identifier, node_addon_registration, node_method_wrapper,
+    node_module_data, python_method_wrapper, python_module_data, python_module_exec, python_module_registration, reset_text_arena,
+};
 pub use host::{NativeHostModule, NativePlatform, NativeProductTarget};
 
 pub use x64_program::{
