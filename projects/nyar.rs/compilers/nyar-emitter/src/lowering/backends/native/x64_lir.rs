@@ -1,9 +1,13 @@
-//! x86-64 目标私有低层 IR（LIR）与机器码编码器。
+//! x86-64 目标私有低层 IR（LIR）与机器码编码权威。
 //!
 //! 所有权边界（01 §5）：`ExecutableFunction` 是语言语义事实，本模块不读取它；
 //! [`super::x86_64`] 的降低器把已冻结的计划事实转成 [`X64Function`]，编码器只把
 //! LIR 机械翻译成字节。标签、栈槽、寄存器与直接调用目标都在 LIR 内显式，编码器
 //! 不再推导 SSA、布局或调用语义。
+//!
+//! **本模块是 native lane 唯一的 x86-64 字节权威**：帧序言/尾声、寄存器前缀表、
+//! 算子编码、`rel32` 回填与文本 LIR（[`super::x64_program`]）、ELF 入口桩共享同
+//! 一套图元；任何其他模块不得再手写同一 ISA 的指令字节。
 //!
 //! 栈槽固定为 Win64 帧内 8 字节槽（`[rbp - 8 * (slot + 1)]`），出参周转区为
 //! `[rsp + 8 * index]`；调用目标以重定位记录返回，由镜像装配在全部函数布局完成
@@ -177,11 +181,7 @@ pub(super) type X64Relocation = (usize, ItemInstanceId);
 /// 编码器只消费 LIR：不读 `ExecutableFunction`、计划、SSA 或类型布局。
 pub(super) fn encode_x64_function(function: &X64Function, text: &mut Vec<u8>, relocations: &mut Vec<X64Relocation>) -> Result<()> {
     let start = text.len();
-    // 序言：`push rbp; mov rbp, rsp; sub rsp, frame`。
-    text.extend_from_slice(&[0x55]);
-    text.extend_from_slice(&[0x48, 0x89, 0xE5]);
-    text.extend_from_slice(&[0x48, 0x81, 0xEC]);
-    text.extend_from_slice(&function.frame_bytes.to_le_bytes());
+    emit_prologue(text, function.frame_bytes);
 
     let mut labels = BTreeMap::<MirBlockRef, usize>::new();
     let mut jumps = Vec::<(usize, MirBlockRef)>::new();
@@ -191,24 +191,15 @@ pub(super) fn encode_x64_function(function: &X64Function, text: &mut Vec<u8>, re
             X64Instruction::Label(block) => {
                 labels.insert(*block, text.len());
             }
-            X64Instruction::StoreFrame { slot, source } => {
-                text.extend_from_slice(&source.frame_store_prefix());
-                text.extend_from_slice(&frame_disp(*slot).to_le_bytes());
-            }
+            X64Instruction::StoreFrame { slot, source } => emit_mov_to_frame(text, *source, *slot),
             X64Instruction::Load { register, source } => match source {
                 X64Value::Register(source) => {
                     if source != register {
                         return Err(format!("x86_64 LIR 编码：寄存器到寄存器的 `Load` 未定义（{:?} → {:?}）", source, register));
                     }
                 }
-                X64Value::Immediate(value) => {
-                    text.extend_from_slice(&register.imm64_prefix());
-                    text.extend_from_slice(&(*value as u64).to_le_bytes());
-                }
-                X64Value::Location(X64Location::Frame(slot)) => {
-                    text.extend_from_slice(&register.frame_load_prefix());
-                    text.extend_from_slice(&frame_disp(*slot).to_le_bytes());
-                }
+                X64Value::Immediate(value) => emit_mov_imm64(text, *register, *value),
+                X64Value::Location(X64Location::Frame(slot)) => emit_mov_from_frame(text, *register, *slot),
                 X64Value::Location(X64Location::Scratch(index)) => {
                     text.extend_from_slice(&register.scratch_load_prefix());
                     text.push(*index);
@@ -220,27 +211,13 @@ pub(super) fn encode_x64_function(function: &X64Function, text: &mut Vec<u8>, re
             }
             X64Instruction::Operator(code) => encode_operator(text, *code),
             X64Instruction::Call(instance) => {
-                text.push(0xE8);
                 // 记录 `rel32` 字段的绝对位置；相对位移在全部函数布局完成后回填。
-                relocations.push((text.len(), *instance));
-                text.extend_from_slice(&[0, 0, 0, 0]);
+                relocations.push((emit_call_placeholder(text), *instance));
             }
-            X64Instruction::Jump(target) => {
-                text.push(0xE9);
-                jumps.push((text.len(), *target));
-                text.extend_from_slice(&[0, 0, 0, 0]);
-            }
-            X64Instruction::JumpIfZero(target) => {
-                // `test eax, eax` 只按 32 位布尔载体判定。
-                text.extend_from_slice(&[0x85, 0xC0]);
-                text.extend_from_slice(&[0x0F, 0x84]);
-                jumps.push((text.len(), *target));
-                text.extend_from_slice(&[0, 0, 0, 0]);
-            }
-            X64Instruction::Return => {
-                text.extend_from_slice(&[0x48, 0x89, 0xEC, 0x5D, 0xC3]);
-            }
-            X64Instruction::Trap => text.extend_from_slice(&[0x0F, 0x0B]),
+            X64Instruction::Jump(target) => jumps.push((emit_jump_placeholder(text), *target)),
+            X64Instruction::JumpIfZero(target) => jumps.push((emit_jump_if_zero_placeholder(text), *target)),
+            X64Instruction::Return => emit_function_return(text),
+            X64Instruction::Trap => emit_trap(text),
         }
     }
 
@@ -249,9 +226,7 @@ pub(super) fn encode_x64_function(function: &X64Function, text: &mut Vec<u8>, re
         else {
             return Err(format!("x86_64 LIR 编码：跳转目标块 {:?} 缺少标签", target));
         };
-        let displacement = i64::try_from(target_offset).unwrap_or(i64::MAX) - (i64::try_from(field).unwrap_or(i64::MAX) + 4);
-        let displacement = i32::try_from(displacement).map_err(|_| format!("x86_64 LIR 编码：块跳转位移超出 `rel32`（函数起始 {start}）"))?;
-        text[field..field + 4].copy_from_slice(&displacement.to_le_bytes());
+        patch_rel32(text, field, target_offset, || format!("x86_64 LIR 编码：块跳转位移超出 `rel32`（函数起始 {start}）"))?;
     }
     Ok(())
 }
@@ -261,7 +236,207 @@ fn frame_disp(slot: u16) -> i32 {
     -8 * (i32::from(slot) + 1)
 }
 
-fn encode_operator(text: &mut Vec<u8>, code: X86_64OperatorCode) {
+/// 帧序言：`push rbp; mov rbp, rsp; sub rsp, frame_bytes`。
+pub(super) fn emit_prologue(text: &mut Vec<u8>, frame_bytes: u32) {
+    text.extend_from_slice(&[0x55, 0x48, 0x89, 0xE5, 0x48, 0x81, 0xEC]);
+    text.extend_from_slice(&frame_bytes.to_le_bytes());
+}
+
+/// 函数返回：`mov rsp, rbp; pop rbp; ret`（返回值已在 `rax`）。
+pub(super) fn emit_function_return(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0x48, 0x89, 0xEC, 0x5D, 0xC3]);
+}
+
+/// `ud2`：到达即故障。
+pub(super) fn emit_trap(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0x0F, 0x0B]);
+}
+
+/// `call rel32`：写操作码与占位位移，返回位移字段偏移。
+pub(super) fn emit_call_placeholder(text: &mut Vec<u8>) -> usize {
+    text.push(0xE8);
+    let field = text.len();
+    text.extend_from_slice(&[0, 0, 0, 0]);
+    field
+}
+
+/// `jmp rel32`。
+pub(super) fn emit_jump_placeholder(text: &mut Vec<u8>) -> usize {
+    text.push(0xE9);
+    let field = text.len();
+    text.extend_from_slice(&[0, 0, 0, 0]);
+    field
+}
+
+/// `test eax, eax` + `jz rel32`（条件值已在 `rax`，只按 32 位布尔载体判定）。
+pub(super) fn emit_jump_if_zero_placeholder(text: &mut Vec<u8>) -> usize {
+    text.extend_from_slice(&[0x85, 0xC0, 0x0F, 0x84]);
+    let field = text.len();
+    text.extend_from_slice(&[0, 0, 0, 0]);
+    field
+}
+
+/// `call qword ptr [rip + disp32]`：导入间接调用；修复去向由容器决定。
+pub(super) fn emit_call_import_placeholder(text: &mut Vec<u8>) -> usize {
+    text.extend_from_slice(&[0xFF, 0x15]);
+    let field = text.len();
+    text.extend_from_slice(&[0, 0, 0, 0]);
+    field
+}
+
+/// `lea rax, [rip + disp32]`：rip 相对取址，位移在布局确定后回填。
+pub(super) fn emit_lea_rip_placeholder(text: &mut Vec<u8>) -> usize {
+    text.extend_from_slice(&[0x48, 0x8D, 0x05]);
+    let field = text.len();
+    text.extend_from_slice(&[0, 0, 0, 0]);
+    field
+}
+
+/// `rel32` 回填的唯一实现：位移 = 目标 − (字段 + 4)。
+pub(super) fn patch_rel32(text: &mut [u8], field: usize, target: usize, out_of_range: impl FnOnce() -> String) -> Result<()> {
+    let displacement = i64::try_from(target).unwrap_or(i64::MAX) - (i64::try_from(field).unwrap_or(i64::MAX) + 4);
+    let displacement = i32::try_from(displacement).map_err(|_| out_of_range())?;
+    text[field..field + 4].copy_from_slice(&displacement.to_le_bytes());
+    Ok(())
+}
+
+/// `mov reg, imm64`。
+pub(super) fn emit_mov_imm64(text: &mut Vec<u8>, register: X64Reg, value: i64) {
+    text.extend_from_slice(&register.imm64_prefix());
+    text.extend_from_slice(&(value as u64).to_le_bytes());
+}
+
+/// `mov reg, [rbp - 8 * (slot + 1)]`。
+pub(super) fn emit_mov_from_frame(text: &mut Vec<u8>, register: X64Reg, slot: u16) {
+    text.extend_from_slice(&register.frame_load_prefix());
+    text.extend_from_slice(&frame_disp(slot).to_le_bytes());
+}
+
+/// `mov [rbp - 8 * (slot + 1)], reg`。
+pub(super) fn emit_mov_to_frame(text: &mut Vec<u8>, register: X64Reg, slot: u16) {
+    text.extend_from_slice(&register.frame_store_prefix());
+    text.extend_from_slice(&frame_disp(slot).to_le_bytes());
+}
+
+/// `lea rax, [rbp - 8 * (slot + 1)]`：取帧槽地址。
+pub(super) fn emit_lea_rax_from_frame(text: &mut Vec<u8>, slot: u16) {
+    text.extend_from_slice(&[0x48, 0x8D, 0x85]);
+    text.extend_from_slice(&frame_disp(slot).to_le_bytes());
+}
+
+/// 按调用约定取第 `index` 个整数形参寄存器；超出寄存器上限返回 `None`。
+pub(super) fn argument_register(abi: NativeAbi, index: u8) -> Option<X64Reg> {
+    X64Reg::argument_registers(abi).get(index as usize).copied()
+}
+
+/// `add rax, imm32`。
+pub(super) fn emit_add_rax_imm32(text: &mut Vec<u8>, value: i32) {
+    text.extend_from_slice(&[0x48, 0x81, 0xC0]);
+    text.extend_from_slice(&value.to_le_bytes());
+}
+
+/// `sub rax, imm32`。
+pub(super) fn emit_sub_rax_imm32(text: &mut Vec<u8>, value: i32) {
+    text.extend_from_slice(&[0x48, 0x81, 0xE8]);
+    text.extend_from_slice(&value.to_le_bytes());
+}
+
+/// `add rdx, imm32`。
+pub(super) fn emit_add_rdx_imm32(text: &mut Vec<u8>, value: i32) {
+    text.extend_from_slice(&[0x48, 0x81, 0xC2]);
+    text.extend_from_slice(&value.to_le_bytes());
+}
+
+/// `neg rax`。
+pub(super) fn emit_neg_rax(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0x48, 0xF7, 0xD8]);
+}
+
+/// `rax = rax / 10`，余数进入 `rdx`（无符号除法；调用方保证非负）。
+pub(super) fn emit_divide_by_ten(text: &mut Vec<u8>) {
+    // `xor rdx, rdx; mov rcx, 10; div rcx`。
+    text.extend_from_slice(&[0x48, 0x31, 0xD2, 0x48, 0xB9]);
+    text.extend_from_slice(&10u64.to_le_bytes());
+    text.extend_from_slice(&[0x48, 0xF7, 0xF1]);
+}
+
+/// `mov [rax], dl`：把 `rdx` 的低字节写入 `rax` 指向的缓冲区。
+pub(super) fn emit_store_byte_at_rax_from_rdx(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0x88, 0x10]);
+}
+
+/// `movzx eax, byte [rax]`：读取单字节并零扩展到 64 位。
+pub(super) fn emit_load_byte_from_rax(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0x0F, 0xB6, 0x00]);
+}
+
+/// `mov rax, [rax]`：读取机器字。
+pub(super) fn emit_load_from_rax(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0x48, 0x8B, 0x00]);
+}
+
+/// `mov [rax], rcx`。
+pub(super) fn emit_store_rcx_to_rax(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0x48, 0x89, 0x08]);
+}
+
+/// `mov [rcx], rax`。
+pub(super) fn emit_store_rax_to_rcx(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0x48, 0x89, 0x01]);
+}
+
+/// `mov dword ptr [rax], imm32`。
+pub(super) fn emit_store_dword_imm_to_rax(text: &mut Vec<u8>, value: u32) {
+    text.extend_from_slice(&[0xC7, 0x00]);
+    text.extend_from_slice(&value.to_le_bytes());
+}
+
+/// `mov [rax], ecx`。
+pub(super) fn emit_store_dword_rcx_to_rax(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0x89, 0x08]);
+}
+
+/// `mov eax, [rax + 4]`：读字符串描述符里的 `u32` 长度（零扩展）。
+pub(super) fn emit_load_descriptor_length(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0x8B, 0x40, 0x04]);
+}
+
+/// 复制字节：`rax` = 目标、`rcx` = 源、`rdx` = 长度。
+///
+/// 保存/恢复 `rdi`/`rsi`（两种 ABI 都是被调用者保存），`rep movsb` 完成复制；
+/// 方向标志由 ABI 保证为 0。
+pub(super) fn emit_copy_bytes(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0x57, 0x56, 0x48, 0x89, 0xC7, 0x48, 0x89, 0xCE, 0x48, 0x89, 0xD1, 0xF3, 0xA4, 0x5E, 0x5F]);
+}
+
+/// Linux `write(2)`：实参按 SysV64 位于 `rdi`/`rsi`/`rdx`。
+pub(super) fn emit_syscall_write(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0xB8, 0x01, 0x00, 0x00, 0x00, 0x0F, 0x05]);
+}
+
+/// Linux `exit(2)`：退出码取自 `rax`（前置 `mov rdi, rax` 由调用方发射）。
+pub(super) fn emit_syscall_exit(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0xB8, 0x3C, 0x00, 0x00, 0x00, 0x0F, 0x05]);
+}
+
+/// `mov rdi, rax`。
+pub(super) fn emit_mov_rdi_from_rax(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0x48, 0x89, 0xC7]);
+}
+
+/// Win64：`mov qword ptr [rsp + displacement], 0`（第 5+ 个栈实参置零）。
+pub(super) fn emit_zero_stack_arg(text: &mut Vec<u8>, displacement: u8) {
+    text.extend_from_slice(&[0x48, 0xC7, 0x44, 0x24, displacement, 0, 0, 0, 0]);
+}
+
+/// Win64：`mov [rsp + offset], rax`（栈实参周转）。
+pub(super) fn emit_store_rax_to_stack(text: &mut Vec<u8>, offset: u32) {
+    text.extend_from_slice(&[0x48, 0x89, 0x84, 0x24]);
+    text.extend_from_slice(&offset.to_le_bytes());
+}
+
+/// 按冻结 x86-64 operator 编码（唯一算子字节表；操作数已按约定位于 `rax`/`rcx`）。
+pub(super) fn encode_operator(text: &mut Vec<u8>, code: X86_64OperatorCode) {
     match code {
         X86_64OperatorCode::I64Add => text.extend_from_slice(&[0x48, 0x01, 0xC8]),
         X86_64OperatorCode::I64Subtract => text.extend_from_slice(&[0x48, 0x29, 0xC8]),

@@ -36,7 +36,7 @@ use acorn_pe::elf::{NativeElfImage, NativeElfWriter};
 
 use super::{
     NativeAbi, NativeLoweredFragment,
-    x64_lir::{X64Function, X64Instruction, X64Location, X64Reg, X64Value, encode_x64_function},
+    x64_lir::{self, X64Function, X64Instruction, X64Location, X64Reg, X64Value, encode_x64_function},
 };
 
 /// 已冻结的 x86-64 operator 编码。
@@ -313,13 +313,11 @@ fn lower_x86_64(submission: &FragmentSubmission, abi: NativeAbi, container: Nati
 fn append_elf_entry_exit_stub(mut text: Vec<u8>, entry_function: usize) -> Result<(Vec<u8>, u32)> {
     let entry_point = u32::try_from(text.len()).map_err(|_| "x86_64 ELF 入口桩偏移超出 `u32`".to_string())?;
     // `call rel32` 到语言入口函数。
-    text.push(0xE8);
-    let field = text.len();
-    let displacement = i64::try_from(entry_function).unwrap_or(i64::MAX) - (i64::try_from(field).unwrap_or(i64::MAX) + 4);
-    let displacement = i32::try_from(displacement).map_err(|_| "x86_64 ELF 入口桩调用位移超出 `rel32`".to_string())?;
-    text.extend_from_slice(&displacement.to_le_bytes());
+    let field = x64_lir::emit_call_placeholder(&mut text);
+    x64_lir::patch_rel32(&mut text, field, entry_function, || "x86_64 ELF 入口桩调用位移超出 `rel32`".to_string())?;
     // `mov rdi, rax`；`mov eax, 60`（SYS_exit）；`syscall`。
-    text.extend_from_slice(&[0x48, 0x89, 0xC7, 0xB8, 0x3C, 0x00, 0x00, 0x00, 0x0F, 0x05]);
+    x64_lir::emit_mov_rdi_from_rax(&mut text);
+    x64_lir::emit_syscall_exit(&mut text);
     Ok((text, entry_point))
 }
 
