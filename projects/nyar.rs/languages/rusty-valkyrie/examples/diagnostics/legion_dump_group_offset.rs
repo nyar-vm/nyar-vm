@@ -5,7 +5,7 @@
 //! ```
 use std::path::PathBuf;
 
-use rusty_valkyrie::workspace::{
+use rusty_valkyrie::legion::workspace::{
     planner::{BuildRequest, WorkspaceResolver},
     source_snapshot::compile_source_snapshot,
 };
@@ -43,7 +43,7 @@ fn main() {
                 eprintln!("  {} @{}: `{}`", file.path, probe_offset, &file.source[probe_start..probe_end]);
                 eprintln!("  snippet:\n{}\n", &file.source[start..end]);
             }
-            match rusty_valkyrie::frontend::parse_source(&file.source) {
+            match rusty_valkyrie::compiler::syntax::oak::parse_source(&file.source) {
                 Ok(root) => eprintln!("  {} parse ok items={}", file.path, root.items.len()),
                 Err(error) => eprintln!("  {} parse err: {:?}", file.path, error),
             }

@@ -5,10 +5,9 @@
 //! `let` 的 pattern 必须是 `Variable(set)`，且 `set.length()` 的成员候选
 //! 必须由这个绑定名解析出 `DisjointSet.length` 的声明身份。
 
-use rusty_valkyrie::{
-    SourceID, ValkyrieCompiler,
-    compiler::types::hir::{HirExprKind, HirModule, HirPattern, HirStatementKind},
-};
+use rusty_valkyrie::api::SourceID;
+use rusty_valkyrie::compiler::hir::ValkyrieCompiler;
+use rusty_valkyrie::compiler::types::hir::{HirExprKind, HirModule, HirPattern, HirStatementKind};
 
 const SOURCE: &str = r#"
 [primitive("std::primitive::i32")] structure i32 { }

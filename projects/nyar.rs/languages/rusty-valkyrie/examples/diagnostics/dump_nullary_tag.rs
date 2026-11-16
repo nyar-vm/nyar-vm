@@ -1,5 +1,6 @@
 fn main() {
-    use rusty_valkyrie::{MirLowerer, ValkyrieCompiler, types::SourceID};
+    use rusty_valkyrie::api::{MirLowerer, SourceID};
+    use rusty_valkyrie::compiler::hir::ValkyrieCompiler;
     let hir = ValkyrieCompiler::new(SourceID { version_id: 99001 })
         .compile_source(
             r#"

@@ -5,7 +5,7 @@
 //! ```
 use std::path::PathBuf;
 
-use rusty_valkyrie::workspace::{
+use rusty_valkyrie::legion::workspace::{
     planner::{BuildRequest, WorkspaceResolver},
     source_snapshot::compile_source_snapshot,
 };
@@ -50,7 +50,7 @@ fn main() {
         let end = source.ceil_char_boundary((probe + 40).min(source.len()));
         eprintln!("--- @{}:\n{}\n", probe, &source[start..end]);
     }
-    match rusty_valkyrie::frontend::parse_source(&source) {
+    match rusty_valkyrie::compiler::syntax::oak::parse_source(&source) {
         Ok(root) => eprintln!("parse ok items={}", root.items.len()),
         Err(error) => eprintln!("parse err: {:?}", error),
     }

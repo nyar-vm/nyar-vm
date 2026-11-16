@@ -7,12 +7,13 @@
 //! 注入同一份声明；各测试文件禁止再抄写 primitive 声明文本。
 //!
 //! 验证「未声明 primitive 必须结构化失败」的用例显式走原始
-//! [`rusty_valkyrie::ValkyrieCompiler::compile_source`]，不要经过
+//! [`rusty_valkyrie::compiler::hir::ValkyrieCompiler::compile_source`]，不要经过
 //! [`SourceFixtureCompile`]：这就是 fail-closed 用例的 opt-out。
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use rusty_valkyrie::{CompilerSourceFile, CompilerSourceGroup, HirError, ValkyrieCompiler, types::hir::HirModule};
+use rusty_valkyrie::compiler::hir::{CompilerSourceFile, CompilerSourceGroup, HirError, ValkyrieCompiler};
+use rusty_valkyrie::compiler::types::hir::HirModule;
 
 /// 与 std 包一致的 primitive 声明集合；测试侧唯一声明来源。
 pub(crate) const PRIMITIVES: &str = include_str!("primitives.v");

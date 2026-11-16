@@ -1,5 +1,6 @@
 fn main() {
-    use rusty_valkyrie::{ValkyrieCompiler, types::SourceID};
+    use rusty_valkyrie::api::SourceID;
+    use rusty_valkyrie::compiler::hir::ValkyrieCompiler;
     let hir = ValkyrieCompiler::new(SourceID { version_id: 99002 })
         .compile_source(
             r#"

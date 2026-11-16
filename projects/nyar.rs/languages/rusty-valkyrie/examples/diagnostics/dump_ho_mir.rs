@@ -1,4 +1,5 @@
-use rusty_valkyrie::{MirLowerer, ValkyrieCompiler, types::SourceID};
+use rusty_valkyrie::api::{MirLowerer, SourceID};
+use rusty_valkyrie::compiler::hir::ValkyrieCompiler;
 
 fn main() {
     let src = r#"

@@ -992,7 +992,7 @@ micro probe(iter: ArrayIterator) -> bool {
     return iter.accept_item(item) && iter.accept_opt(maybe) && iter.accept_fn(is_even)
 }
 "#;
-        crate::ValkyrieCompiler::default()
+        crate::compiler::hir::ValkyrieCompiler::default()
             .compile_source(&format!("{source}\n{TEST_PRIMITIVES}"))
             .unwrap_or_else(|error| panic!("trait 关联类型在三种位置都必须匹配: {error}"));
     }
@@ -1076,7 +1076,7 @@ micro run() -> i32 {
             Vec::new(),
         )
         .as_entry();
-        crate::ValkyrieCompiler::default()
+        crate::compiler::hir::ValkyrieCompiler::default()
             .compile_source_groups_to_program(&[group])
             .unwrap_or_else(|error| panic!("legion 形态探针: {error}"));
     }
@@ -1086,7 +1086,7 @@ micro run() -> i32 {
     #[test]
     fn filter_on_concrete_iterator_resolves_with_function_predicate() {
         let source = filter_probe_source("    micro has_next(self): bool { return true }\n    micro next(mut self): Option<T> { return None }");
-        crate::ValkyrieCompiler::default()
+        crate::compiler::hir::ValkyrieCompiler::default()
             .compile_source(&format!("{source}\n{TEST_PRIMITIVES}"))
             .unwrap_or_else(|error| panic!("filter 的谓词形参必须能匹配: {error}"));
     }

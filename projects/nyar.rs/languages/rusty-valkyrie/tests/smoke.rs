@@ -4,7 +4,8 @@
 //! 本 crate 只保留最基本的“前端可解析、编译器不 panic”检查，避免测试门禁
 //! 反向约束架构重构。
 
-use rusty_valkyrie::{ValkyrieCompiler, parser::parse_source};
+use rusty_valkyrie::compiler::hir::{CompilerSourceGroup, ValkyrieCompiler};
+use rusty_valkyrie::compiler::syntax::oak::parse_source;
 
 #[test]
 fn parses_a_minimal_function() {
@@ -15,7 +16,7 @@ fn parses_a_minimal_function() {
 #[test]
 fn minimal_entry_compiles() {
     let source = "[main] micro main() { }";
-    let groups = [rusty_valkyrie::CompilerSourceGroup::single_source("smoke", "smoke", source).as_entry()];
+    let groups = [CompilerSourceGroup::single_source("smoke", "smoke", source).as_entry()];
     let program = ValkyrieCompiler::default().compile_source_groups_to_program_with_host_bindings(&groups, &[], &[], "wasm");
     assert!(program.is_ok(), "minimal entry must compile without a structured failure: {program:?}");
 }
@@ -58,7 +59,7 @@ fn compile_and_run_on_host(target: &str, invocation: Option<&str>) {
     use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
     use rusty_valkyrie::compiler::emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts};
 
-    let groups = vec![rusty_valkyrie::CompilerSourceGroup::single_source("smoke", "smoke", "[main] micro main() { }").as_entry()];
+    let groups = vec![CompilerSourceGroup::single_source("smoke", "smoke", "[main] micro main() { }").as_entry()];
     let input = rusty_valkyrie::compiler::hir::lowering::CompilerSourceInput::application(groups);
     let context = CompilerBuildContext::new(
         "smoke-arch",
@@ -131,7 +132,7 @@ fn minimal_entry_runs_on_native() {
     use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
     use rusty_valkyrie::compiler::emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts};
 
-    let groups = vec![rusty_valkyrie::CompilerSourceGroup::single_source("smoke", "smoke", "[main] micro main() { }").as_entry()];
+    let groups = vec![CompilerSourceGroup::single_source("smoke", "smoke", "[main] micro main() { }").as_entry()];
     let input = rusty_valkyrie::compiler::hir::lowering::CompilerSourceInput::application(groups);
     let context = CompilerBuildContext::new(
         "native",
@@ -160,7 +161,7 @@ fn minimal_entry_runs_on_wasi_with_real_argv() {
     use rusty_valkyrie::compiler::emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts};
 
     let source = "[main]\nmicro main(args: [utf8]) {\n}\n";
-    let groups = vec![rusty_valkyrie::CompilerSourceGroup::single_source("smoke", "smoke", source).as_entry()];
+    let groups = vec![CompilerSourceGroup::single_source("smoke", "smoke", source).as_entry()];
     let input = rusty_valkyrie::compiler::hir::lowering::CompilerSourceInput::application(groups);
     let context = CompilerBuildContext::new(
         "wasi",
@@ -210,7 +211,7 @@ fn minimal_entry_runs_on_ovm() {
     use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
     use rusty_valkyrie::compiler::emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts};
 
-    let groups = vec![rusty_valkyrie::CompilerSourceGroup::single_source("smoke", "smoke", "[main] micro main() { }").as_entry()];
+    let groups = vec![CompilerSourceGroup::single_source("smoke", "smoke", "[main] micro main() { }").as_entry()];
     let input = rusty_valkyrie::compiler::hir::lowering::CompilerSourceInput::application(groups);
     let context = CompilerBuildContext::new(
         "ovm",
@@ -240,7 +241,7 @@ fn minimal_entry_emits_wasm_artifact() {
     use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
     use rusty_valkyrie::compiler::emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts};
 
-    let groups = vec![rusty_valkyrie::CompilerSourceGroup::single_source("smoke", "smoke", "[main] micro main() { }").as_entry()];
+    let groups = vec![CompilerSourceGroup::single_source("smoke", "smoke", "[main] micro main() { }").as_entry()];
     let input = rusty_valkyrie::compiler::hir::lowering::CompilerSourceInput::application(groups);
     let context = CompilerBuildContext::new(
         "wasm32",
