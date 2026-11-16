@@ -48,6 +48,13 @@ pub struct TargetInputRequest<'a> {
     pub artifact_purpose: nyar::ArtifactPurpose,
     /// Wasm 打包形态（仅 Wasm lane 的容器事实）。
     pub wasm_package_kind: crate::nyar_backend_wasi::WasmPackageKind,
+    /// 逻辑产物名：CPython 扩展模块名等产物身份由此冻结，不由 lane 事后改标。
+    pub project_name: &'a str,
+    /// 宿主产物合同（Node-API / CPython）：语言侧声明的交付事实。
+    ///
+    /// `Some` 只允许与 `artifact_purpose = HostExtension` 一起出现；native lane
+    /// 据此选择承载服务，其余 lane 在写出前拒绝该用途。
+    pub host_contract: Option<nyar::ArtifactContract>,
 }
 
 /// 语言 → 平台适配器。

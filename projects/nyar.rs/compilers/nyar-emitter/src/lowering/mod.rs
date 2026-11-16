@@ -75,6 +75,14 @@ pub(crate) fn testing_lower_fragment_to_native_image(
     backends::native::lower_fragment_to_native_image(submission, target)
 }
 
+pub(crate) fn testing_lower_fragment_to_native_extension(
+    submission: &FragmentSubmission,
+    target: &backends::native::NativeProductTarget,
+    module_name: &str,
+) -> Result<backends::native::NativeLoweredExtension> {
+    backends::native::lower_fragment_to_native_extension(submission, target, module_name)
+}
+
 pub(crate) fn testing_decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 {
     wasm::decode_uleb128(bytes, pos)
 }

@@ -44,18 +44,57 @@ impl BundledBackendCompiler for NativeFamilyCompiler {
         let backend = NativeBinaryBackend::new();
         backend.validate(&input).map_err(|error| error.to_string())?;
         let entry_symbol = input.entry_symbol.clone();
-        // 用途决定容器：native 库交付与宿主扩展尚未接线，写出前显式拒绝，
-        // 不得由可执行镜像改标冒充库。
+        // 用途决定容器：输入必须已携带与用途一致的产物事实（扩展名、导出面），
+        // 包装层不得把可执行镜像改标为库或扩展。
         match request.purpose {
             nyar::ArtifactPurpose::Library => {
                 return Err("`native` 库交付尚未接线；拒绝把可执行镜像改标为库产物".to_string());
             }
             nyar::ArtifactPurpose::HostExtension => {
-                return Err("`native` 宿主扩展 lane 尚未接入正式编译链；拒绝产出未接线的扩展交付".to_string());
+                if input.artifact_extension.is_none() {
+                    return Err("native 宿主扩展输入缺少产物扩展名（`.node`/`.pyd`/`.so`）；拒绝写出不具名的共享库".to_string());
+                }
+                if input.host_exports.is_empty() {
+                    return Err("native 宿主扩展缺少冻结的宿主导出面；拒绝产出无导出的扩展交付".to_string());
+                }
+            }
+            nyar::ArtifactPurpose::Application if !input.host_exports.is_empty() => {
+                return Err("native 可执行交付不得携带宿主扩展导出面；用途与导出面必须一致".to_string());
             }
             _ => {}
         }
-        let artifacts = backend.compile(input, request.options).map_err(|error| error.to_string())?;
+        let artifacts = backend.compile(input.clone(), request.options).map_err(|error| error.to_string())?;
+        // 宿主扩展没有进程入口：不产 CLI 运行合同，交付事实是宿主装载入口符号
+        // 与按名调用的导出索引（合法无 CLI，区别于合同缺失）。
+        if request.purpose == nyar::ArtifactPurpose::HostExtension {
+            let physical_artifact = artifacts
+                .artifacts
+                .first()
+                .map(|artifact| artifact.path.clone())
+                .ok_or_else(|| "native 宿主扩展没有产出共享库镜像".to_string())?;
+            let invocation = match input.artifact_extension.as_deref() {
+                Some(".node") => "node require",
+                _ => "python import",
+            };
+            let library_exports = input
+                .host_exports
+                .iter()
+                .map(|name| crate::DriverLibraryExport {
+                    logical_name: name.clone(),
+                    physical_artifact: physical_artifact.clone(),
+                    invocation: invocation.to_string(),
+                    abi_digest: String::new(),
+                })
+                .collect();
+            return Ok(DriverCompileReport {
+                artifacts,
+                entry_symbol: Some(entry_symbol),
+                run_contracts: Vec::new(),
+                managed_abi: Vec::new(),
+                ovm_abi: Vec::new(),
+                library_exports,
+            });
+        }
         // 原生可执行文件就是宿主入口：运行契约直接指向产物本身，不拼接命令前缀，
         // 逻辑入口取适配器冻结的入口符号。
         let run_contracts = artifacts

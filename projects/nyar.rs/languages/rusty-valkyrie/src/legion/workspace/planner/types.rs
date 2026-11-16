@@ -48,6 +48,12 @@ pub struct BuildRequest {
     /// 空集 = 所有 feature gate 视为未启用。
     #[serde(default)]
     pub enabled_features: std::collections::BTreeSet<String>,
+    /// 宿主产物合同（Node-API / CPython）：由统一目标解析服务冻结后传入。
+    ///
+    /// 平台身份与宿主合同是两个独立事实；`None` 表示普通平台/原生交付，
+    /// 后续阶段不得从目标标签或导出形状反推宿主合同。
+    #[serde(default)]
+    pub host_contract: Option<crate::legion::ArtifactContract>,
 }
 
 impl Default for BuildRequest {
@@ -57,6 +63,7 @@ impl Default for BuildRequest {
             target: CanonicalTarget::browser(),
             output_dir: None,
             enabled_features: std::collections::BTreeSet::new(),
+            host_contract: None,
         }
     }
 }
@@ -168,6 +175,9 @@ pub struct PlannedProject {
     pub gated_out_host_providers: Vec<PlannedHostProviderExclusion>,
     /// 匹配到的构建目标配置。
     pub build_target: BuildTargetSpec,
+    /// 宿主产物合同（Node-API / CPython）：由请求冻结，参与用途推导与缓存身份。
+    #[serde(default)]
+    pub host_contract: Option<crate::legion::ArtifactContract>,
     /// 产物类型（binary / library）。
     pub artifact_kind: crate::legion::workspace::manifest::ProjectArtifactKind,
     /// 已解析的依赖列表。

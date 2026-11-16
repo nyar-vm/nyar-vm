@@ -199,6 +199,15 @@ pub mod testing {
         super::lowering::testing_lower_fragment_to_native_image(submission, target)
     }
 
+    /// Lower a fragment submission to a host-extension shared library.
+    pub fn lower_fragment_to_native_extension(
+        submission: &FragmentSubmission,
+        target: &super::nyar_backend_native::NativeProductTarget,
+        module_name: &str,
+    ) -> Result<super::lowering::backends::native::NativeLoweredExtension> {
+        super::lowering::testing_lower_fragment_to_native_extension(submission, target, module_name)
+    }
+
     /// Decode one WASM uleb128 integer (test helper for section parsing).
     pub fn decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 {
         super::lowering::testing_decode_wasm_uleb128(bytes, pos)
@@ -585,6 +594,13 @@ pub trait FrontendBuildBundle {
         nyar_backend_wasi::WasmPackageKind::Binary
     }
 
+    /// 宿主产物合同（Node-API / CPython）：由统一目标解析服务冻结后传入。
+    ///
+    /// 只有声明了 `HostExtension` 用途的构建才允许携带宿主合同。
+    fn host_contract(&self) -> Option<nyar::ArtifactContract> {
+        None
+    }
+
     /// 测试构建的 `[test]` 入口名；空表示普通构建。
     ///
     /// 名字来自前端语义闭包 seed 的显式 `[test]` 声明身份，Emitter 据此为每个测试
@@ -864,8 +880,8 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
         {
             return Err(format!("产物用途 `{purpose:?}` 不得携带 `[test]` 入口面；测试交付必须声明为 test 用途"));
         }
-        nyar::ArtifactPurpose::HostExtension => {
-            return Err("宿主扩展 lane 尚未接入正式编译链；拒绝产出未接线的扩展交付".to_string());
+        nyar::ArtifactPurpose::HostExtension if request.bundle.host_contract().is_none() => {
+            return Err("宿主扩展用途必须携带已冻结的宿主合同（Node-API / CPython）；拒绝无合同的扩展交付".to_string());
         }
         _ => {}
     }
@@ -876,15 +892,25 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
             request.planned_partitions.partition(partition_index).ok_or_else(|| format!("分区索引 `{partition_index}` 超出范围"))?;
         let fragment = request.bundle.assemble_fragment_for_partition(partition_index)?;
         let host_flavor = request.bundle.target_host_flavor().ok_or_else(|| format!("分区计划缺少目标 host flavor"))?;
+        let backend_family = backend_family_for_partition(partition);
+        // 宿主扩展只由 native lane 承载：其余 lane 在写出前拒绝，不降级成平台产物。
+        if purpose == nyar::ArtifactPurpose::HostExtension && backend_family != nyar::TargetBackendFamily::Native {
+            return Err(format!(
+                "宿主扩展只由 native lane 承载；分区 `{}` 的后端家族 `{backend_family:?}` 不支持该产物用途",
+                partition.name
+            ));
+        }
         let lowered_input = assembly::prepare_assembled_fragment(
             fragment,
             &TargetInputRequest {
-                backend_family: backend_family_for_partition(partition),
+                backend_family,
                 host_boundary: partition.host_boundary,
                 output_dir: request.output_dir,
                 host_flavor: &host_flavor,
                 artifact_purpose: purpose,
                 wasm_package_kind: request.bundle.wasm_package_kind(),
+                project_name: request.project_name,
+                host_contract: request.bundle.host_contract(),
             },
         )?;
         let artifact_base_name = lowered_input.entry_artifact_name().unwrap_or(request.project_name);

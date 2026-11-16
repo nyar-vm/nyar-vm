@@ -17,6 +17,8 @@ use std::{
     process::Command,
 };
 
+use serde::{Deserialize, Serialize};
+
 use crate::abstractions::{CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget, CanonicalTargetParseError, CanonicalVendor};
 
 /// 目标解析错误。
@@ -106,7 +108,7 @@ impl Display for TargetRequest {
 ///
 /// 扩展后缀与导入库取决于将要装载产物的解释器，不能只凭 OS 拼出来；缺失时由需要
 /// 它们的阶段明确失败，而不是猜一个默认值。
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CpythonHostConfig {
     /// 扩展模块后缀，例如 `.pyd` / `.so`。
     pub module_suffix: Option<String>,
@@ -117,7 +119,7 @@ pub struct CpythonHostConfig {
 /// 产物与宿主合同。
 ///
 /// 它只描述产物形态与宿主边界，不重复平台身份；二者必须同时保留。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ArtifactContract {
     /// 平台 lane 自身产物（Wasm / CLR / JVM / OVM），没有原生宿主包装。
     Platform,

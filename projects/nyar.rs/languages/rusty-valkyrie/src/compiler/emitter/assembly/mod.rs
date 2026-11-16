@@ -91,8 +91,24 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter {
     fn prepare(&self, request: &TargetInputRequest<'_>) -> nyar_emitter::Result<LoweredBackendInput> {
         let submission = FragmentSubmission::from_backend_plan((*self.plan).clone());
         if request.backend_family == nyar::TargetBackendFamily::Native {
-            // 原生镜像由 native lane 的 LIR/编码服务产出；适配器只提交目标输入，
-            // 不自行拼接机器码或 PE/ELF 容器。
+            // 原生镜像由 native lane 的 LIR/编码服务产出；适配器只提交目标输入
+            // 与已冻结的宿主合同，不自行拼接机器码或 PE/ELF 容器。
+            if request.artifact_purpose == nyar::ArtifactPurpose::HostExtension {
+                let contract = request
+                    .host_contract
+                    .clone()
+                    .ok_or_else(|| "宿主扩展用途缺少宿主合同：合同与用途必须由目标解析服务一并冻结".to_string())?;
+                let product = nyar_emitter::nyar_backend_native::NativeProductTarget::from_platform_and_contract(self.target.clone(), &contract)
+                    .map_err(|error| format!("宿主扩展目标不合法：{error}"))?;
+                let lowered = nyar_emitter::testing::lower_fragment_to_native_extension(&submission, &product, request.project_name)?;
+                return Ok(LoweredBackendInput::native(nyar_emitter::nyar_backend_native::NativeBinaryBackendInput {
+                    executable: lowered.executable,
+                    output_dir: request.output_dir.to_path_buf(),
+                    entry_symbol: lowered.entry_symbol,
+                    artifact_extension: Some(lowered.artifact_extension),
+                    host_exports: lowered.host_exports,
+                }));
+            }
             let lowered = nyar_emitter::testing::lower_fragment_to_native_image(&submission, self.target.clone())?;
             let entry_symbol = self
                 .plan
@@ -105,6 +121,7 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter {
                 output_dir: request.output_dir.to_path_buf(),
                 entry_symbol,
                 artifact_extension: None,
+                host_exports: Vec::new(),
             }));
         }
         LoweredBackendInput::from_fragment_submission(

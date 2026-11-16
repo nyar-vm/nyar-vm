@@ -342,7 +342,7 @@ fn validate_entry(function: &MirFunction, container: NativeContainer) -> Result<
 }
 
 /// 收集可达函数（导出面 + 入口 + 同片段调用闭包），按实例身份升序稳定输出。
-fn collect_native_functions(submission: &FragmentSubmission) -> Vec<ItemInstanceId> {
+pub(super) fn collect_native_functions(submission: &FragmentSubmission) -> Vec<ItemInstanceId> {
     let plan = &submission.backend_plan;
     let mut roots = BTreeSet::new();
     roots.extend(plan.export_names().keys().copied());
@@ -380,7 +380,9 @@ fn collect_native_functions(submission: &FragmentSubmission) -> Vec<ItemInstance
 }
 
 /// 单函数降低：计划事实 → 文本 LIR 函数（不产生任何字节）。
-fn lower_function_to_text_program(
+///
+/// exe 与宿主扩展复用这条降低：产物形态只改符号命名与容器，不改函数级语义。
+pub(super) fn lower_function_to_text_program(
     instance: &ItemInstanceId,
     submission: &FragmentSubmission,
     function: &MirFunction,

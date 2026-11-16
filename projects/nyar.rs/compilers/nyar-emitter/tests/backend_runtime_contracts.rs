@@ -166,6 +166,7 @@ fn pe_dll_accepts_node_extension_as_dynamic_library() {
         output_dir: output_dir.clone(),
         entry_symbol: "napi_register_module".to_string(),
         artifact_extension: Some(".node".to_string()),
+        host_exports: Vec::new(),
     };
     let artifacts = NativeBinaryBackend::new().compile(input, &native_options(BinaryArch::X64)).expect("`.node` 共享镜像必须可包装");
     assert_eq!(artifacts.artifacts.len(), 1, "共享库不伪造 COFF sidecar: {artifacts:?}");
@@ -197,6 +198,7 @@ fn node_extension_on_executable_image_is_rejected() {
         output_dir,
         entry_symbol: "main".to_string(),
         artifact_extension: Some(".node".to_string()),
+        host_exports: Vec::new(),
     };
     let error = NativeBinaryBackend::new().compile(input, &native_options(BinaryArch::X64)).expect_err("可执行镜像 + `.node` 必须结构化拒绝");
     assert!(error.to_string().contains("需要共享库镜像"), "{error}");
@@ -206,7 +208,13 @@ fn node_extension_on_executable_image_is_rejected() {
 #[test]
 fn native_backend_rejects_target_arch_mismatch() {
     let output_dir = std::env::temp_dir().join(format!("nyar-native-arch-{}", std::process::id()));
-    let input = NativeBinaryBackendInput { executable: minimal_pe(), output_dir, entry_symbol: "main".to_string(), artifact_extension: None };
+    let input = NativeBinaryBackendInput {
+        executable: minimal_pe(),
+        output_dir,
+        entry_symbol: "main".to_string(),
+        artifact_extension: None,
+        host_exports: Vec::new(),
+    };
     let error = NativeBinaryBackend::new().compile(input, &native_options(BinaryArch::Arm64)).expect_err("镜像架构与请求目标不一致必须拒绝");
     assert!(error.to_string().contains("不一致"), "{error}");
 }

@@ -371,6 +371,7 @@ fn native_backend_rejects_image_container_mismatching_target_os_or_abi() {
         output_dir: directory.path().to_path_buf(),
         entry_symbol: "main".to_string(),
         artifact_extension: None,
+        host_exports: Vec::new(),
     };
 
     options.target.specification = Some(CanonicalSpecification::Windows);

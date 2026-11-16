@@ -125,17 +125,22 @@ pub enum NativeProductTarget {
 
 impl NativeProductTarget {
     /// 从统一解析服务的结果构造产物目标。
+    pub fn from_resolved(resolved: &ResolvedTarget) -> Result<Self, String> {
+        Self::from_platform_and_contract(resolved.platform, &resolved.contract)
+    }
+
+    /// 从平台身份与产物合同构造产物目标（正式 lane 适配器路径）。
     ///
     /// 平台能力不足（非 x86-64 / 未支持 OS）与平台 lane 合同都在这里结构化失败。
-    pub fn from_resolved(resolved: &ResolvedTarget) -> Result<Self, String> {
-        let platform = NativePlatform::from_canonical(resolved.platform)?;
-        match &resolved.contract {
+    pub fn from_platform_and_contract(platform: CanonicalTarget, contract: &ArtifactContract) -> Result<Self, String> {
+        let platform = NativePlatform::from_canonical(platform)?;
+        match contract {
             ArtifactContract::Native => Ok(Self::Library(platform)),
             ArtifactContract::NodeApi => Ok(Self::Extension { platform, module: NativeHostModule::Node, library: None }),
             ArtifactContract::Cpython(config) => {
                 Ok(Self::Extension { platform, module: NativeHostModule::Python, library: config.import_library.clone() })
             }
-            ArtifactContract::Platform => Err(format!("目标 `{}` 是平台 lane 产物，不是原生宿主产物", resolved.identity())),
+            ArtifactContract::Platform => Err("平台 lane 合同不是原生宿主产物".to_string()),
         }
     }
 

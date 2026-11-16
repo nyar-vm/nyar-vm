@@ -15,9 +15,9 @@ use nyar::{
 };
 
 pub use crate::lowering::backends::native::{
-    HostMethod, HostProperty, HostValueKind, NATIVE_TEXT_ARENA_CAPACITY, NativeAbi, NativeDataTarget, NativeHostModule, NativePlatform,
-    NativeProductTarget, NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage, any_returns_bool, any_returns_utf8,
-    append_text_arena, compile_shared_container, encode_native_text_program, encode_native_text_program_with_data,
+    HostMethod, HostProperty, HostValueKind, NATIVE_TEXT_ARENA_CAPACITY, NativeAbi, NativeDataTarget, NativeHostModule, NativeLoweredExtension,
+    NativePlatform, NativeProductTarget, NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage, any_returns_bool,
+    any_returns_utf8, append_text_arena, compile_shared_container, encode_native_text_program, encode_native_text_program_with_data,
     encode_native_text_program_with_dependencies, encode_native_text_program_with_imports, is_c_identifier, node_addon_registration,
     node_method_wrapper, node_module_data, python_method_wrapper, python_module_data, python_module_exec, python_module_registration,
     reset_text_arena,
@@ -39,6 +39,9 @@ pub struct NativeBinaryBackendInput {
     /// 扩展名只决定产物文件身份与 `ArtifactKind`，不改变镜像字节或语言语义；
     /// 非共享镜像不得声明共享库扩展名。
     pub artifact_extension: Option<String>,
+    /// 宿主可见导出名：只由 `HostExtension` 用途的降低提交（承载服务按冻结
+    /// 导出面装配）。可执行交付必须为空，用途不由导出数量反推。
+    pub host_exports: Vec<String>,
 }
 
 /// `Native` 二进制后端（Windows PE / Linux ELF）。

@@ -3,7 +3,7 @@
 //! Resolver 必须把 target/profile、架构键和已选 host provider 一并交给 Compiler；
 //! 这些字段是后续 adaptor 链接与表示规划的前置事实，不能留在源码行扫描里。
 
-use nyar::{ArtifactPurpose, CanonicalTarget, ClrSuspendStrategy};
+use nyar::{ArtifactContract, ArtifactPurpose, CanonicalTarget, ClrSuspendStrategy};
 use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
 
 use crate::compiler::semantic::closure::DeclarationKey;
@@ -34,6 +34,11 @@ pub struct CompilerBuildContext {
     pub artifact_purpose: ArtifactPurpose,
     /// Wasm 产物形态（模块或组件）；仅 Wasm lane 的容器事实。
     pub wasm_package_kind: WasmPackageKind,
+    /// 宿主产物合同（Node-API / CPython）：由统一目标解析服务冻结后传入。
+    ///
+    /// 只有 `artifact_purpose = HostExtension` 的构建允许携带；lane 据此选择
+    /// 承载服务，不从目标标签或导出形状反推宿主身份。
+    pub host_contract: Option<ArtifactContract>,
     /// 装配层已按 target/profile 过滤的 host provider 选择结果。
     pub selected_host_providers: Vec<CompilerHostProviderBinding>,
     /// 因 `[gate(feature = "...")]` 未启用而被排除的 host provider（诊断事实）。
@@ -69,6 +74,7 @@ impl CompilerBuildContext {
             clr_suspend_strategy,
             artifact_purpose: ArtifactPurpose::Application,
             wasm_package_kind,
+            host_contract: None,
             selected_host_providers: Vec::new(),
             gated_out_host_providers: Vec::new(),
             test_entry_names: Vec::new(),
@@ -78,6 +84,12 @@ impl CompilerBuildContext {
     /// 声明产物用途（应用 / 库 / 测试包 / 宿主扩展）；未声明按应用交付。
     pub fn with_artifact_purpose(mut self, purpose: ArtifactPurpose) -> Self {
         self.artifact_purpose = purpose;
+        self
+    }
+
+    /// 附加已冻结的宿主产物合同（Node-API / CPython）。
+    pub fn with_host_contract(mut self, contract: Option<ArtifactContract>) -> Self {
+        self.host_contract = contract;
         self
     }
 

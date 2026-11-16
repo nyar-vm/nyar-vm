@@ -20,12 +20,15 @@
 
 mod carrier;
 mod container;
+mod extension;
 mod host;
 mod x64_lir;
 mod x64_program;
 pub mod x86_64;
 
 pub use container::compile_shared_container;
+pub(crate) use extension::lower_fragment_to_native_extension;
+pub use extension::NativeLoweredExtension;
 
 pub use carrier::{
     HostMethod, HostProperty, HostValueKind, NATIVE_TEXT_ARENA_CAPACITY, PYTHON_EXEC_NAME, any_returns_bool, any_returns_utf8, append_text_arena,

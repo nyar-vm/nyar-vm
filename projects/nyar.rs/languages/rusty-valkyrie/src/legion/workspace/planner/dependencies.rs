@@ -7,7 +7,7 @@ use std::{
     process::Command,
 };
 
-use crate::legion::CanonicalTarget;
+use crate::legion::{ArtifactContract, CanonicalTarget};
 
 use crate::legion::workspace::{
     LOCAL_LEGION_CONFIG,
@@ -316,8 +316,13 @@ pub fn canonical_target(target: &str) -> std::result::Result<CanonicalTarget, cr
     target.parse()
 }
 
-pub(crate) fn default_dist_output_dir(project_dir: &Path, target: &CanonicalTarget) -> PathBuf {
-    project_dir.join("dist").join(target.as_canonical_str())
+pub(crate) fn default_dist_output_dir(project_dir: &Path, target: &CanonicalTarget, host_contract: Option<&ArtifactContract>) -> PathBuf {
+    // 同一平台上的普通原生产物与宿主扩展必须落在不同目录：合同是产物身份的一部分。
+    let identity = match host_contract {
+        Some(contract @ (ArtifactContract::NodeApi | ArtifactContract::Cpython(_))) => format!("{}-{}", target.as_canonical_str(), contract.as_str()),
+        _ => target.as_canonical_str(),
+    };
+    project_dir.join("dist").join(identity)
 }
 
 pub(crate) fn select_build_target(manifest: &ProjectManifest, target: &CanonicalTarget) -> Option<BuildTargetSpec> {

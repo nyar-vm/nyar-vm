@@ -15,16 +15,26 @@ pub fn resolve_authoring_target(label: &str) -> LegionResult<ResolvedTarget> {
     resolver.resolve_label(label).map_err(|error| LegionError::msg(format!("无法解析目标 `{label}`：{error}")))
 }
 
-/// 解析目标标签，并只接受当前编译 lane 能承载的合同。
+/// 解析目标标签为冻结目标（平台身份 + 产物合同）。
 ///
-/// Node-API / CPython 扩展需要宿主入口、值转换与生命周期包装，属于独立的产物
-/// lane；未接入时在这里明确失败，不退回普通原生可执行文件。
-pub fn resolve_platform_target(label: &str) -> LegionResult<CanonicalTarget> {
+/// `native` / `node` / `python` 占位符在这里展开；平台 lane 与宿主合同保持
+/// 正交，构建 lane 按合同推导产物用途，测试 lane 等无法装载宿主扩展的入口
+/// 用 [`resolve_platform_only_target`] 明确拒绝。
+pub fn resolve_platform_target(label: &str) -> LegionResult<ResolvedTarget> {
+    resolve_authoring_target(label)
+}
+
+/// 解析目标标签，只接受平台/原生合同。
+///
+/// Node-API / CPython 扩展需要宿主装载（`require` / `import`），测试运行器
+/// 没有这条装载链；在这里明确失败，不退回普通原生可执行文件。
+pub fn resolve_platform_only_target(label: &str) -> LegionResult<CanonicalTarget> {
     let resolved = resolve_authoring_target(label)?;
     match &resolved.contract {
         ArtifactContract::Platform | ArtifactContract::Native => Ok(resolved.platform),
         contract @ (ArtifactContract::NodeApi | ArtifactContract::Cpython(_)) => Err(LegionError::msg(format!(
-            "目标 `{label}` 解析为 `{}` 宿主合同（`{}`），当前 Legion 构建 lane 尚未接入该产物；\
+            "目标 `{label}` 解析为 `{}` 宿主合同（`{}`），测试运行器没有宿主装载链；\
+             构建宿主扩展请使用 `legion build --target {label}`，\
              Node 承载的 core Wasm 请使用 `wasm-node`",
             contract.as_str(),
             resolved.identity()
@@ -37,10 +47,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn platform_lanes_reject_host_contract_placeholders() {
-        let error = resolve_platform_target("node").expect_err("`node` 是宿主合同，不是平台 lane");
-        assert!(error.to_string().contains("未接入"), "unexpected error: {error}");
-        assert!(error.to_string().contains("wasm-node"), "错误必须给出可用的替代写法: {error}");
+    fn host_contract_placeholders_resolve_with_platform_identity() {
+        // `node` / `python` 是占位符：解析结果同时携带宿主合同与平台身份。
+        let resolved = resolve_platform_target("node").expect("`node` 应解析为宿主合同目标");
+        assert_eq!(resolved.contract, ArtifactContract::NodeApi);
+        let python = resolve_platform_target("python").expect("`python` 应解析为宿主合同目标");
+        assert!(matches!(python.contract, ArtifactContract::Cpython(_)));
+        assert_ne!(python.identity(), resolved.identity(), "同一平台上的不同宿主合同必须可区分");
 
         assert!(resolve_platform_target("wasm-node").is_ok());
         assert!(resolve_platform_target("native").is_ok());
@@ -48,8 +61,18 @@ mod tests {
     }
 
     #[test]
+    fn platform_only_lane_rejects_host_contract() {
+        let error = resolve_platform_only_target("node").expect_err("`node` 是宿主合同，不是平台 lane");
+        assert!(error.to_string().contains("宿主装载"), "错误必须说明测试 lane 无宿主装载链: {error}");
+        assert!(error.to_string().contains("wasm-node"), "错误必须给出可用的替代写法: {error}");
+
+        assert!(resolve_platform_only_target("wasm-node").is_ok());
+        assert!(resolve_platform_only_target("native").is_ok());
+    }
+
+    #[test]
     fn product_alias_resolves_through_the_shared_service() {
-        let target = resolve_platform_target("ovm").expect("ovm");
-        assert_eq!(target, nyar::CanonicalTarget::parse("ovm").expect("canonical ovm"));
+        let resolved = resolve_platform_target("ovm").expect("ovm");
+        assert_eq!(resolved.platform, nyar::CanonicalTarget::parse("ovm").expect("canonical ovm"));
     }
 }

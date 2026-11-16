@@ -49,6 +49,7 @@ pub(crate) fn compile_ssg_ovm_bundle(
         .build_plan(&BuildRequest {
             project_dir: project_dir.to_path_buf(),
             target: target.clone(),
+            host_contract: None,
             output_dir: Some(scratch_dir.to_path_buf()),
             enabled_features: [SSG_DOM_FEATURE.to_string()].into_iter().collect(),
         })

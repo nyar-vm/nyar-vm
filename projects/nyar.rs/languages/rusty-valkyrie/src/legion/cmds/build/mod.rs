@@ -13,7 +13,7 @@ use crate::{
         },
     },
 };
-use nyar::{ArtifactSet, CanonicalTarget, ClrSuspendStrategy};
+use nyar::{ArtifactContract, ArtifactSet, CanonicalTarget, ClrSuspendStrategy};
 use nyar_emitter::DriverRunContract;
 use nyar_types::compiler_input::CompilerSourceInput;
 use serde::Serialize;
@@ -39,6 +39,11 @@ pub struct BuildArgs {
     pub project_dir: PathBuf,
     /// 目标平台。
     pub target: CanonicalTarget,
+    /// 宿主产物合同（Node-API / CPython）：由统一目标解析服务冻结后传入。
+    ///
+    /// `Some` 使构建交付宿主扩展（`.node`/`.pyd`/`.so`）；`None` 是普通平台/
+    /// 原生交付。合同与平台身份独立，不从目标标签反推。
+    pub host_contract: Option<ArtifactContract>,
     /// 输出目录。
     pub output_dir: Option<PathBuf>,
     /// 输出调试用构建副产物。
@@ -60,14 +65,22 @@ fn run_inner(args: &BuildArgs) -> LegionResult<ExitCode> {
         return run_all_workspace_members(args);
     }
 
-    let request =
-        BuildRequest { project_dir: project_input, target: args.target.clone(), output_dir: args.output_dir.clone(), ..Default::default() };
+    let request = BuildRequest {
+        project_dir: project_input,
+        target: args.target.clone(),
+        host_contract: args.host_contract.clone(),
+        output_dir: args.output_dir.clone(),
+        ..Default::default()
+    };
     let plan = workspace.build_plan(&request)?;
 
     println!("workspace: {}", crate::legion::cmds::path_for_cli_log(&plan.workspace_root));
     println!("mode: workspace");
     println!("project: {}", plan.project.name);
     println!("target: {}", plan.project.build_target.target);
+    if let Some(contract) = &plan.project.host_contract {
+        println!("host contract: {}", contract.as_str());
+    }
     println!("output: {}", crate::legion::cmds::path_for_cli_log(&plan.output_dir));
     println!("sources: {}", plan.project.source_files.len());
     println!("host contracts: {}", plan.project.host_contracts.len());
@@ -167,6 +180,7 @@ fn run_all_workspace_members(args: &BuildArgs) -> LegionResult<ExitCode> {
         let member_args = BuildArgs {
             project_dir: project_dir.clone(),
             target: args.target.clone(),
+            host_contract: args.host_contract.clone(),
             output_dir: args.output_dir.clone(),
             debug_artifacts: args.debug_artifacts,
         };
@@ -196,7 +210,13 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
     }
 
     let cache = CompilationCache::open(cache_root_for(&plan.workspace_root));
-    let canonical_triple = plan.project.build_target.target.as_canonical_str();
+    // 缓存身份必须携带宿主合同：同一平台上的普通原生产物与扩展交付不是同一份产物。
+    let canonical_triple = match &plan.project.host_contract {
+        Some(contract @ (ArtifactContract::NodeApi | ArtifactContract::Cpython(_))) => {
+            format!("{}-{}", plan.project.build_target.target.as_canonical_str(), contract.as_str())
+        }
+        _ => plan.project.build_target.target.as_canonical_str(),
+    };
     let manifest_files = plan
         .project
         .semantic_source_groups
@@ -224,12 +244,27 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
     }
     let target_profile = plan.project.build_target.target.to_profile(None);
     let clr_suspend_strategy = ClrSuspendStrategy::from_runtime_async_flag(plan.project.build_target.runtime_async);
-    // 产物用途由清单与测试模式显式声明；Wasm 容器形态从用途派生，
+    // 产物用途由清单、宿主合同与测试模式显式声明；Wasm 容器形态从用途派生，
     // 不得反过来由容器枚举推导全 lane 的交付形态。
+    let host_contract = plan.project.host_contract.clone();
+    let host_extension = matches!(host_contract, Some(ArtifactContract::NodeApi | ArtifactContract::Cpython(_)));
     let artifact_purpose = if plan.project.is_test {
         // 测试构建：`[test]` 是唯一的 run 入口，不得要求 `[main]`
         // 或把测试回落成普通程序入口。
+        if host_extension {
+            return Err(LegionError::msg("宿主扩展产物不能作为测试构建：测试运行器没有宿主装载链"));
+        }
         nyar::ArtifactPurpose::TestBundle
+    }
+    else if host_extension {
+        // 宿主合同只与库交付组合：程序入口与导出面是独立事实，
+        // binary + 宿主合同必须在写出前拒绝，不得改标或补造入口。
+        match plan.project.artifact_kind {
+            ProjectArtifactKind::Library => nyar::ArtifactPurpose::HostExtension,
+            ProjectArtifactKind::Binary => {
+                return Err(LegionError::msg("宿主扩展不接受程序入口：把产物声明为 library 并以导出面提供宿主 API"));
+            }
+        }
     }
     else {
         match plan.project.artifact_kind {
@@ -249,6 +284,7 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
     let gated_out_host_providers = crate::legion::workspace::planner::compiler_gated_out_host_providers(&plan.project.gated_out_host_providers);
     let build_context = CompilerBuildContext::new(arch, plan.project.build_target.target.clone(), clr_suspend_strategy, wasm_package_kind)
         .with_artifact_purpose(artifact_purpose)
+        .with_host_contract(host_contract)
         .with_test_entries(plan.project.test_entries.clone())
         .with_selected_host_providers(host_bindings)
         .with_gated_out_host_providers(gated_out_host_providers);

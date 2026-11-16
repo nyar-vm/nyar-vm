@@ -606,9 +606,12 @@ fn ensure_execution_manifest(args: &RunArgs, plan: &BuildPlan) -> LegionResult<E
         println!("build status: missing");
     }
 
+    // `legion run` 只执行有 CLI 运行合同的应用交付；宿主扩展没有进程入口，
+    // 不在 run lane 构造宿主合同（宿主装载由 Node/Python 自己完成）。
     let build_status = run_build(&BuildArgs {
         project_dir: args.project_dir.clone(),
         target: args.target.clone(),
+        host_contract: None,
         output_dir: args.output_dir.clone(),
         debug_artifacts: args.debug_artifacts,
     })?;

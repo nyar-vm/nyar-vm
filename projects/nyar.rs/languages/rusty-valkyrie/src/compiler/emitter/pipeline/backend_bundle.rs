@@ -51,6 +51,7 @@ pub struct CompilerBuildBundle {
     artifact_plan: ArtifactPartitionPlan,
     artifact_purpose: nyar::ArtifactPurpose,
     wasm_package_kind: nyar_emitter::nyar_backend_wasi::WasmPackageKind,
+    host_contract: Option<nyar::ArtifactContract>,
     test_entry_names: Vec<String>,
 }
 
@@ -87,6 +88,7 @@ pub fn compile_source_groups_to_backend_bundle(
         artifact_plan,
         artifact_purpose: context.artifact_purpose,
         wasm_package_kind: context.wasm_package_kind,
+        host_contract: context.host_contract.clone(),
         test_entry_names: context.test_entry_names.clone(),
     };
     validate_artifact_surface(&bundle)?;
@@ -131,6 +133,10 @@ fn validate_artifact_surface(bundle: &CompilerBuildBundle) -> PipelineResult<()>
     if bundle.artifact_purpose == nyar::ArtifactPurpose::Library && export_count == 0 {
         return Err(PipelineError::Surface(ArtifactSurfaceError::LibraryMissingExport));
     }
+    // 宿主扩展的交付面就是冻结导出面：空导出面没有可装载的宿主 API。
+    if bundle.artifact_purpose == nyar::ArtifactPurpose::HostExtension && export_count == 0 {
+        return Err(PipelineError::Surface(ArtifactSurfaceError::LibraryMissingExport));
+    }
     // 测试包必须至少有一个 `[test]` 入口身份。
     if bundle.artifact_purpose == nyar::ArtifactPurpose::TestBundle && bundle.test_entry_names.is_empty() {
         return Err(PipelineError::Surface(ArtifactSurfaceError::BinaryMissingEntry));
@@ -157,6 +163,10 @@ impl FrontendBuildBundle for CompilerBuildBundle {
 
     fn wasm_package_kind(&self) -> nyar_emitter::nyar_backend_wasi::WasmPackageKind {
         self.wasm_package_kind
+    }
+
+    fn host_contract(&self) -> Option<nyar::ArtifactContract> {
+        self.host_contract.clone()
     }
 
     fn test_entry_names(&self) -> Vec<String> {

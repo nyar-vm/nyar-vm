@@ -29,5 +29,5 @@ fn product_target_alias(label: &str) -> Option<&'static str> {
 /// 占位符不会被再次各写一套展开规则。
 pub fn parse_target_label(label: &str) -> LegionResult<CanonicalTarget> {
     let canonical = product_target_alias(label).unwrap_or(label);
-    crate::legion::targets::resolve_platform_target(canonical)
+    crate::legion::targets::resolve_platform_only_target(canonical)
 }

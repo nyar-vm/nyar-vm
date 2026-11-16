@@ -243,7 +243,7 @@ impl WorkspaceResolver {
             .ok_or_else(|| PlannerError::MissingBuildTarget { project: manifest.name.clone(), target: request.target })?;
 
         let dependencies = self.collect_dependencies(&project_dir, manifest, &build_target, true)?;
-        let output_dir = request.output_dir.clone().unwrap_or_else(|| default_dist_output_dir(&project_dir, &request.target));
+        let output_dir = request.output_dir.clone().unwrap_or_else(|| default_dist_output_dir(&project_dir, &request.target, request.host_contract.as_ref()));
 
         // 收集源码闭包：包含项目自身及其所有依赖（含传递依赖）的源文件。
         // 这是模块系统的核心：让编译器能看到依赖项目定义的 struct/function/type。
@@ -278,6 +278,7 @@ impl WorkspaceResolver {
                 selected_host_providers: host_inventory.selected_providers,
                 gated_out_host_providers: host_inventory.gated_out_providers,
                 build_target,
+                host_contract: request.host_contract.clone(),
                 artifact_kind: manifest.artifact,
                 dependencies,
                 is_test: false,
@@ -358,6 +359,7 @@ impl WorkspaceResolver {
                     selected_host_providers: host_inventory.selected_providers,
                     gated_out_host_providers: host_inventory.gated_out_providers,
                     build_target,
+                    host_contract: request.host_contract.clone(),
                     artifact_kind: manifest.artifact,
                     dependencies,
                     is_test: true,
@@ -536,7 +538,7 @@ impl WorkspaceResolver {
             .ok_or_else(|| PlannerError::MissingBuildTarget { project: manifest.name.clone(), target: request.target.clone() })?;
 
         let dependencies = self.collect_dependencies(&project_dir, manifest, &build_target, true)?;
-        let output_dir = request.output_dir.clone().unwrap_or_else(|| default_dist_output_dir(&project_dir, &request.target));
+        let output_dir = request.output_dir.clone().unwrap_or_else(|| default_dist_output_dir(&project_dir, &request.target, request.host_contract.as_ref()));
 
         let mut visited = BTreeSet::new();
         let source_files = self.collect_source_closure(&project_dir, manifest, &build_target, &mut visited, true)?;
@@ -569,6 +571,7 @@ impl WorkspaceResolver {
                 selected_host_providers: host_inventory.selected_providers,
                 gated_out_host_providers: host_inventory.gated_out_providers,
                 build_target,
+                host_contract: request.host_contract.clone(),
                 artifact_kind: manifest.artifact,
                 dependencies,
                 is_test: false,

@@ -4,7 +4,7 @@ use std::{path::PathBuf, process::ExitCode, thread};
 
 use napi_derive::napi;
 use rusty_valkyrie::legion::{
-    CanonicalTarget, CompileOptions, PlanRequest, resolve_platform_target,
+    CanonicalTarget, CompileOptions, PlanRequest, resolve_platform_only_target,
     cmds::{
         run::ExecutionManifest,
         test::{TestArgs, run as run_legion_test},
@@ -216,5 +216,6 @@ pub fn legion_build(options: LegionBuildOptions) -> LegionBuildOutcome {
 
 fn parse_target(target: Option<String>) -> napi::Result<CanonicalTarget> {
     let raw = target.as_deref().unwrap_or("clr");
-    resolve_platform_target(raw).map_err(|error| napi::Error::from_reason(error.to_string()))
+    // N-API 产品面暂不承载宿主扩展合同；`node` / `python` 在这里保持明确拒绝。
+    resolve_platform_only_target(raw).map_err(|error| napi::Error::from_reason(error.to_string()))
 }

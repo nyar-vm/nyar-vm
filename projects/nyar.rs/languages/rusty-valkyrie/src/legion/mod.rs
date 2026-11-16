@@ -49,7 +49,7 @@ pub use nyar::{
     CanonicalVendor, EntryPolicy, PublishFormat, ResolvedTarget, RunnerFamily, RunnerSelector, TargetHostKind, TargetMode, TargetProfile,
     TargetRequest, TargetResolver, WrapStrategy,
 };
-pub use targets::{resolve_authoring_target, resolve_platform_target};
+pub use targets::{resolve_authoring_target, resolve_platform_only_target, resolve_platform_target};
 pub use nyar_format::printer::{to_string as write_von, to_string_indented as write_von_indented};
 pub use von::{VonError, VonParser, VonValue, from_str as parse_von, from_value as parse_von_value};
 pub use workspace::{
