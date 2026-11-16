@@ -51,15 +51,8 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
         let backend = JvmBinaryBackend::new();
         backend.validate(&input).map_err(|error| error.to_string())?;
         let library_surface = request.purpose == nyar::ArtifactPurpose::Library;
-        let mut artifacts = backend.compile(input, request.options).map_err(|error| error.to_string())?;
-        if library_surface {
-            // 装载方式由用途决定：库 jar 按导出面被宿主调用。
-            for artifact in &mut artifacts.artifacts {
-                artifact.kind = nyar::ArtifactKind::Library;
-            }
-        }
-        // 库产物必须有导出面：缺失 managed ABI 入口时结构化失败，不得回退 `main`
-        // 或静默返回空运行契约。
+        // 库产物必须有导出面：缺失 managed ABI 入口时在写出前结构化失败，
+        // 不得回退 `main`、静默返回空运行契约，也不得先写产物再判用途。
         if library_surface {
             match managed_abi.as_ref() {
                 None => return Err("`artifact: library` 的 `jvm` 产物缺少 managed ABI 契约；拒绝回退 `main`".to_string()),
@@ -67,6 +60,13 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
                     return Err("`artifact: library` 的 `jvm` managed ABI 契约为空；拒绝产出空运行契约".to_string());
                 }
                 Some(_) => {}
+            }
+        }
+        let mut artifacts = backend.compile(input, request.options).map_err(|error| error.to_string())?;
+        if library_surface {
+            // 装载方式由用途决定：库 jar 按导出面被宿主调用。
+            for artifact in &mut artifacts.artifacts {
+                artifact.kind = nyar::ArtifactKind::Library;
             }
         }
         // 运行合同与 JAR manifest 消费同一个冻结入口 launcher；没有程序入口的

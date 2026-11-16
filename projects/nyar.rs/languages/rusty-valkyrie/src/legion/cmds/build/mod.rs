@@ -288,48 +288,106 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
         .with_test_entries(plan.project.test_entries.clone())
         .with_selected_host_providers(host_bindings)
         .with_gated_out_host_providers(gated_out_host_providers);
-    let artifact = match compile_source_groups_to_artifacts(
-        &crate::compiler::hir::lowering::ValkyrieCompiler::default(),
-        &nyar_types::compiler_input::CompilerSourceInput::application(source_groups),
-        &build_context,
-        &plan.output_dir,
-        &plan.project.name,
-        plan.project.build_target.wat,
-        target_profile.artifact_policy.generate_runtime_config,
-    ) {
-        Ok(artifact) => artifact,
-        Err(error) => return Err(compile_error_with_diagnostics(error, plan)),
+    // 产物事务：所有分区、宿主包装、ABI sidecar、evidence 与运行合同先写入
+    // 输出目录内的暂存目录；完整产物集合验证成功后整组提交。任一步失败丢弃
+    // 暂存目录，输出目录保留上一份完整交付——失败构建不得留下部分新产物与
+    // 原有文件的混合，也不得给后续文件扫描留下陈旧输入。
+    let staging_dir = staging_dir_for(&plan.output_dir);
+    let _ = fs::remove_dir_all(&staging_dir);
+    fs::create_dir_all(&staging_dir)
+        .map_err(|e| LegionError::msg(format!("创建产物暂存目录失败: {}: {e}", staging_dir.display())))?;
+    let outcome = (|| -> LegionResult<nyar_emitter::DriverCompileReport> {
+        let artifact = match compile_source_groups_to_artifacts(
+            &crate::compiler::hir::lowering::ValkyrieCompiler::default(),
+            &nyar_types::compiler_input::CompilerSourceInput::application(source_groups),
+            &build_context,
+            &staging_dir,
+            &plan.project.name,
+            plan.project.build_target.wat,
+            target_profile.artifact_policy.generate_runtime_config,
+        ) {
+            Ok(artifact) => artifact,
+            Err(error) => return Err(compile_error_with_diagnostics(error, plan)),
+        };
+        write_compile_evidence(&staging_dir, &artifact.evidence)?;
+        for managed_abi in &artifact.driver.managed_abi {
+            write_managed_abi(&staging_dir, managed_abi)?;
+        }
+        for ovm_abi in &artifact.driver.ovm_abi {
+            write_ovm_abi(&staging_dir, ovm_abi)?;
+        }
+        if verbose {
+            println!("compiler: canonical artifact set ready");
+        }
+
+        // Write execution manifest before collecting the artifact-set so restore can run.
+        // 库产物可能没有可执行 run contract（wasm 走 `callExport`），但仍必须写入
+        // 导出索引，因此库构建无条件写 manifest。
+        let is_library = plan.project.artifact_kind == ProjectArtifactKind::Library;
+        let manifest_written = is_library || !artifact.driver.run_contracts.is_empty();
+        if manifest_written {
+            write_execution_manifest(&staging_dir, plan, &artifact.driver.run_contracts, &artifact.driver.library_exports, &artifact.evidence)?;
+        }
+
+        // 提交前完整性验证：报告声明的全部产物、运行合同条目与 sidecar
+        // 必须在暂存集合中齐备；缺失即整组失败，不提交部分交付。
+        collect_build_bundle(&staging_dir, &artifact.driver).map_err(|error| report!("产物集合不完整（暂存目录）：{error}"))?;
+
+        commit_staged_delivery(&staging_dir, &plan.output_dir)?;
+        if !manifest_written {
+            // 合法无 CLI 的交付：随事务清除上一份运行合同，不留陈旧输入。
+            ExecutionManifest::remove_from_output_dir(&plan.output_dir)?;
+        }
+        Ok(artifact.driver)
+    })();
+    let driver = match outcome {
+        Ok(driver) => driver,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&staging_dir);
+            return Err(error);
+        }
     };
-    write_compile_evidence(&plan.output_dir, &artifact.evidence)?;
-    for managed_abi in &artifact.driver.managed_abi {
-        write_managed_abi(&plan.output_dir, managed_abi)?;
-    }
-    for ovm_abi in &artifact.driver.ovm_abi {
-        write_ovm_abi(&plan.output_dir, ovm_abi)?;
-    }
-    if verbose {
-        println!("compiler: canonical artifact set ready");
-    }
-
-    // Write execution manifest before collecting the artifact-set so restore can run.
-    // 库产物可能没有可执行 run contract（wasm 走 `callExport`），但仍必须写入
-    // 导出索引，因此库构建无条件写 manifest。
-    let is_library = plan.project.artifact_kind == ProjectArtifactKind::Library;
-    if is_library || !artifact.driver.run_contracts.is_empty() {
-        write_execution_manifest(plan, &artifact.driver.run_contracts, &artifact.driver.library_exports, &artifact.evidence)?;
-    }
-    else {
-        ExecutionManifest::remove_from_output_dir(&plan.output_dir)?;
-    }
-
-    let bundle = collect_build_bundle(&plan.output_dir, &artifact.driver).map_err(|error| report!("产物集合不完整：{error}"))?;
+    let bundle = collect_build_bundle(&plan.output_dir, &driver).map_err(|error| report!("产物集合不完整：{error}"))?;
     store_cached_build(&cache, &plan.project.name, &canonical_triple, &ir_hash, &bundle)
         .map_err(|error| report!("产物缓存写入失败：{error}"))?;
     if verbose {
         println!("cache: stored (artifact-set)");
     }
 
-    Ok(artifact.driver)
+    Ok(driver)
+}
+
+/// 暂存目录：输出目录内的隐藏子目录，按进程与序号命名，避免并发构建互相覆盖。
+fn staging_dir_for(output_dir: &Path) -> PathBuf {
+    static STAGING_SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let seq = STAGING_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    output_dir.join(format!(".nyar-staging-{}-{seq}", std::process::id()))
+}
+
+/// 提交整组暂存产物：逐个移动并覆盖同名旧文件，成功后删除暂存目录。
+///
+/// 提交阶段本身不再产生新失败面（目标文件被宿主占用等极端情况除外）；
+/// 验证全部发生在提交之前，失败路径只丢弃暂存目录。
+fn commit_staged_delivery(staging_dir: &Path, output_dir: &Path) -> LegionResult<()> {
+    let entries =
+        fs::read_dir(staging_dir).map_err(|e| LegionError::msg(format!("枚举暂存目录失败: {}: {e}", staging_dir.display())))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| LegionError::msg(format!("读取暂存目录项失败: {e}")))?;
+        let from = entry.path();
+        let Some(file_name) = from.file_name() else {
+            continue;
+        };
+        if entry.file_type().map_err(|e| LegionError::msg(format!("暂存目录项类型不可读: {}: {e}", from.display())))?.is_dir() {
+            return Err(LegionError::msg(format!("产物暂存目录不应包含子目录: {}", from.display())));
+        }
+        let to = output_dir.join(file_name);
+        if to.exists() {
+            fs::remove_file(&to).map_err(|e| LegionError::msg(format!("替换旧产物失败: {}: {e}", to.display())))?;
+        }
+        fs::rename(&from, &to).map_err(|e| LegionError::msg(format!("提交产物失败: {} -> {}: {e}", from.display(), to.display())))?;
+    }
+    fs::remove_dir_all(staging_dir).map_err(|e| LegionError::msg(format!("清理暂存目录失败: {}: {e}", staging_dir.display())))?;
+    Ok(())
 }
 
 /// 编译失败时取出本编译单元暂存的全部可恢复诊断，渲染成多诊断报告。
@@ -428,6 +486,7 @@ pub(super) fn print_artifacts(output_dir: &Path, artifacts: &ArtifactSet) {
 }
 
 fn write_execution_manifest(
+    output_dir: &Path,
     plan: &crate::legion::workspace::planner::BuildPlan,
     specs: &[DriverRunContract],
     library_exports: &[nyar_emitter::DriverLibraryExport],
@@ -451,7 +510,7 @@ fn write_execution_manifest(
             abi_digest: export.abi_digest.clone(),
         })
         .collect::<Vec<_>>();
-    ExecutionManifest::from_build_plan(plan, &contracts, &exports, evidence)?.write_to_output_dir(&plan.output_dir)
+    ExecutionManifest::from_build_plan(plan, &contracts, &exports, evidence)?.write_to_output_dir(output_dir)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

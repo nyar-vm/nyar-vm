@@ -59,9 +59,8 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
         }
         let backend = ClrBinaryBackend::new();
         backend.validate(&input).map_err(|error| error.to_string())?;
-        let artifacts = backend.compile(input, request.options).map_err(|error| error.to_string())?;
-        // 库产物必须有导出面：缺失 managed ABI 入口时结构化失败，不得回退 `main`
-        // 或静默返回空运行契约。
+        // 库产物必须有导出面：缺失 managed ABI 入口时在写出前结构化失败，
+        // 不得回退 `main`、静默返回空运行契约，也不得先写产物再判用途。
         if library_surface {
             match managed_abi.as_ref() {
                 None => return Err("`artifact: library` 的 `clr` 产物缺少 managed ABI 契约；拒绝回退 `main`".to_string()),
@@ -71,6 +70,7 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
                 Some(_) => {}
             }
         }
+        let artifacts = backend.compile(input, request.options).map_err(|error| error.to_string())?;
         // managed ABI 入口逐个提供 argv 分发合同；无导出时才回退到单一 `main` 入口。
         let run_contracts = if !provided_contracts.is_empty() {
             provided_contracts
