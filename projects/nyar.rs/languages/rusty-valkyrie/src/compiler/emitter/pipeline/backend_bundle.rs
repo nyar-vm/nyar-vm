@@ -51,7 +51,7 @@ pub struct CompilerBuildBundle {
     artifact_plan: ArtifactPartitionPlan,
     artifact_purpose: nyar::ArtifactPurpose,
     wasm_package_kind: nyar_emitter::nyar_backend_wasi::WasmPackageKind,
-    host_contract: Option<nyar::ArtifactContract>,
+    resolved: nyar::ResolvedTarget,
     test_entry_names: Vec<String>,
 }
 
@@ -82,13 +82,14 @@ pub fn compile_source_groups_to_backend_bundle(
     // 产物化前的最终边界：任何阶段遗留在暂存汇中的 Error 级诊断都必须在产物落盘前收口，
     // 不允许带被丢弃项的编译单元产出产物。
     crate::compiler::hir::lowering::HirError::reject_pending_errors()?;
-    let artifact_plan = plan_artifacts_from_compiled_program(&compiled_program, context.target.clone(), context.clr_suspend_strategy)?;
+    let artifact_plan =
+        plan_artifacts_from_compiled_program(&compiled_program, context.resolved.platform.clone(), context.clr_suspend_strategy)?;
     let bundle = CompilerBuildBundle {
         compiled_program,
         artifact_plan,
         artifact_purpose: context.artifact_purpose,
         wasm_package_kind: context.wasm_package_kind,
-        host_contract: context.host_contract.clone(),
+        resolved: context.resolved.clone(),
         test_entry_names: context.test_entry_names.clone(),
     };
     validate_artifact_surface(&bundle)?;
@@ -165,8 +166,8 @@ impl FrontendBuildBundle for CompilerBuildBundle {
         self.wasm_package_kind
     }
 
-    fn host_contract(&self) -> Option<nyar::ArtifactContract> {
-        self.host_contract.clone()
+    fn resolved_target(&self) -> nyar::ResolvedTarget {
+        self.resolved.clone()
     }
 
     fn test_entry_names(&self) -> Vec<String> {

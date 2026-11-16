@@ -94,7 +94,7 @@ pub fn compile_external_test_session(
 ) -> std::result::Result<ExternalTestSession, String> {
     let target = parse_target_label(target_label).map_err(|e| e.to_string())?;
     let output_dir = project_dir.join(".cache").join("test").join(target_label);
-    let request = BuildRequest { project_dir: project_dir.to_path_buf(), target, output_dir: Some(output_dir.clone()), ..Default::default() };
+    let request = BuildRequest { project_dir: project_dir.to_path_buf(), resolved: target, output_dir: Some(output_dir.clone()), ..Default::default() };
     let (plan, _) = workspace.build_test_plan(&request).map_err(|e| e.to_string())?;
     compile_plan(&plan, false).map_err(|e| e.to_string())?;
     let manifest = ExecutionManifest::read_from_output_dir(&output_dir)
@@ -132,9 +132,10 @@ pub fn run_external_test_in_session(
         return RunOutcome { success: false, is_compile_error: true, failure: None, error: Some(format!("未知目标 {}", session.target)) };
     };
 
-    // 运行器家族必须由 CanonicalTarget 的 profile 推导；按标签字符串猜测会把
+    // 运行器家族必须由平台身份的 profile 推导；按标签字符串猜测会把
     // `wasm32-node-unknown-wasm` 这类完整三元组误判为 Ovm，进而静默换成错误的宿主命令。
-    let runner_family = canonical.to_profile(None).runner_family();
+    let platform = canonical.platform;
+    let runner_family = platform.to_profile(None).runner_family();
 
     // OVM 家族由 legion 内置的 odin-vm 解释器进程内执行，不存在独立 `ovm` 指令，
     // 也不解析外部 `odin-vm` 二进制路径或 runner 覆盖。
@@ -142,7 +143,7 @@ pub fn run_external_test_in_session(
         return run_builtin_ovm_test(&artifact, function_name, verbose);
     }
 
-    let template = match resolve_runner_template(workspace, &canonical, runner_family, cli_runners, function_name) {
+    let template = match resolve_runner_template(workspace, &platform, runner_family, cli_runners, function_name) {
         Ok(t) => t,
         Err(error) => return RunOutcome { success: false, is_compile_error: true, failure: None, error: Some(error.to_string()) },
     };
@@ -152,7 +153,7 @@ pub fn run_external_test_in_session(
     let args: Vec<String> = template.args.iter().map(|a| expand_placeholders(a, &placeholders)).collect();
 
     // 格式门以目标 profile 的主产物扩展名为唯一事实源，不按标签字符串猜测每个 lane 的产物形态。
-    let expected_extension = canonical.to_profile(None).artifact_policy.primary_extension;
+    let expected_extension = platform.to_profile(None).artifact_policy.primary_extension;
     execute_external_runner(&command, &args, &artifact, &expected_extension, EXTERNAL_RUNNER_TIMEOUT, verbose)
 }
 

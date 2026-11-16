@@ -37,13 +37,12 @@ use crate::legion::{
 pub struct BuildArgs {
     /// 项目目录，默认当前目录。
     pub project_dir: PathBuf,
-    /// 目标平台。
-    pub target: CanonicalTarget,
-    /// 宿主产物合同（Node-API / CPython）：由统一目标解析服务冻结后传入。
+    /// 已冻结的解析目标：平台身份 + 产物/宿主合同。
     ///
-    /// `Some` 使构建交付宿主扩展（`.node`/`.pyd`/`.so`）；`None` 是普通平台/
-    /// 原生交付。合同与平台身份独立，不从目标标签反推。
-    pub host_contract: Option<ArtifactContract>,
+    /// `native` / `node` / `python` 占位符必须先经统一目标解析服务
+    /// （[`crate::legion::resolve_authoring_target`]）展开成完整事实再进入
+    /// 构建；合同不在这里丢失，下游不猜产物形态。
+    pub resolved: crate::legion::ResolvedTarget,
     /// 输出目录。
     pub output_dir: Option<PathBuf>,
     /// 输出调试用构建副产物。
@@ -67,8 +66,7 @@ fn run_inner(args: &BuildArgs) -> LegionResult<ExitCode> {
 
     let request = BuildRequest {
         project_dir: project_input,
-        target: args.target.clone(),
-        host_contract: args.host_contract.clone(),
+        resolved: args.resolved.clone(),
         output_dir: args.output_dir.clone(),
         ..Default::default()
     };
@@ -78,8 +76,8 @@ fn run_inner(args: &BuildArgs) -> LegionResult<ExitCode> {
     println!("mode: workspace");
     println!("project: {}", plan.project.name);
     println!("target: {}", plan.project.build_target.target);
-    if let Some(contract) = &plan.project.host_contract {
-        println!("host contract: {}", contract.as_str());
+    if matches!(plan.project.resolved.contract, ArtifactContract::NodeApi | ArtifactContract::Cpython(_)) {
+        println!("host contract: {}", plan.project.resolved.contract.as_str());
     }
     println!("output: {}", crate::legion::cmds::path_for_cli_log(&plan.output_dir));
     println!("sources: {}", plan.project.source_files.len());
@@ -145,14 +143,14 @@ fn run_inner(args: &BuildArgs) -> LegionResult<ExitCode> {
 
 fn run_all_workspace_members(args: &BuildArgs) -> LegionResult<ExitCode> {
     let workspace = WorkspaceResolver::discover_for_project(&args.project_dir)?;
-    let requested_target = args.target.clone();
+    let requested_target = args.resolved.clone();
     let members = workspace
         .legions_member_dirs()
         .into_iter()
         .filter(|project_dir| {
             let request = BuildRequest {
                 project_dir: project_dir.clone(),
-                target: requested_target.clone(),
+                resolved: requested_target.clone(),
                 output_dir: args.output_dir.clone(),
                 ..Default::default()
             };
@@ -179,8 +177,7 @@ fn run_all_workspace_members(args: &BuildArgs) -> LegionResult<ExitCode> {
     for project_dir in members {
         let member_args = BuildArgs {
             project_dir: project_dir.clone(),
-            target: args.target.clone(),
-            host_contract: args.host_contract.clone(),
+            resolved: args.resolved.clone(),
             output_dir: args.output_dir.clone(),
             debug_artifacts: args.debug_artifacts,
         };
@@ -211,8 +208,8 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
 
     let cache = CompilationCache::open(cache_root_for(&plan.workspace_root));
     // 缓存身份必须携带宿主合同：同一平台上的普通原生产物与扩展交付不是同一份产物。
-    let canonical_triple = match &plan.project.host_contract {
-        Some(contract @ (ArtifactContract::NodeApi | ArtifactContract::Cpython(_))) => {
+    let canonical_triple = match &plan.project.resolved.contract {
+        contract @ (ArtifactContract::NodeApi | ArtifactContract::Cpython(_)) => {
             format!("{}-{}", plan.project.build_target.target.as_canonical_str(), contract.as_str())
         }
         _ => plan.project.build_target.target.as_canonical_str(),
@@ -246,8 +243,7 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
     let clr_suspend_strategy = ClrSuspendStrategy::from_runtime_async_flag(plan.project.build_target.runtime_async);
     // 产物用途由清单、宿主合同与测试模式显式声明；Wasm 容器形态从用途派生，
     // 不得反过来由容器枚举推导全 lane 的交付形态。
-    let host_contract = plan.project.host_contract.clone();
-    let host_extension = matches!(host_contract, Some(ArtifactContract::NodeApi | ArtifactContract::Cpython(_)));
+    let host_extension = matches!(plan.project.resolved.contract, ArtifactContract::NodeApi | ArtifactContract::Cpython(_));
     let artifact_purpose = if plan.project.is_test {
         // 测试构建：`[test]` 是唯一的 run 入口，不得要求 `[main]`
         // 或把测试回落成普通程序入口。
@@ -282,9 +278,10 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
     let host_bindings =
         compiler_host_provider_bindings(&plan.project.selected_host_providers).map_err(|error| LegionError::msg(report!("{error}")))?;
     let gated_out_host_providers = crate::legion::workspace::planner::compiler_gated_out_host_providers(&plan.project.gated_out_host_providers);
-    let build_context = CompilerBuildContext::new(arch, plan.project.build_target.target.clone(), clr_suspend_strategy, wasm_package_kind)
+    // 编译计划只消费解析服务冻结的 `ResolvedTarget`：平台与合同一起进入，
+    // 不在这里重新拼装或降级成单一四元组。
+    let build_context = CompilerBuildContext::new(arch, plan.project.resolved.clone(), clr_suspend_strategy, wasm_package_kind)
         .with_artifact_purpose(artifact_purpose)
-        .with_host_contract(host_contract)
         .with_test_entries(plan.project.test_entries.clone())
         .with_selected_host_providers(host_bindings)
         .with_gated_out_host_providers(gated_out_host_providers);

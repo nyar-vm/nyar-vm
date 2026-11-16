@@ -514,7 +514,7 @@ pub fn run(args: &RunArgs) -> LegionResult<ExitCode> {
     let workspace = WorkspaceResolver::discover_for_project(&args.project_dir)?;
     let request = BuildRequest {
         project_dir: args.project_dir.clone(),
-        target: args.target.clone(),
+        resolved: crate::legion::ResolvedTarget::platform_only(args.target.clone()),
         output_dir: args.output_dir.clone(),
         ..Default::default()
     };
@@ -610,8 +610,7 @@ fn ensure_execution_manifest(args: &RunArgs, plan: &BuildPlan) -> LegionResult<E
     // 不在 run lane 构造宿主合同（宿主装载由 Node/Python 自己完成）。
     let build_status = run_build(&BuildArgs {
         project_dir: args.project_dir.clone(),
-        target: args.target.clone(),
-        host_contract: None,
+        resolved: crate::legion::ResolvedTarget::platform_only(args.target.clone()),
         output_dir: args.output_dir.clone(),
         debug_artifacts: args.debug_artifacts,
     })?;

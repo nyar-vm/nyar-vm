@@ -594,12 +594,11 @@ pub trait FrontendBuildBundle {
         nyar_backend_wasi::WasmPackageKind::Binary
     }
 
-    /// 宿主产物合同（Node-API / CPython）：由统一目标解析服务冻结后传入。
+    /// 已冻结的解析目标：平台身份与产物/宿主合同必须一起进入 lane。
     ///
-    /// 只有声明了 `HostExtension` 用途的构建才允许携带宿主合同。
-    fn host_contract(&self) -> Option<nyar::ArtifactContract> {
-        None
-    }
+    /// 编排层与适配器只消费这一份事实；不得先取四元组、再由下游猜产物是
+    /// 可执行文件、Node 扩展还是 Python 扩展。
+    fn resolved_target(&self) -> nyar::ResolvedTarget;
 
     /// 测试构建的 `[test]` 入口名；空表示普通构建。
     ///
@@ -880,7 +879,12 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
         {
             return Err(format!("产物用途 `{purpose:?}` 不得携带 `[test]` 入口面；测试交付必须声明为 test 用途"));
         }
-        nyar::ArtifactPurpose::HostExtension if request.bundle.host_contract().is_none() => {
+        nyar::ArtifactPurpose::HostExtension
+            if !matches!(
+                request.bundle.resolved_target().contract,
+                nyar::ArtifactContract::NodeApi | nyar::ArtifactContract::Cpython(_)
+            ) =>
+        {
             return Err("宿主扩展用途必须携带已冻结的宿主合同（Node-API / CPython）；拒绝无合同的扩展交付".to_string());
         }
         _ => {}
@@ -910,7 +914,7 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
                 artifact_purpose: purpose,
                 wasm_package_kind: request.bundle.wasm_package_kind(),
                 project_name: request.project_name,
-                host_contract: request.bundle.host_contract(),
+                resolved: request.bundle.resolved_target(),
             },
         )?;
         let artifact_base_name = lowered_input.entry_artifact_name().unwrap_or(request.project_name);

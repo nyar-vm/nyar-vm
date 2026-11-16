@@ -34,7 +34,7 @@ impl CompilerSession {
         let project_input = crate::legion::cmds::project_input::resolve_project_path(&request.project_dir)?;
         let build_request = crate::legion::workspace::planner::BuildRequest {
             project_dir: project_input,
-            target: request.target,
+            resolved: crate::legion::ResolvedTarget::platform_only(request.target),
             output_dir: request.output_dir,
             ..Default::default()
         };

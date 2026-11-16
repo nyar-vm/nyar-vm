@@ -3,7 +3,7 @@
 //! Resolver 必须把 target/profile、架构键和已选 host provider 一并交给 Compiler；
 //! 这些字段是后续 adaptor 链接与表示规划的前置事实，不能留在源码行扫描里。
 
-use nyar::{ArtifactContract, ArtifactPurpose, CanonicalTarget, ClrSuspendStrategy};
+use nyar::{ArtifactPurpose, ClrSuspendStrategy, ResolvedTarget};
 use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
 
 use crate::compiler::semantic::closure::DeclarationKey;
@@ -26,19 +26,18 @@ pub struct CompilerHostProviderBinding {
 pub struct CompilerBuildContext {
     /// 目标架构键；仅供 adaptor/模板合同使用，不得触发 Compiler 内文本重解析。
     pub arch: String,
-    /// 规范化编译目标（wasm、native、CLR 等）。
-    pub target: CanonicalTarget,
+    /// 已冻结的解析目标：平台身份与产物/宿主合同一起进入编译计划。
+    ///
+    /// 合同在这里丢失就意味着下游要重新猜产物是可执行文件、Node 扩展还是
+    /// Python 扩展；这是不允许的。`native` / `node` / `python` 占位符必须
+    /// 先经统一目标解析服务展开成 `ResolvedTarget` 才能构造本上下文。
+    pub resolved: ResolvedTarget,
     /// CLR 后端挂起/恢复策略。
     pub clr_suspend_strategy: ClrSuspendStrategy,
     /// 产物用途：应用 / 库 / 测试包 / 宿主扩展（语言侧声明的交付事实）。
     pub artifact_purpose: ArtifactPurpose,
     /// Wasm 产物形态（模块或组件）；仅 Wasm lane 的容器事实。
     pub wasm_package_kind: WasmPackageKind,
-    /// 宿主产物合同（Node-API / CPython）：由统一目标解析服务冻结后传入。
-    ///
-    /// 只有 `artifact_purpose = HostExtension` 的构建允许携带；lane 据此选择
-    /// 承载服务，不从目标标签或导出形状反推宿主身份。
-    pub host_contract: Option<ArtifactContract>,
     /// 装配层已按 target/profile 过滤的 host provider 选择结果。
     pub selected_host_providers: Vec<CompilerHostProviderBinding>,
     /// 因 `[gate(feature = "...")]` 未启用而被排除的 host provider（诊断事实）。
@@ -62,19 +61,21 @@ pub struct CompilerGatedOutHostProvider {
 
 impl CompilerBuildContext {
     /// 构造最小构建上下文；host provider 列表默认为空。
+    ///
+    /// `resolved` 必须来自统一目标解析服务：平台身份与产物/宿主合同一起
+    /// 冻结后才有资格进入编译计划。
     pub fn new(
         arch: impl Into<String>,
-        target: CanonicalTarget,
+        resolved: ResolvedTarget,
         clr_suspend_strategy: ClrSuspendStrategy,
         wasm_package_kind: WasmPackageKind,
     ) -> Self {
         Self {
             arch: arch.into(),
-            target,
+            resolved,
             clr_suspend_strategy,
             artifact_purpose: ArtifactPurpose::Application,
             wasm_package_kind,
-            host_contract: None,
             selected_host_providers: Vec::new(),
             gated_out_host_providers: Vec::new(),
             test_entry_names: Vec::new(),
@@ -84,12 +85,6 @@ impl CompilerBuildContext {
     /// 声明产物用途（应用 / 库 / 测试包 / 宿主扩展）；未声明按应用交付。
     pub fn with_artifact_purpose(mut self, purpose: ArtifactPurpose) -> Self {
         self.artifact_purpose = purpose;
-        self
-    }
-
-    /// 附加已冻结的宿主产物合同（Node-API / CPython）。
-    pub fn with_host_contract(mut self, contract: Option<ArtifactContract>) -> Self {
-        self.host_contract = contract;
         self
     }
 

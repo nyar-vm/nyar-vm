@@ -24,14 +24,14 @@ pub fn resolve_platform_target(label: &str) -> LegionResult<ResolvedTarget> {
     resolve_authoring_target(label)
 }
 
-/// 解析目标标签，只接受平台/原生合同。
+/// 解析目标标签，只接受平台/原生合同，返回完整 `ResolvedTarget`。
 ///
 /// Node-API / CPython 扩展需要宿主装载（`require` / `import`），测试运行器
 /// 没有这条装载链；在这里明确失败，不退回普通原生可执行文件。
-pub fn resolve_platform_only_target(label: &str) -> LegionResult<CanonicalTarget> {
+pub fn resolve_platform_only_target(label: &str) -> LegionResult<ResolvedTarget> {
     let resolved = resolve_authoring_target(label)?;
     match &resolved.contract {
-        ArtifactContract::Platform | ArtifactContract::Native => Ok(resolved.platform),
+        ArtifactContract::Platform | ArtifactContract::Native => Ok(resolved),
         contract @ (ArtifactContract::NodeApi | ArtifactContract::Cpython(_)) => Err(LegionError::msg(format!(
             "目标 `{label}` 解析为 `{}` 宿主合同（`{}`），测试运行器没有宿主装载链；\
              构建宿主扩展请使用 `legion build --target {label}`，\
@@ -74,5 +74,14 @@ mod tests {
     fn product_alias_resolves_through_the_shared_service() {
         let resolved = resolve_platform_target("ovm").expect("ovm");
         assert_eq!(resolved.platform, nyar::CanonicalTarget::parse("ovm").expect("canonical ovm"));
+    }
+
+    #[test]
+    fn platform_only_target_keeps_contract_and_platform_together() {
+        // 平台 lane 的解析结果仍是完整 `ResolvedTarget`：合同不在这个接口丢失。
+        let resolved = resolve_platform_only_target("native").expect("native 是平台/原生合同");
+        assert_eq!(resolved.contract, ArtifactContract::Native);
+        let wasm = resolve_platform_only_target("wasm-node").expect("wasm-node");
+        assert_eq!(wasm.contract, ArtifactContract::Platform);
     }
 }

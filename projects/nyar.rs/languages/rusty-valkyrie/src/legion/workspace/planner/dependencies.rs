@@ -316,11 +316,11 @@ pub fn canonical_target(target: &str) -> std::result::Result<CanonicalTarget, cr
     target.parse()
 }
 
-pub(crate) fn default_dist_output_dir(project_dir: &Path, target: &CanonicalTarget, host_contract: Option<&ArtifactContract>) -> PathBuf {
+pub(crate) fn default_dist_output_dir(project_dir: &Path, resolved: &crate::legion::ResolvedTarget) -> PathBuf {
     // 同一平台上的普通原生产物与宿主扩展必须落在不同目录：合同是产物身份的一部分。
-    let identity = match host_contract {
-        Some(contract @ (ArtifactContract::NodeApi | ArtifactContract::Cpython(_))) => format!("{}-{}", target.as_canonical_str(), contract.as_str()),
-        _ => target.as_canonical_str(),
+    let identity = match &resolved.contract {
+        contract @ (ArtifactContract::NodeApi | ArtifactContract::Cpython(_)) => format!("{}-{}", resolved.platform.as_canonical_str(), contract.as_str()),
+        _ => resolved.platform.as_canonical_str(),
     };
     project_dir.join("dist").join(identity)
 }

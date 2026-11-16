@@ -217,5 +217,5 @@ pub fn legion_build(options: LegionBuildOptions) -> LegionBuildOutcome {
 fn parse_target(target: Option<String>) -> napi::Result<CanonicalTarget> {
     let raw = target.as_deref().unwrap_or("clr");
     // N-API 产品面暂不承载宿主扩展合同；`node` / `python` 在这里保持明确拒绝。
-    resolve_platform_only_target(raw).map_err(|error| napi::Error::from_reason(error.to_string()))
+    resolve_platform_only_target(raw).map(|resolved| resolved.platform).map_err(|error| napi::Error::from_reason(error.to_string()))
 }

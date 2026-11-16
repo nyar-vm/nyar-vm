@@ -23,11 +23,11 @@ fn product_target_alias(label: &str) -> Option<&'static str> {
     }
 }
 
-/// 将短标签解析为 `CanonicalTarget`。
+/// 将短标签解析为完整 `ResolvedTarget`（平台身份 + 产物/宿主合同）。
 ///
 /// 产品别名先归一，再交给统一的作者面目标解析服务；`native` / `node` / `python`
-/// 占位符不会被再次各写一套展开规则。
-pub fn parse_target_label(label: &str) -> LegionResult<CanonicalTarget> {
+/// 占位符不会被再次各写一套展开规则。宿主合同在测试 lane 明确拒绝。
+pub fn parse_target_label(label: &str) -> LegionResult<crate::legion::ResolvedTarget> {
     let canonical = product_target_alias(label).unwrap_or(label);
     crate::legion::targets::resolve_platform_only_target(canonical)
 }

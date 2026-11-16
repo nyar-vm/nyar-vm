@@ -163,7 +163,7 @@ pub fn legion_check_artifact_fresh(output_dir: String, expected_target: String, 
             };
             let request = BuildRequest {
                 project_dir: project_path,
-                target,
+                resolved: target,
                 output_dir: Some(path.clone()),
                 ..Default::default()
             };
@@ -197,7 +197,7 @@ pub fn legion_check_artifact_fresh(output_dir: String, expected_target: String, 
 pub fn legion_test(project_dir: String, target: Option<String>) -> LegionTestOutcome {
     let target_label = target.unwrap_or_else(|| "wasm-node".into());
     let parsed_target = match resolve_platform_only_target(&target_label) {
-        Ok(t) => t.to_string(),
+        Ok(t) => t.platform.to_string(),
         Err(error) => {
             return LegionTestOutcome { ok: false, error: Some(error.to_string()), passed: 0, failed: 0, skipped: 0 };
         }

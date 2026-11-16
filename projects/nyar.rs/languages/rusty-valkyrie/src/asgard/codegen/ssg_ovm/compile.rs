@@ -48,8 +48,7 @@ pub(crate) fn compile_ssg_ovm_bundle(
     let plan = resolver
         .build_plan(&BuildRequest {
             project_dir: project_dir.to_path_buf(),
-            target: target.clone(),
-            host_contract: None,
+            resolved: crate::legion::ResolvedTarget::platform_only(target.clone()),
             output_dir: Some(scratch_dir.to_path_buf()),
             enabled_features: [SSG_DOM_FEATURE.to_string()].into_iter().collect(),
         })
@@ -71,9 +70,13 @@ pub(crate) fn compile_ssg_ovm_bundle(
     }
 
     let target_profile = target.to_profile(None);
-    let build_context =
-        CompilerBuildContext::new(target.arch.as_str(), target.clone(), nyar::ClrSuspendStrategy::default(), WasmPackageKind::Library)
-            .with_artifact_purpose(nyar::ArtifactPurpose::Library)
+    let build_context = CompilerBuildContext::new(
+        target.arch.as_str(),
+        crate::legion::ResolvedTarget::platform_only(target.clone()),
+        nyar::ClrSuspendStrategy::default(),
+        WasmPackageKind::Library,
+    )
+    .with_artifact_purpose(nyar::ArtifactPurpose::Library)
             .with_selected_host_providers(host_bindings)
             .with_gated_out_host_providers(gated_out_host_providers);
     let input = compiler_input_for_with_dependencies(&groups, generated, GeneratedEntrySurface::GeneratedOnly, &contract_keys)?;

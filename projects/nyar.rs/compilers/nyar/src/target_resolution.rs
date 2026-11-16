@@ -57,7 +57,7 @@ impl From<CanonicalTargetParseError> for TargetResolutionError {
 ///
 /// 别名是占位符，必须由 [`TargetResolver`] 展开；`Platform` 是作者直接写出的三元组
 /// 或四元组，本身已经是平台身份。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TargetRequest {
     /// `native`：宿主平台 + 普通原生产物（可执行文件或共享库由构建声明选择）。
     Native,
@@ -144,7 +144,7 @@ impl ArtifactContract {
 }
 
 /// 解析后冻结的目标：请求、平台身份与宿主合同同时保留。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResolvedTarget {
     /// 作者面原始请求。
     pub request: TargetRequest,
@@ -155,6 +155,14 @@ pub struct ResolvedTarget {
 }
 
 impl ResolvedTarget {
+    /// 显式平台身份、无宿主合同：产物形态（可执行/共享库）由构建声明决定。
+    ///
+    /// 这只适用于作者直接写出三元组/四元组的路径；`native` / `node` / `python`
+    /// 占位符必须经 [`TargetResolver`] 展开，不能走本构造绕过合同解析。
+    pub fn platform_only(target: CanonicalTarget) -> Self {
+        Self { request: TargetRequest::Platform(target), platform: target, contract: ArtifactContract::Platform }
+    }
+
     /// 缓存与产物目录使用的完整身份。
     ///
     /// 同一平台上的普通原生产物与 Node-API / CPython 扩展必须可以区分。

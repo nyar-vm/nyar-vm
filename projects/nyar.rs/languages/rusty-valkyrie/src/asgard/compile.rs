@@ -58,7 +58,7 @@ pub struct ResolvedCompilerSources {
 pub fn resolve_project_source_groups(project_dir: &Path, target: &CanonicalTarget) -> AsgardResult<ResolvedCompilerSources> {
     let resolver = WorkspaceResolver::discover_for_project(project_dir).map_err(|error| report!("解析项目工作区失败: {error}"))?;
     let plan = resolver
-        .build_plan(&BuildRequest { project_dir: project_dir.to_path_buf(), target: target.clone(), output_dir: None, ..Default::default() })
+        .build_plan(&BuildRequest { project_dir: project_dir.to_path_buf(), resolved: crate::legion::ResolvedTarget::platform_only(target.clone()), output_dir: None, ..Default::default() })
         .map_err(|error| report!("解析项目构建计划失败: {error}"))?;
     let project_name = plan.project.name.clone();
     let groups = compile_source_snapshot(&plan.project.semantic_source_groups).map_err(|error| report!("读取项目源码快照失败: {error}"))?;
@@ -205,8 +205,13 @@ pub fn compile_v_bundle(
         HostBackend::BrowserDom => nyar_emitter::nyar_backend_wasi::WasmPackageKind::Library,
         _ => nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     };
-    let build_context = CompilerBuildContext::new(target.arch.as_str(), target.clone(), nyar::ClrSuspendStrategy::default(), wasm_package_kind)
-        .with_artifact_purpose(artifact_purpose)
+    let build_context = CompilerBuildContext::new(
+        target.arch.as_str(),
+        crate::legion::ResolvedTarget::platform_only(target.clone()),
+        nyar::ClrSuspendStrategy::default(),
+        wasm_package_kind,
+    )
+    .with_artifact_purpose(artifact_purpose)
         .with_selected_host_providers(host_provider_bindings.to_vec())
         .with_gated_out_host_providers(gated_out_host_providers.to_vec());
     let input = compiler_input_for_with_dependencies(source_groups, generated, surface, extra_dependency_keys)?;

@@ -77,10 +77,12 @@ pub fn plan_artifacts_from_compiled_program(
 }
 
 /// Valkyrie × 目标适配器：把已验证的 Valkyrie 程序映射为平台输入。
+///
+/// 平台身份与产物/宿主合同只从 `TargetInputRequest::resolved` 进入；适配器
+/// 不再单独保存四元组，合同与平台不会在这里分叉。
 struct ValkyrieTargetAdapter {
     partition: ArtifactPartition,
     plan: Arc<TargetExecutionPlan>,
-    target: CanonicalTarget,
 }
 
 impl AdaptedFragmentInput for ValkyrieTargetAdapter {
@@ -94,11 +96,7 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter {
             // 原生镜像由 native lane 的 LIR/编码服务产出；适配器只提交目标输入
             // 与已冻结的宿主合同，不自行拼接机器码或 PE/ELF 容器。
             if request.artifact_purpose == nyar::ArtifactPurpose::HostExtension {
-                let contract = request
-                    .host_contract
-                    .clone()
-                    .ok_or_else(|| "宿主扩展用途缺少宿主合同：合同与用途必须由目标解析服务一并冻结".to_string())?;
-                let product = nyar_emitter::nyar_backend_native::NativeProductTarget::from_platform_and_contract(self.target.clone(), &contract)
+                let product = nyar_emitter::nyar_backend_native::NativeProductTarget::from_resolved(&request.resolved)
                     .map_err(|error| format!("宿主扩展目标不合法：{error}"))?;
                 let lowered = nyar_emitter::testing::lower_fragment_to_native_extension(&submission, &product, request.project_name)?;
                 return Ok(LoweredBackendInput::native(nyar_emitter::nyar_backend_native::NativeBinaryBackendInput {
@@ -109,7 +107,7 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter {
                     host_exports: lowered.host_exports,
                 }));
             }
-            let lowered = nyar_emitter::testing::lower_fragment_to_native_image(&submission, self.target.clone())?;
+            let lowered = nyar_emitter::testing::lower_fragment_to_native_image(&submission, request.resolved.platform.clone())?;
             let entry_symbol = self
                 .plan
                 .entry_operation()
@@ -185,6 +183,6 @@ pub fn assemble_fragment(
     Ok(AssembledFragment {
         partition: partition.clone(),
         theory_bundle,
-        input: Box::new(ValkyrieTargetAdapter { partition: partition.clone(), plan: Arc::new(backend_plan), target: plan.target.clone() }),
+        input: Box::new(ValkyrieTargetAdapter { partition: partition.clone(), plan: Arc::new(backend_plan) }),
     })
 }

@@ -77,7 +77,7 @@ fn compile_and_run_on_host(target: &str, invocation: Option<&str>) {
     let input = rusty_valkyrie::compiler::hir::lowering::CompilerSourceInput::application(groups);
     let context = CompilerBuildContext::new(
         "smoke-arch",
-        nyar::CanonicalTarget::parse(target).unwrap_or_else(|error| panic!("target `{target}`: {error}")),
+        nyar::ResolvedTarget::platform_only(nyar::CanonicalTarget::parse(target).unwrap_or_else(|error| panic!("target `{target}`: {error}"))),
         ClrSuspendStrategy::from_runtime_async_flag(false),
         WasmPackageKind::Binary,
     );
@@ -150,7 +150,7 @@ fn minimal_entry_runs_on_native() {
     let input = rusty_valkyrie::compiler::hir::lowering::CompilerSourceInput::application(groups);
     let context = CompilerBuildContext::new(
         "native",
-        nyar::CanonicalTarget::parse("native").expect("host native target"),
+        nyar::ResolvedTarget::platform_only(nyar::CanonicalTarget::parse("native").expect("host native target")),
         ClrSuspendStrategy::from_runtime_async_flag(false),
         WasmPackageKind::Binary,
     );
@@ -179,7 +179,7 @@ fn minimal_entry_runs_on_wasi_with_real_argv() {
     let input = rusty_valkyrie::compiler::hir::lowering::CompilerSourceInput::application(groups);
     let context = CompilerBuildContext::new(
         "wasi",
-        nyar::CanonicalTarget::parse("wasi").expect("wasi target"),
+        nyar::ResolvedTarget::platform_only(nyar::CanonicalTarget::parse("wasi").expect("wasi target")),
         ClrSuspendStrategy::from_runtime_async_flag(false),
         WasmPackageKind::Binary,
     );
@@ -229,7 +229,7 @@ fn minimal_entry_runs_on_ovm() {
     let input = rusty_valkyrie::compiler::hir::lowering::CompilerSourceInput::application(groups);
     let context = CompilerBuildContext::new(
         "ovm",
-        nyar::CanonicalTarget::parse("ovm").expect("ovm target"),
+        nyar::ResolvedTarget::platform_only(nyar::CanonicalTarget::parse("ovm").expect("ovm target")),
         ClrSuspendStrategy::from_runtime_async_flag(false),
         WasmPackageKind::Binary,
     );
@@ -259,7 +259,7 @@ fn minimal_entry_emits_wasm_artifact() {
     let input = rusty_valkyrie::compiler::hir::lowering::CompilerSourceInput::application(groups);
     let context = CompilerBuildContext::new(
         "wasm32",
-        nyar::CanonicalTarget::parse("wasm-node").expect("wasm-node target"),
+        nyar::ResolvedTarget::platform_only(nyar::CanonicalTarget::parse("wasm-node").expect("wasm-node target")),
         ClrSuspendStrategy::from_runtime_async_flag(false),
         WasmPackageKind::Binary,
     );

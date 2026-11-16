@@ -9,10 +9,8 @@ use std::process::ExitCode;
 pub struct CheckArgs {
     /// Project directory.
     pub project_dir: std::path::PathBuf,
-    /// Target platform.
-    pub target: crate::legion::CanonicalTarget,
-    /// 宿主产物合同（与 build 同一事实源）。
-    pub host_contract: Option<crate::legion::ArtifactContract>,
+    /// 已冻结的解析目标（与 build 同一事实源：平台身份 + 产物/宿主合同）。
+    pub resolved: crate::legion::ResolvedTarget,
     /// Verbose progress (maps to build debug artifacts currently unused).
     pub verbose: bool,
 }
@@ -22,8 +20,7 @@ pub fn run(args: &CheckArgs) -> LegionResult<ExitCode> {
     println!("check：验证项目可编译性（复用 build）");
     let build_args = BuildArgs {
         project_dir: args.project_dir.clone(),
-        target: args.target.clone(),
-        host_contract: args.host_contract.clone(),
+        resolved: args.resolved.clone(),
         output_dir: None,
         debug_artifacts: args.verbose,
     };

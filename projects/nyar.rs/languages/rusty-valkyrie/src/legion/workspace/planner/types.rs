@@ -35,35 +35,31 @@ pub(crate) struct FileLevelConditionItems {
     pub whens: Vec<WhenPredicate>,
 }
 
-/// 单次构建请求：工程目录、目标平台与可选输出目录。
+/// 单次构建请求：工程目录、已冻结的解析目标与可选输出目录。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BuildRequest {
     /// 请求的工程根目录。
     pub project_dir: PathBuf,
-    /// 目标平台。
-    pub target: CanonicalTarget,
+    /// 已冻结的解析目标：平台身份 + 产物/宿主合同。
+    ///
+    /// `native` / `node` / `python` 占位符必须先经统一目标解析服务展开；
+    /// 合同从这里进入计划，后续阶段不得再按目标标签或导出形状反推。
+    pub resolved: crate::legion::ResolvedTarget,
     /// 自定义输出目录；缺省时按目标推导默认 dist 目录。
     pub output_dir: Option<PathBuf>,
     /// 构建时启用的 feature set；供 `[gate(feature = "...")]` 求值。
     /// 空集 = 所有 feature gate 视为未启用。
     #[serde(default)]
     pub enabled_features: std::collections::BTreeSet<String>,
-    /// 宿主产物合同（Node-API / CPython）：由统一目标解析服务冻结后传入。
-    ///
-    /// 平台身份与宿主合同是两个独立事实；`None` 表示普通平台/原生交付，
-    /// 后续阶段不得从目标标签或导出形状反推宿主合同。
-    #[serde(default)]
-    pub host_contract: Option<crate::legion::ArtifactContract>,
 }
 
 impl Default for BuildRequest {
     fn default() -> Self {
         Self {
             project_dir: PathBuf::default(),
-            target: CanonicalTarget::browser(),
+            resolved: crate::legion::ResolvedTarget::platform_only(CanonicalTarget::browser()),
             output_dir: None,
             enabled_features: std::collections::BTreeSet::new(),
-            host_contract: None,
         }
     }
 }
@@ -175,9 +171,8 @@ pub struct PlannedProject {
     pub gated_out_host_providers: Vec<PlannedHostProviderExclusion>,
     /// 匹配到的构建目标配置。
     pub build_target: BuildTargetSpec,
-    /// 宿主产物合同（Node-API / CPython）：由请求冻结，参与用途推导与缓存身份。
-    #[serde(default)]
-    pub host_contract: Option<crate::legion::ArtifactContract>,
+    /// 已冻结的解析目标：平台身份 + 产物/宿主合同，参与用途推导与缓存身份。
+    pub resolved: crate::legion::ResolvedTarget,
     /// 产物类型（binary / library）。
     pub artifact_kind: crate::legion::workspace::manifest::ProjectArtifactKind,
     /// 已解析的依赖列表。

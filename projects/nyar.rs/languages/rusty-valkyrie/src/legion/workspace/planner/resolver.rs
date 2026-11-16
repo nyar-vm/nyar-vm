@@ -239,11 +239,11 @@ impl WorkspaceResolver {
         else {
             self.project_manifest(&project_dir).ok_or_else(|| PlannerError::MissingProjectManifest(project_dir.clone()))?
         };
-        let build_target = select_build_target(manifest, &request.target)
-            .ok_or_else(|| PlannerError::MissingBuildTarget { project: manifest.name.clone(), target: request.target })?;
+        let build_target = select_build_target(manifest, &request.resolved.platform)
+            .ok_or_else(|| PlannerError::MissingBuildTarget { project: manifest.name.clone(), target: request.resolved.platform })?;
 
         let dependencies = self.collect_dependencies(&project_dir, manifest, &build_target, true)?;
-        let output_dir = request.output_dir.clone().unwrap_or_else(|| default_dist_output_dir(&project_dir, &request.target, request.host_contract.as_ref()));
+        let output_dir = request.output_dir.clone().unwrap_or_else(|| default_dist_output_dir(&project_dir, &request.resolved));
 
         // 收集源码闭包：包含项目自身及其所有依赖（含传递依赖）的源文件。
         // 这是模块系统的核心：让编译器能看到依赖项目定义的 struct/function/type。
@@ -251,12 +251,12 @@ impl WorkspaceResolver {
         let source_files = self.collect_source_closure(&project_dir, manifest, &build_target, &mut visited, true)?;
         let semantic_source_groups = filter_semantic_source_groups_for_target(
             self.collect_semantic_source_groups(&project_dir, manifest, &build_target)?,
-            request.target,
+            request.resolved.platform,
             Some(&request.enabled_features),
         )?;
-        let source_files = filter_source_files_for_target(source_files, request.target, Some(&request.enabled_features))?;
+        let source_files = filter_source_files_for_target(source_files, request.resolved.platform, Some(&request.enabled_features))?;
         let host_inventory =
-            host_inventory_for_groups(&semantic_source_groups, request.target, &build_target, Some(&request.enabled_features))?;
+            host_inventory_for_groups(&semantic_source_groups, request.resolved.platform, &build_target, Some(&request.enabled_features))?;
 
         Ok(BuildPlan {
             workspace_root: self.root_dir.clone(),
@@ -278,7 +278,7 @@ impl WorkspaceResolver {
                 selected_host_providers: host_inventory.selected_providers,
                 gated_out_host_providers: host_inventory.gated_out_providers,
                 build_target,
-                host_contract: request.host_contract.clone(),
+                resolved: request.resolved.clone(),
                 artifact_kind: manifest.artifact,
                 dependencies,
                 is_test: false,
@@ -309,34 +309,34 @@ impl WorkspaceResolver {
             }
         };
 
-        let mut build_target = select_build_target(&manifest, &request.target)
-            .unwrap_or_else(|| BuildTargetSpec { target: request.target.clone(), ..BuildTargetSpec::default() });
-        build_target.target = request.target.clone();
+        let mut build_target = select_build_target(&manifest, &request.resolved.platform)
+            .unwrap_or_else(|| BuildTargetSpec { target: request.resolved.platform.clone(), ..BuildTargetSpec::default() });
+        build_target.target = request.resolved.platform.clone();
 
         let dependencies = self.collect_dependencies(&project_dir, &manifest, &build_target, true)?;
         let output_dir =
-            request.output_dir.clone().unwrap_or_else(|| project_dir.join(".cache").join("test").join(request.target.as_canonical_str()));
+            request.output_dir.clone().unwrap_or_else(|| project_dir.join(".cache").join("test").join(request.resolved.platform.as_canonical_str()));
 
         let mut visited = BTreeSet::new();
         let mut source_files = self.collect_source_closure(&project_dir, &manifest, &build_target, &mut visited, true)?;
-        source_files = filter_source_files_for_target(source_files, request.target, Some(&request.enabled_features))?;
+        source_files = filter_source_files_for_target(source_files, request.resolved.platform, Some(&request.enabled_features))?;
 
         let semantic_source_groups = filter_semantic_source_groups_for_target(
             self.collect_semantic_source_groups(&project_dir, &manifest, &build_target)?,
-            request.target,
+            request.resolved.platform,
             Some(&request.enabled_features),
         )?;
         // 测试语义组：入口组纳入该包的 `source/` 与 `test/` 文件。编译只吃这个组，
         // 测试声明才能进入语义闭包并生成 run contract；`source_files`（哈希输入）
         // 与语义组文件集合必须一致，否则缓存键与真实编译输入会分叉。
         let mut semantic_source_groups = semantic_source_groups;
-        let test_files = filter_source_files_for_target(collect_test_v_files(&project_dir)?, request.target, Some(&request.enabled_features))?;
+        let test_files = filter_source_files_for_target(collect_test_v_files(&project_dir)?, request.resolved.platform, Some(&request.enabled_features))?;
         append_test_files_to_entry_group(&mut semantic_source_groups, &test_files, &manifest.name)?;
         source_files.extend(test_files);
         source_files.sort();
         source_files.dedup();
         let host_inventory =
-            host_inventory_for_groups(&semantic_source_groups, request.target, &build_target, Some(&request.enabled_features))?;
+            host_inventory_for_groups(&semantic_source_groups, request.resolved.platform, &build_target, Some(&request.enabled_features))?;
         let test_entries = test_entry_names(&semantic_source_groups, compile_arch_key(&build_target.target))?;
 
         Ok((
@@ -359,7 +359,7 @@ impl WorkspaceResolver {
                     selected_host_providers: host_inventory.selected_providers,
                     gated_out_host_providers: host_inventory.gated_out_providers,
                     build_target,
-                    host_contract: request.host_contract.clone(),
+                    resolved: request.resolved.clone(),
                     artifact_kind: manifest.artifact,
                     dependencies,
                     is_test: true,
@@ -534,22 +534,22 @@ impl WorkspaceResolver {
     }
 
     fn build_plan_for_manifest(&self, project_dir: PathBuf, manifest: &ProjectManifest, request: &BuildRequest) -> PlannerResult<BuildPlan> {
-        let build_target = select_build_target(manifest, &request.target)
-            .ok_or_else(|| PlannerError::MissingBuildTarget { project: manifest.name.clone(), target: request.target.clone() })?;
+        let build_target = select_build_target(manifest, &request.resolved.platform)
+            .ok_or_else(|| PlannerError::MissingBuildTarget { project: manifest.name.clone(), target: request.resolved.platform.clone() })?;
 
         let dependencies = self.collect_dependencies(&project_dir, manifest, &build_target, true)?;
-        let output_dir = request.output_dir.clone().unwrap_or_else(|| default_dist_output_dir(&project_dir, &request.target, request.host_contract.as_ref()));
+        let output_dir = request.output_dir.clone().unwrap_or_else(|| default_dist_output_dir(&project_dir, &request.resolved));
 
         let mut visited = BTreeSet::new();
         let source_files = self.collect_source_closure(&project_dir, manifest, &build_target, &mut visited, true)?;
         let semantic_source_groups = filter_semantic_source_groups_for_target(
             self.collect_semantic_source_groups(&project_dir, manifest, &build_target)?,
-            request.target,
+            request.resolved.platform,
             Some(&request.enabled_features),
         )?;
-        let source_files = filter_source_files_for_target(source_files, request.target, Some(&request.enabled_features))?;
+        let source_files = filter_source_files_for_target(source_files, request.resolved.platform, Some(&request.enabled_features))?;
         let host_inventory =
-            host_inventory_for_groups(&semantic_source_groups, request.target, &build_target, Some(&request.enabled_features))?;
+            host_inventory_for_groups(&semantic_source_groups, request.resolved.platform, &build_target, Some(&request.enabled_features))?;
 
         Ok(BuildPlan {
             workspace_root: self.root_dir.clone(),
@@ -571,7 +571,7 @@ impl WorkspaceResolver {
                 selected_host_providers: host_inventory.selected_providers,
                 gated_out_host_providers: host_inventory.gated_out_providers,
                 build_target,
-                host_contract: request.host_contract.clone(),
+                resolved: request.resolved.clone(),
                 artifact_kind: manifest.artifact,
                 dependencies,
                 is_test: false,
