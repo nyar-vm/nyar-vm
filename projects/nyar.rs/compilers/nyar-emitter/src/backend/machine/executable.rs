@@ -15,9 +15,9 @@ const ET_DYN: u16 = 3;
 const EM_X86_64: u16 = 62;
 const EM_AARCH64: u16 = 183;
 
-/// Native 后端可识别的可执行文件格式。
+/// 机器码后端可识别的可执行文件格式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NativeExecutableKind {
+pub enum MachineImageKind {
     /// Windows `PE32+` / `AMD64`。
     Pe,
     /// Linux `ELF64 ET_EXEC` / `x86-64`。
@@ -31,18 +31,18 @@ pub enum NativeExecutableKind {
 /// 「可解析」不等于「可降低/可运行」；调用方必须按各自能力边界消费这些事实，
 /// 不得把架构或共享/可执行分类重新按文件名推断。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NativeImageFacts {
+pub struct MachineImageFacts {
     /// 识别出的镜像格式。
-    pub kind: NativeExecutableKind,
+    pub kind: MachineImageKind,
     /// 镜像机器架构。
     pub arch: BinaryArch,
     /// 是否为共享库镜像（DLL / `ET_DYN`）。
     pub shared: bool,
 }
 
-/// Native 后端可执行文件分类错误。
+/// 机器码后端可执行文件分类错误。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NativeExecutableError {
+pub enum MachineImageError {
     /// 镜像过短。
     TooShort,
     /// 镜像可解析为 `PE`/`ELF`，但机器类型或文件类型不受本后端支持。
@@ -56,7 +56,7 @@ pub enum NativeExecutableError {
     },
 }
 
-impl fmt::Display for NativeExecutableError {
+impl fmt::Display for MachineImageError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::TooShort => write!(f, "native executable 过短"),
@@ -68,39 +68,39 @@ impl fmt::Display for NativeExecutableError {
     }
 }
 
-impl std::error::Error for NativeExecutableError {}
+impl std::error::Error for MachineImageError {}
 
 /// 识别 native 后端可消费的可执行文件格式。
-pub fn classify_native_executable(bytes: &[u8]) -> Result<NativeExecutableKind, NativeExecutableError> {
-    classify_native_image(bytes).map(|facts| facts.kind)
+pub fn classify_machine_executable(bytes: &[u8]) -> Result<MachineImageKind, MachineImageError> {
+    classify_machine_image(bytes).map(|facts| facts.kind)
 }
 
 /// 识别 native 镜像的格式、架构与共享/可执行分类。
 ///
 /// 共享库是 Node `.node` / Python `.pyd`、`.so` 等宿主扩展的物理载体；
 /// 这里只回答「可解析」事实，是否可降低/可运行由各能力边界决定。
-pub fn classify_native_image(bytes: &[u8]) -> Result<NativeImageFacts, NativeExecutableError> {
+pub fn classify_machine_image(bytes: &[u8]) -> Result<MachineImageFacts, MachineImageError> {
     if bytes.len() < 4 {
-        return Err(NativeExecutableError::TooShort);
+        return Err(MachineImageError::TooShort);
     }
     let pe = parse_pe64(bytes);
     if let Ok(header) = &pe
         && header.machine == MACHINE_AMD64
         && header.optional_magic == OPTIONAL_MAGIC_PE32_PLUS
     {
-        return Ok(NativeImageFacts { kind: NativeExecutableKind::Pe, arch: BinaryArch::X64, shared: pe_file_is_dll(bytes, header.pe_offset) });
+        return Ok(MachineImageFacts { kind: MachineImageKind::Pe, arch: BinaryArch::X64, shared: pe_file_is_dll(bytes, header.pe_offset) });
     }
     let elf = parse_elf64(bytes);
     if let Ok(header) = &elf {
         match (header.file_type, header.machine) {
             (ET_EXEC, EM_X86_64) => {
-                return Ok(NativeImageFacts { kind: NativeExecutableKind::Elf, arch: BinaryArch::X64, shared: false });
+                return Ok(MachineImageFacts { kind: MachineImageKind::Elf, arch: BinaryArch::X64, shared: false });
             }
             (ET_DYN, EM_X86_64) => {
-                return Ok(NativeImageFacts { kind: NativeExecutableKind::ElfShared, arch: BinaryArch::X64, shared: true });
+                return Ok(MachineImageFacts { kind: MachineImageKind::ElfShared, arch: BinaryArch::X64, shared: true });
             }
             (ET_DYN, EM_AARCH64) => {
-                return Ok(NativeImageFacts { kind: NativeExecutableKind::ElfShared, arch: BinaryArch::Arm64, shared: true });
+                return Ok(MachineImageFacts { kind: MachineImageKind::ElfShared, arch: BinaryArch::Arm64, shared: true });
             }
             _ => {}
         }
@@ -108,8 +108,8 @@ pub fn classify_native_image(bytes: &[u8]) -> Result<NativeImageFacts, NativeExe
     match (pe, elf) {
         // 解析成功但架构/文件类型不在支持集内：这是受支持的「可解析」事实，
         // 不是解析失败，必须返回结构化错误而不是对成功结果 `unwrap_err()` panic。
-        (Ok(_), _) | (_, Ok(_)) => Err(NativeExecutableError::ParsedButUnsupported),
-        (Err(pe), Err(elf)) => Err(NativeExecutableError::Unrecognized { pe, elf }),
+        (Ok(_), _) | (_, Ok(_)) => Err(MachineImageError::ParsedButUnsupported),
+        (Err(pe), Err(elf)) => Err(MachineImageError::Unrecognized { pe, elf }),
     }
 }
 

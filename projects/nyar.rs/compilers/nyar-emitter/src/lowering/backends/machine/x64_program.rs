@@ -4,7 +4,7 @@
 //! 返回尾声、`rel32` 回填与符号布局全部由本模块负责，适配器不拼机器码。
 //!
 //! 本模块只做**程序级装配**（多函数布局、字符串池、导入表、数据段引用与修复）；
-//! 所有 x86-64 指令字节来自 [`super::x64_lir`] 的图元——native lane 唯一的字节
+//! 所有 x86-64 指令字节来自 [`super::x64_lir`] 的图元——机器码 lane 唯一的字节
 //! 权威。这里不得出现任何手写的指令编码表。
 
 use std::collections::BTreeMap;
@@ -20,7 +20,7 @@ use super::x64_lir::{
     encode_operator, patch_rel32,
 };
 use super::x86_64::X86_64OperatorCode;
-use super::{NativeAbi, NativeDataTarget, NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage};
+use super::{X64CallConv, X64DataTarget, X64TextInstruction, X64ProgramFunction, X64ProgramImage};
 
 fn align16(value: u32) -> u32 {
     (value + 15) & !15
@@ -37,23 +37,23 @@ fn intern_string(strings: &mut Vec<String>, value: &str) -> usize {
 }
 
 /// 二元算子的文本 LIR → 冻结 operator 身份（字节表只在 `x64_lir` 一处）。
-fn binary_operator(instruction: &NativeTextInstruction) -> Option<X86_64OperatorCode> {
+fn binary_operator(instruction: &X64TextInstruction) -> Option<X86_64OperatorCode> {
     Some(match instruction {
-        NativeTextInstruction::Add => X86_64OperatorCode::I64Add,
-        NativeTextInstruction::Sub => X86_64OperatorCode::I64Subtract,
-        NativeTextInstruction::Mul => X86_64OperatorCode::I64Multiply,
-        NativeTextInstruction::Eq => X86_64OperatorCode::I64CompareEqual,
-        NativeTextInstruction::Ne => X86_64OperatorCode::I64CompareNotEqual,
-        NativeTextInstruction::Lt => X86_64OperatorCode::I64CompareLessThan,
-        NativeTextInstruction::Le => X86_64OperatorCode::I64CompareLessOrEqual,
-        NativeTextInstruction::Gt => X86_64OperatorCode::I64CompareGreaterThan,
-        NativeTextInstruction::Ge => X86_64OperatorCode::I64CompareGreaterOrEqual,
+        X64TextInstruction::Add => X86_64OperatorCode::I64Add,
+        X64TextInstruction::Sub => X86_64OperatorCode::I64Subtract,
+        X64TextInstruction::Mul => X86_64OperatorCode::I64Multiply,
+        X64TextInstruction::Eq => X86_64OperatorCode::I64CompareEqual,
+        X64TextInstruction::Ne => X86_64OperatorCode::I64CompareNotEqual,
+        X64TextInstruction::Lt => X86_64OperatorCode::I64CompareLessThan,
+        X64TextInstruction::Le => X86_64OperatorCode::I64CompareLessOrEqual,
+        X64TextInstruction::Gt => X86_64OperatorCode::I64CompareGreaterThan,
+        X64TextInstruction::Ge => X86_64OperatorCode::I64CompareGreaterOrEqual,
         _ => return None,
     })
 }
 
 /// 超出寄存器上限的形参/实参索引：结构化错误，禁止借用其他 ABI。
-fn argument_out_of_range(abi: NativeAbi, index: u8, what: &str) -> String {
+fn argument_out_of_range(abi: X64CallConv, index: u8, what: &str) -> String {
     format!(
         "{} 文本 ABI 只支持 {} 个寄存器整数{what}（index={index}；栈上传参未实现）",
         abi.name(),
@@ -64,8 +64,8 @@ fn argument_out_of_range(abi: NativeAbi, index: u8, what: &str) -> String {
 /// 把多函数文本 LIR 编码为一段 `.text` 与导出符号偏移（无宿主导入）。
 ///
 /// `abi` 必须来自规范目标四元组（`os` + `abi`），不提供默认值。
-pub fn encode_native_text_program(functions: &[NativeTextProgramFunction], abi: NativeAbi) -> Result<NativeTextProgramImage> {
-    encode_native_text_program_with_imports(functions, &[], abi)
+pub fn encode_x64_program(functions: &[X64ProgramFunction], abi: X64CallConv) -> Result<X64ProgramImage> {
+    encode_x64_program_with_imports(functions, &[], abi)
 }
 
 /// 把多函数文本 LIR 编码为 `.text`、导出符号与宿主导入表。
@@ -74,12 +74,12 @@ pub fn encode_native_text_program(functions: &[NativeTextProgramFunction], abi: 
 /// 冻结，`CallImport` 的 `call [rip+disp32]` 由 PE 写入器在最终布局后回填。
 /// 宿主导入是 PE/IAT 专属合同，`ELF` 目标当前没有对应编码，必须显式拒绝而不是
 /// 生成一张无人解析的 `.idata`。
-pub fn encode_native_text_program_with_imports(
-    functions: &[NativeTextProgramFunction],
+pub fn encode_x64_program_with_imports(
+    functions: &[X64ProgramFunction],
     imports: &[(String, String)],
-    abi: NativeAbi,
-) -> Result<NativeTextProgramImage> {
-    encode_native_text_program_with_data(functions, imports, abi, &[], &[])
+    abi: X64CallConv,
+) -> Result<X64ProgramImage> {
+    encode_x64_program_with_data(functions, imports, abi, &[], &[])
 }
 
 /// 把多函数文本 LIR 编码为 `.text` + `.data`、导出符号与宿主导入表。
@@ -87,35 +87,35 @@ pub fn encode_native_text_program_with_imports(
 /// `data` 与 `data_relocations` 属于适配器：容器把数据段按 `p_vaddr == 文件偏移`
 /// 布局，`LoadDataAddress` 产生的 `.text → .data` 引用由容器回填。数据段只对
 /// 共享库容器（`ET_DYN`）有意义，可执行镜像不得携带数据段。
-pub fn encode_native_text_program_with_data(
-    functions: &[NativeTextProgramFunction],
+pub fn encode_x64_program_with_data(
+    functions: &[X64ProgramFunction],
     imports: &[(String, String)],
-    abi: NativeAbi,
+    abi: X64CallConv,
     data: &[u8],
-    data_relocations: &[(u32, NativeDataTarget)],
-) -> Result<NativeTextProgramImage> {
-    encode_native_text_program_with_dependencies(functions, imports, abi, data, data_relocations, &[])
+    data_relocations: &[(u32, X64DataTarget)],
+) -> Result<X64ProgramImage> {
+    encode_x64_program_with_dependencies(functions, imports, abi, data, data_relocations, &[])
 }
 
-/// 同 [`encode_native_text_program_with_data`]，并声明产物依赖的宿主库 `SONAME`。
-pub fn encode_native_text_program_with_dependencies(
-    functions: &[NativeTextProgramFunction],
+/// 同 [`encode_x64_program_with_data`]，并声明产物依赖的宿主库 `SONAME`。
+pub fn encode_x64_program_with_dependencies(
+    functions: &[X64ProgramFunction],
     imports: &[(String, String)],
-    abi: NativeAbi,
+    abi: X64CallConv,
     data: &[u8],
-    data_relocations: &[(u32, NativeDataTarget)],
-    native_dependencies: &[String],
-) -> Result<NativeTextProgramImage> {
+    data_relocations: &[(u32, X64DataTarget)],
+    host_dependencies: &[String],
+) -> Result<X64ProgramImage> {
     if functions.is_empty() {
         return Err("native text program has no functions".to_string());
     }
     // SysV64 的导入按全局符号解析，不存在模块装载概念：`module` 必须为空。
-    if abi != NativeAbi::Win64
+    if abi != X64CallConv::Win64
         && let Some((module, _)) = imports.iter().find(|(module, _)| !module.is_empty())
     {
         return Err(format!("native 文本 ABI `{}` 的宿主导入按全局符号解析，模块名必须为空（实际 `{module}`）", abi.name()));
     }
-    let table = if abi == NativeAbi::Win64 {
+    let table = if abi == X64CallConv::Win64 {
         acorn_pe::pe::build_native_import_table(imports).map_err(|error| format!("native 导入表构造失败：{error}"))?
     }
     else {
@@ -156,9 +156,9 @@ pub fn encode_native_text_program_with_dependencies(
             .instructions
             .iter()
             .filter_map(|instruction| match instruction {
-                NativeTextInstruction::ZeroStackArg(index)
-                | NativeTextInstruction::StoreSlotToStackArg { index, .. }
-                | NativeTextInstruction::StoreSlotAddressToStackArg { index, .. } => Some(u32::from(*index) + 1),
+                X64TextInstruction::ZeroStackArg(index)
+                | X64TextInstruction::StoreSlotToStackArg { index, .. }
+                | X64TextInstruction::StoreSlotAddressToStackArg { index, .. } => Some(u32::from(*index) + 1),
                 _ => None,
             })
             .max()
@@ -170,39 +170,39 @@ pub fn encode_native_text_program_with_dependencies(
         let mut jumps: Vec<(usize, u32)> = Vec::new();
         for instruction in &function.instructions {
             match instruction {
-                NativeTextInstruction::LoadI64(value) => emit_mov_imm64(&mut text, X64Reg::Rax, *value),
-                NativeTextInstruction::LoadParam { index, slot } => {
+                X64TextInstruction::LoadI64(value) => emit_mov_imm64(&mut text, X64Reg::Rax, *value),
+                X64TextInstruction::LoadParam { index, slot } => {
                     let register = argument_register(abi, *index).ok_or_else(|| argument_out_of_range(abi, *index, "形参"))?;
                     emit_mov_to_frame(&mut text, register, *slot);
                 }
-                NativeTextInstruction::LoadSlot(slot) => emit_mov_from_frame(&mut text, X64Reg::Rax, *slot),
-                NativeTextInstruction::LoadSlotToRcx(slot) => emit_mov_from_frame(&mut text, X64Reg::Rcx, *slot),
-                NativeTextInstruction::LoadSlotToArg { slot, index } => {
+                X64TextInstruction::LoadSlot(slot) => emit_mov_from_frame(&mut text, X64Reg::Rax, *slot),
+                X64TextInstruction::LoadSlotToRcx(slot) => emit_mov_from_frame(&mut text, X64Reg::Rcx, *slot),
+                X64TextInstruction::LoadSlotToArg { slot, index } => {
                     let register = argument_register(abi, *index).ok_or_else(|| argument_out_of_range(abi, *index, "实参"))?;
                     emit_mov_from_frame(&mut text, register, *slot);
                 }
-                NativeTextInstruction::StoreSlot(slot) => emit_mov_to_frame(&mut text, X64Reg::Rax, *slot),
-                NativeTextInstruction::Label(id) => {
+                X64TextInstruction::StoreSlot(slot) => emit_mov_to_frame(&mut text, X64Reg::Rax, *slot),
+                X64TextInstruction::Label(id) => {
                     labels.insert(*id, text.len());
                 }
-                NativeTextInstruction::Jump(id) => jumps.push((emit_jump_placeholder(&mut text), *id)),
-                NativeTextInstruction::JumpIfZero(id) => jumps.push((emit_jump_if_zero_placeholder(&mut text), *id)),
-                NativeTextInstruction::Call(name) => calls.push((emit_call_placeholder(&mut text), name.clone())),
-                NativeTextInstruction::LoadString(value) => {
+                X64TextInstruction::Jump(id) => jumps.push((emit_jump_placeholder(&mut text), *id)),
+                X64TextInstruction::JumpIfZero(id) => jumps.push((emit_jump_if_zero_placeholder(&mut text), *id)),
+                X64TextInstruction::Call(name) => calls.push((emit_call_placeholder(&mut text), name.clone())),
+                X64TextInstruction::LoadString(value) => {
                     let index = intern_string(&mut strings, value);
                     string_uses.push((emit_lea_rip_placeholder(&mut text), index, 0));
                 }
-                NativeTextInstruction::LoadStringPtr(value) => {
+                X64TextInstruction::LoadStringPtr(value) => {
                     let index = intern_string(&mut strings, value);
                     // 指向描述符之后的字节区。
                     string_uses.push((emit_lea_rip_placeholder(&mut text), index, 8));
                 }
-                NativeTextInstruction::LoadStringLen(value) => {
+                X64TextInstruction::LoadStringLen(value) => {
                     let len = i64::try_from(value.len()).map_err(|_| "native 静态字符串长度超出 i64".to_string())?;
                     emit_mov_imm64(&mut text, X64Reg::Rax, len);
                 }
-                NativeTextInstruction::LoadDescriptorLength => emit_load_descriptor_length(&mut text),
-                NativeTextInstruction::LoadDataAddress(offset) => {
+                X64TextInstruction::LoadDescriptorLength => emit_load_descriptor_length(&mut text),
+                X64TextInstruction::LoadDataAddress(offset) => {
                     if *offset as usize >= data.len() {
                         return Err(format!("native 数据段引用偏移 {offset} 超出数据块长度 {}", data.len()));
                     }
@@ -211,26 +211,26 @@ pub fn encode_native_text_program_with_dependencies(
                         *offset,
                     ));
                 }
-                NativeTextInstruction::LoadFunctionAddress(name) => {
+                X64TextInstruction::LoadFunctionAddress(name) => {
                     function_addresses.push((emit_lea_rip_placeholder(&mut text), name.clone()));
                 }
-                NativeTextInstruction::ZeroStackArg(index) => {
-                    if abi != NativeAbi::Win64 {
+                X64TextInstruction::ZeroStackArg(index) => {
+                    if abi != X64CallConv::Win64 {
                         return Err(format!("{} 文本 ABI 不支持 `ZeroStackArg`：栈上传参是 Win64 shadow space 合同", abi.name()));
                     }
                     let displacement = 32u8.checked_add(index.saturating_mul(8)).ok_or_else(|| "栈实参偏移超出 u8".to_string())?;
                     emit_zero_stack_arg(&mut text, displacement);
                 }
-                NativeTextInstruction::StoreSlotToStackArg { slot, index } => {
-                    if abi != NativeAbi::Win64 {
+                X64TextInstruction::StoreSlotToStackArg { slot, index } => {
+                    if abi != X64CallConv::Win64 {
                         return Err(format!("{} 文本 ABI 不支持 `StoreSlotToStackArg`：栈传参是 Win64 shadow space 合同", abi.name()));
                     }
                     emit_mov_from_frame(&mut text, X64Reg::Rax, *slot);
                     let offset = 32u32.checked_add(u32::from(*index) * 8).ok_or_else(|| "栈实参偏移超出 u32".to_string())?;
                     emit_store_rax_to_stack(&mut text, offset);
                 }
-                NativeTextInstruction::StoreSlotAddressToStackArg { slot, index } => {
-                    if abi != NativeAbi::Win64 {
+                X64TextInstruction::StoreSlotAddressToStackArg { slot, index } => {
+                    if abi != X64CallConv::Win64 {
                         return Err(format!(
                             "{} 文本 ABI 不支持 `StoreSlotAddressToStackArg`：栈传参是 Win64 shadow space 合同",
                             abi.name()
@@ -240,33 +240,33 @@ pub fn encode_native_text_program_with_dependencies(
                     let offset = 32u32.checked_add(u32::from(*index) * 8).ok_or_else(|| "栈实参偏移超出 u32".to_string())?;
                     emit_store_rax_to_stack(&mut text, offset);
                 }
-                NativeTextInstruction::LoadSlotAddress(slot) => emit_lea_rax_from_frame(&mut text, *slot),
-                NativeTextInstruction::AddRaxImmediate(value) => emit_add_rax_imm32(&mut text, *value),
-                NativeTextInstruction::SubRaxImmediate(value) => emit_sub_rax_imm32(&mut text, *value),
-                NativeTextInstruction::NegateRax => emit_neg_rax(&mut text),
-                NativeTextInstruction::DivideByTen => emit_divide_by_ten(&mut text),
-                NativeTextInstruction::AddRdxImmediate(value) => emit_add_rdx_imm32(&mut text, *value),
-                NativeTextInstruction::StoreByteAtRaxFromRdx => emit_store_byte_at_rax_from_rdx(&mut text),
-                NativeTextInstruction::LoadByteFromRax => emit_load_byte_from_rax(&mut text),
-                NativeTextInstruction::LoadFromRax => emit_load_from_rax(&mut text),
-                NativeTextInstruction::StoreRcxToRax => emit_store_rcx_to_rax(&mut text),
-                NativeTextInstruction::StoreRaxToRcx => emit_store_rax_to_rcx(&mut text),
-                NativeTextInstruction::StoreDwordImmediateToRax(value) => emit_store_dword_imm_to_rax(&mut text, *value),
-                NativeTextInstruction::StoreDwordRcxToRax => emit_store_dword_rcx_to_rax(&mut text),
-                NativeTextInstruction::LoadSlotToRdx(slot) => emit_mov_from_frame(&mut text, X64Reg::Rdx, *slot),
-                NativeTextInstruction::CopyBytes => emit_copy_bytes(&mut text),
-                NativeTextInstruction::Trap => emit_trap(&mut text),
-                NativeTextInstruction::Operator(code) => encode_operator(&mut text, *code),
-                NativeTextInstruction::SyscallWrite => {
-                    if abi != NativeAbi::SystemV64 {
+                X64TextInstruction::LoadSlotAddress(slot) => emit_lea_rax_from_frame(&mut text, *slot),
+                X64TextInstruction::AddRaxImmediate(value) => emit_add_rax_imm32(&mut text, *value),
+                X64TextInstruction::SubRaxImmediate(value) => emit_sub_rax_imm32(&mut text, *value),
+                X64TextInstruction::NegateRax => emit_neg_rax(&mut text),
+                X64TextInstruction::DivideByTen => emit_divide_by_ten(&mut text),
+                X64TextInstruction::AddRdxImmediate(value) => emit_add_rdx_imm32(&mut text, *value),
+                X64TextInstruction::StoreByteAtRaxFromRdx => emit_store_byte_at_rax_from_rdx(&mut text),
+                X64TextInstruction::LoadByteFromRax => emit_load_byte_from_rax(&mut text),
+                X64TextInstruction::LoadFromRax => emit_load_from_rax(&mut text),
+                X64TextInstruction::StoreRcxToRax => emit_store_rcx_to_rax(&mut text),
+                X64TextInstruction::StoreRaxToRcx => emit_store_rax_to_rcx(&mut text),
+                X64TextInstruction::StoreDwordImmediateToRax(value) => emit_store_dword_imm_to_rax(&mut text, *value),
+                X64TextInstruction::StoreDwordRcxToRax => emit_store_dword_rcx_to_rax(&mut text),
+                X64TextInstruction::LoadSlotToRdx(slot) => emit_mov_from_frame(&mut text, X64Reg::Rdx, *slot),
+                X64TextInstruction::CopyBytes => emit_copy_bytes(&mut text),
+                X64TextInstruction::Trap => emit_trap(&mut text),
+                X64TextInstruction::Operator(code) => encode_operator(&mut text, *code),
+                X64TextInstruction::SyscallWrite => {
+                    if abi != X64CallConv::SystemV64 {
                         return Err(format!("{} 文本 ABI 没有 `write` syscall 合同：effect 写入必须走宿主导入", abi.name()));
                     }
                     emit_syscall_write(&mut text);
                 }
-                NativeTextInstruction::CallImport { module, field } => {
+                X64TextInstruction::CallImport { module, field } => {
                     // 两种 ABI 的指令相同，修复去向不同。
                     let field_offset = emit_call_import_placeholder(&mut text);
-                    if abi == NativeAbi::Win64 {
+                    if abi == X64CallConv::Win64 {
                         let slot = *table
                             .slot_offsets
                             .get(&(module.clone(), field.clone()))
@@ -281,7 +281,7 @@ pub fn encode_native_text_program_with_dependencies(
                         elf_got_fixups.push((u32::try_from(field_offset).map_err(|_| "native 导入调用偏移超出 u32".to_string())?, index as u32));
                     }
                 }
-                NativeTextInstruction::Return => emit_function_return(&mut text),
+                X64TextInstruction::Return => emit_function_return(&mut text),
                 binary if binary_operator(binary).is_some() => encode_operator(&mut text, binary_operator(binary).expect("matched above")),
                 other => return Err(format!("native text program encoder 不支持该 LIR 指令：{other:?}")),
             }
@@ -331,37 +331,37 @@ pub fn encode_native_text_program_with_dependencies(
     let mut resolved_relocations = Vec::with_capacity(data_relocations.len());
     for (offset, target) in data_relocations {
         let resolved = match target {
-            NativeDataTarget::Text(offset) => {
+            X64DataTarget::Text(offset) => {
                 if *offset as usize >= text.len() {
                     return Err(format!("native 数据段指针目标 `.text` 偏移 {offset} 超出文本长度 {}", text.len()));
                 }
-                NativeDataTarget::Text(*offset)
+                X64DataTarget::Text(*offset)
             }
-            NativeDataTarget::Data(offset) => {
+            X64DataTarget::Data(offset) => {
                 if *offset as usize >= data.len() {
                     return Err(format!("native 数据段指针目标 `.data` 偏移 {offset} 超出数据块长度 {}", data.len()));
                 }
-                NativeDataTarget::Data(*offset)
+                X64DataTarget::Data(*offset)
             }
-            NativeDataTarget::Function(name) => {
+            X64DataTarget::Function(name) => {
                 let target_offset = symbol_offsets.get(name).copied().ok_or_else(|| format!("native 数据段指针引用了未定义函数 `{name}`"))?;
-                NativeDataTarget::Text(target_offset)
+                X64DataTarget::Text(target_offset)
             }
         };
         resolved_relocations.push((*offset, resolved));
     }
 
-    Ok(NativeTextProgramImage {
+    Ok(X64ProgramImage {
         text,
         symbols,
         idata: table.bytes,
         imports: table.imports,
         text_rel32_fixups: import_fixups,
         elf_got_fixups,
-        elf_imports: if abi == NativeAbi::SystemV64 { imports.iter().map(|(_, field)| field.clone()).collect() } else { Vec::new() },
+        elf_imports: if abi == X64CallConv::SystemV64 { imports.iter().map(|(_, field)| field.clone()).collect() } else { Vec::new() },
         data: data.to_vec(),
         data_relocations: resolved_relocations,
         data_references,
-        native_dependencies: native_dependencies.to_vec(),
+        host_dependencies: host_dependencies.to_vec(),
     })
 }

@@ -15,10 +15,10 @@ use nyar::{
 use nyar_emitter::{
     FragmentSubmission, LoweredBackendInput, TargetExecutionPlan,
     contracts::{Constant, InstructionKind, Operand, Terminator, ValueRef},
-    lowering::backends::native::x86_64::X86_64OperatorCode,
-    nyar_backend_native::{NativeBinaryBackendInput, NativeHostModule, NativePlatform, NativeProductTarget, classify_native_image},
+    lowering::backends::machine::x86_64::X86_64OperatorCode,
+    nyar_backend_machine::{MachineImageBackendInput, HostModule, X64Platform, X64ProductTarget, classify_machine_image},
     target_operator::TargetOperandType,
-    testing::{compile_lowered_backend_input, lower_fragment_to_native_extension},
+    testing::{compile_lowered_backend_input, lower_fragment_to_machine_extension},
 };
 use nyar_emitter::contracts::{Block, BlockRef, ExecutableFunction, Instruction};
 use nyar_types::{ImportIndex, ItemInstanceId, NyarType};
@@ -119,14 +119,14 @@ fn exported_add_plan() -> TargetExecutionPlan {
     plan
 }
 
-fn node(platform: NativePlatform) -> NativeProductTarget {
-    NativeProductTarget::extension(platform, NativeHostModule::Node)
+fn node(platform: X64Platform) -> X64ProductTarget {
+    X64ProductTarget::extension(platform, HostModule::Node)
 }
 
-fn python(platform: NativePlatform, library: Option<&str>) -> NativeProductTarget {
-    NativeProductTarget::Extension {
+fn python(platform: X64Platform, library: Option<&str>) -> X64ProductTarget {
+    X64ProductTarget::Extension {
         platform,
-        module: NativeHostModule::Python,
+        module: HostModule::Python,
         library: library.map(str::to_string),
     }
 }
@@ -135,24 +135,24 @@ fn python(platform: NativePlatform, library: Option<&str>) -> NativeProductTarge
 #[test]
 fn node_extension_on_windows_writes_pe_dll_with_registration_entry() {
     let submission = FragmentSubmission::from_backend_plan(exported_add_plan());
-    let lowered = lower_fragment_to_native_extension(&submission, &node(NativePlatform::windows_x64()), "demo")
+    let lowered = lower_fragment_to_machine_extension(&submission, &node(X64Platform::windows_x64()), "demo")
         .expect("Windows Node 扩展必须产出共享库");
     assert_eq!(lowered.entry_symbol, "napi_register_module_v1");
     assert_eq!(lowered.host_exports, vec!["add".to_string()]);
     assert_eq!(lowered.artifact_extension, ".node");
-    let facts = classify_native_image(&lowered.executable).expect("镜像必须可解析");
+    let facts = classify_machine_image(&lowered.executable).expect("镜像必须可解析");
     assert!(facts.shared, "宿主扩展必须是共享库镜像: {facts:?}");
-    assert_eq!(facts.kind, nyar_emitter::nyar_backend_native::NativeExecutableKind::Pe);
+    assert_eq!(facts.kind, nyar_emitter::nyar_backend_machine::MachineImageKind::Pe);
 }
 
 /// Node-API Linux：同一 ISA 与承载服务，容器换成 `ET_DYN`。
 #[test]
 fn node_extension_on_linux_writes_shared_elf() {
     let submission = FragmentSubmission::from_backend_plan(exported_add_plan());
-    let lowered = lower_fragment_to_native_extension(&submission, &node(NativePlatform::linux_x64()), "demo")
+    let lowered = lower_fragment_to_machine_extension(&submission, &node(X64Platform::linux_x64()), "demo")
         .expect("Linux Node 扩展必须产出 ET_DYN");
     assert_eq!(lowered.entry_symbol, "napi_register_module_v1");
-    let facts = classify_native_image(&lowered.executable).expect("镜像必须可解析");
+    let facts = classify_machine_image(&lowered.executable).expect("镜像必须可解析");
     assert!(facts.shared, "宿主扩展必须是共享库镜像: {facts:?}");
 }
 
@@ -160,11 +160,11 @@ fn node_extension_on_linux_writes_shared_elf() {
 #[test]
 fn python_extension_on_linux_writes_pyinit_entry() {
     let submission = FragmentSubmission::from_backend_plan(exported_add_plan());
-    let lowered = lower_fragment_to_native_extension(&submission, &python(NativePlatform::linux_x64(), Some("libpython3.12.so")), "demo")
+    let lowered = lower_fragment_to_machine_extension(&submission, &python(X64Platform::linux_x64(), Some("libpython3.12.so")), "demo")
         .expect("Linux CPython 扩展必须产出 .so");
     assert_eq!(lowered.entry_symbol, "PyInit_demo");
     assert_eq!(lowered.artifact_extension, ".so");
-    let facts = classify_native_image(&lowered.executable).expect("镜像必须可解析");
+    let facts = classify_machine_image(&lowered.executable).expect("镜像必须可解析");
     assert!(facts.shared);
 }
 
@@ -172,7 +172,7 @@ fn python_extension_on_linux_writes_pyinit_entry() {
 #[test]
 fn python_extension_on_windows_without_import_library_is_rejected() {
     let submission = FragmentSubmission::from_backend_plan(exported_add_plan());
-    let error = lower_fragment_to_native_extension(&submission, &python(NativePlatform::windows_x64(), None), "demo")
+    let error = lower_fragment_to_machine_extension(&submission, &python(X64Platform::windows_x64(), None), "demo")
         .expect_err("Windows CPython 缺导入库必须失败");
     assert!(error.contains("python312.dll") || error.contains("导入 DLL"), "错误必须点名导入库事实: {error}");
     assert!(error.contains("不能由编译器猜"), "{error}");
@@ -182,7 +182,7 @@ fn python_extension_on_windows_without_import_library_is_rejected() {
 #[test]
 fn python_extension_rejects_module_name_that_is_not_a_c_identifier() {
     let submission = FragmentSubmission::from_backend_plan(exported_add_plan());
-    let error = lower_fragment_to_native_extension(&submission, &python(NativePlatform::linux_x64(), Some("libpython3.12.so")), "demo-app")
+    let error = lower_fragment_to_machine_extension(&submission, &python(X64Platform::linux_x64(), Some("libpython3.12.so")), "demo-app")
         .expect_err("非法 C 标识符必须失败");
     assert!(error.contains("C 标识符"), "{error}");
 }
@@ -194,7 +194,7 @@ fn host_extension_rejects_frozen_entry_operation() {
     let add_name = nyar::QualifiedName::new(vec![Identifier::new("add")]);
     plan.testing_entry_operation(add_name);
     let submission = FragmentSubmission::from_backend_plan(plan);
-    let error = lower_fragment_to_native_extension(&submission, &node(NativePlatform::windows_x64()), "demo")
+    let error = lower_fragment_to_machine_extension(&submission, &node(X64Platform::windows_x64()), "demo")
         .expect_err("带进程入口的计划不得作为宿主扩展交付");
     assert!(error.contains("不接受进程入口"), "{error}");
 }
@@ -207,7 +207,7 @@ fn host_extension_rejects_empty_export_surface() {
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(helper_name, add)]));
     plan.testing_module_name("native_extension");
     let submission = FragmentSubmission::from_backend_plan(plan);
-    let error = lower_fragment_to_native_extension(&submission, &node(NativePlatform::windows_x64()), "demo")
+    let error = lower_fragment_to_machine_extension(&submission, &node(X64Platform::windows_x64()), "demo")
         .expect_err("无导出面必须失败");
     assert!(error.contains("没有可达函数") || error.contains("导出面为空"), "{error}");
 }
@@ -227,7 +227,7 @@ fn host_extension_rejects_narrow_integer_parameters() {
     plan.testing_export_names_mut().insert(instance, "narrow".to_string());
     plan.testing_exported_operations_mut().push(instance);
     let submission = FragmentSubmission::from_backend_plan(plan);
-    let error = lower_fragment_to_native_extension(&submission, &node(NativePlatform::windows_x64()), "demo")
+    let error = lower_fragment_to_machine_extension(&submission, &node(X64Platform::windows_x64()), "demo")
         .expect_err("i32 实参必须拒绝跨越宿主边界");
     assert!(error.contains("无损宿主载体"), "{error}");
 }
@@ -244,7 +244,7 @@ fn host_extension_rejects_string_return() {
     plan.testing_export_names_mut().insert(instance, "text".to_string());
     plan.testing_exported_operations_mut().push(instance);
     let submission = FragmentSubmission::from_backend_plan(plan);
-    let error = lower_fragment_to_native_extension(&submission, &node(NativePlatform::windows_x64()), "demo")
+    let error = lower_fragment_to_machine_extension(&submission, &node(X64Platform::windows_x64()), "demo")
         .expect_err("字符串返回尚未闭合宿主载体，必须拒绝");
     assert!(error.contains("返回载体"), "{error}");
 }
@@ -253,7 +253,7 @@ fn host_extension_rejects_string_return() {
 #[test]
 fn driver_rejects_host_extension_input_without_identity_facts() {
     let submission = FragmentSubmission::from_backend_plan(exported_add_plan());
-    let lowered = lower_fragment_to_native_extension(&submission, &node(NativePlatform::windows_x64()), "demo").expect("扩展降低");
+    let lowered = lower_fragment_to_machine_extension(&submission, &node(X64Platform::windows_x64()), "demo").expect("扩展降低");
     let output_dir = tempfile::tempdir().expect("temp dir");
     let requirement = PartitionBackendRequirement {
         backend_name: "machine-code".to_string(),
@@ -273,7 +273,7 @@ fn driver_rejects_host_extension_input_without_identity_facts() {
     };
 
     // 缺导出面。
-    let input = LoweredBackendInput::native(NativeBinaryBackendInput {
+    let input = LoweredBackendInput::machine(MachineImageBackendInput {
         executable: lowered.executable.clone(),
         output_dir: output_dir.path().to_path_buf(),
         entry_symbol: lowered.entry_symbol.clone(),
@@ -285,7 +285,7 @@ fn driver_rejects_host_extension_input_without_identity_facts() {
     assert!(error.to_string().contains("导出面"), "{error}");
 
     // 缺产物扩展名。
-    let input = LoweredBackendInput::native(NativeBinaryBackendInput {
+    let input = LoweredBackendInput::machine(MachineImageBackendInput {
         executable: lowered.executable.clone(),
         output_dir: output_dir.path().to_path_buf(),
         entry_symbol: lowered.entry_symbol.clone(),
@@ -297,7 +297,7 @@ fn driver_rejects_host_extension_input_without_identity_facts() {
     assert!(error.to_string().contains("扩展名"), "{error}");
 
     // 完整事实：写出成功，交付宿主导出索引而不是 CLI 运行合同。
-    let input = LoweredBackendInput::native(NativeBinaryBackendInput {
+    let input = LoweredBackendInput::machine(MachineImageBackendInput {
         executable: lowered.executable.clone(),
         output_dir: output_dir.path().to_path_buf(),
         entry_symbol: lowered.entry_symbol.clone(),

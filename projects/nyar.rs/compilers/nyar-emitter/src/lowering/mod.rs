@@ -68,19 +68,19 @@ pub(crate) fn testing_lower_fragment_to_clr_managed_surface(
     Ok((lowered.module, lowered.managed_abi))
 }
 
-pub(crate) fn testing_lower_fragment_to_native_image(
+pub(crate) fn testing_lower_fragment_to_machine_image(
     submission: &FragmentSubmission,
     target: nyar::abstractions::CanonicalTarget,
-) -> Result<backends::native::NativeLoweredFragment> {
-    backends::native::lower_fragment_to_native_image(submission, target)
+) -> Result<backends::machine::X64LoweredProgram> {
+    backends::machine::lower_fragment_to_machine_image(submission, target)
 }
 
-pub(crate) fn testing_lower_fragment_to_native_extension(
+pub(crate) fn testing_lower_fragment_to_machine_extension(
     submission: &FragmentSubmission,
-    target: &backends::native::NativeProductTarget,
+    target: &backends::machine::X64ProductTarget,
     module_name: &str,
-) -> Result<backends::native::NativeLoweredExtension> {
-    backends::native::lower_fragment_to_native_extension(submission, target, module_name)
+) -> Result<backends::machine::X64LoweredExtension> {
+    backends::machine::lower_fragment_to_machine_extension(submission, target, module_name)
 }
 
 pub(crate) fn testing_decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 {

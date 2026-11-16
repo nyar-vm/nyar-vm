@@ -5,7 +5,7 @@
 //! 逐项转发。**exe、普通共享库与宿主扩展复用这一条装配服务**：语言侧（包括
 //! LegendVM 残差产品）不得再维护第二套容器映射。
 //!
-//! 数据段重定位里的 `NativeDataTarget::Function` 是适配器意图，不是容器输入：
+//! 数据段重定位里的 `X64DataTarget::Function` 是适配器意图，不是容器输入：
 //! 文本程序装配器必须在产出镜像前把它解析成 `.text` 偏移，容器不解析名字。
 
 use acorn_pe::elf::{
@@ -15,28 +15,28 @@ use acorn_pe::elf::{
 use acorn_pe::pe::{NativeDataRelocation, NativeDataSection, NativeExport, NativePeImage, NativePeWriter};
 use acorn_pe::pe::NativeDataTarget as PeDataTarget;
 
-use super::{NativeDataTarget, NativePlatform, NativeTextProgramImage};
+use super::{X64DataTarget, X64Platform, X64ProgramImage};
 use crate::Result;
 
 /// 把已编码文本程序写成共享库容器：Windows → `PE32+` DLL，Linux → `ELF64 ET_DYN`。
 ///
 /// 镜像没有进程入口点；宿主通过导出表按平台调用约定调用导出符号，导入调用经
 /// `.idata` 的 IAT 槽（Win64）或 GOT 槽（SysV64）解析。
-pub fn compile_shared_container(platform: NativePlatform, image: &NativeTextProgramImage) -> Result<Vec<u8>> {
+pub fn compile_shared_container(platform: X64Platform, image: &X64ProgramImage) -> Result<Vec<u8>> {
     if platform.is_windows() { write_pe_library(image) } else { write_elf_shared(image) }
 }
 
 /// 写成 `PE32+` DLL：导出函数 ABI 产物。
-fn write_pe_library(image: &NativeTextProgramImage) -> Result<Vec<u8>> {
+fn write_pe_library(image: &X64ProgramImage) -> Result<Vec<u8>> {
     let exports = image.symbols.iter().map(|(name, offset)| NativeExport { name: name.clone(), offset: *offset }).collect();
     let relocations: Vec<NativeDataRelocation> = image
         .data_relocations
         .iter()
         .map(|(offset, target)| {
             let target = match target {
-                NativeDataTarget::Text(offset) => PeDataTarget::Text(*offset),
-                NativeDataTarget::Data(offset) => PeDataTarget::Data(*offset),
-                NativeDataTarget::Function(name) => {
+                X64DataTarget::Text(offset) => PeDataTarget::Text(*offset),
+                X64DataTarget::Data(offset) => PeDataTarget::Data(*offset),
+                X64DataTarget::Function(name) => {
                     return Err(format!("数据段重定位仍引用未解析的函数 `{name}`：编码器必须先冻结布局"));
                 }
             };
@@ -61,7 +61,7 @@ fn write_pe_library(image: &NativeTextProgramImage) -> Result<Vec<u8>> {
 }
 
 /// 写成 `ELF64 ET_DYN`：宿主 `dlopen` + `dlsym`。
-fn write_elf_shared(image: &NativeTextProgramImage) -> Result<Vec<u8>> {
+fn write_elf_shared(image: &X64ProgramImage) -> Result<Vec<u8>> {
     let exports: Vec<SharedObjectExport> = image.symbols.iter().map(|(name, offset)| SharedObjectExport { name: name.clone(), text_offset: *offset }).collect();
     let calls: Vec<SharedElfImportCall> = image.elf_got_fixups.iter().map(|(field, import)| SharedElfImportCall { rel32_field: *field, import: *import }).collect();
     let data_relocations: Vec<SharedElfDataRelocation> = image
@@ -69,9 +69,9 @@ fn write_elf_shared(image: &NativeTextProgramImage) -> Result<Vec<u8>> {
         .iter()
         .map(|(offset, target)| {
             let target = match target {
-                NativeDataTarget::Text(offset) => SharedElfDataTarget::Text(*offset),
-                NativeDataTarget::Data(offset) => SharedElfDataTarget::Data(*offset),
-                NativeDataTarget::Function(name) => {
+                X64DataTarget::Text(offset) => SharedElfDataTarget::Text(*offset),
+                X64DataTarget::Data(offset) => SharedElfDataTarget::Data(*offset),
+                X64DataTarget::Function(name) => {
                     return Err(format!("数据段重定位仍引用未解析的函数 `{name}`：编码器必须先冻结布局"));
                 }
             };
@@ -88,7 +88,7 @@ fn write_elf_shared(image: &NativeTextProgramImage) -> Result<Vec<u8>> {
         calls: &calls,
         data_relocations: &data_relocations,
         data_references: &data_references,
-        needed: &image.native_dependencies,
+        needed: &image.host_dependencies,
         soname: None,
     })
     .map_err(|error| format!("ELF 共享库映像编码失败：{error}"))

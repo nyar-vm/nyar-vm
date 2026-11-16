@@ -9,9 +9,9 @@ use nyar::{
     backends::{CompilationOptions, TargetCodeGenBackend},
 };
 use nyar_emitter::{
-    nyar_backend_native::{
-        NativeBinaryBackend, NativeBinaryBackendInput, NativeExecutableError, NativeExecutableKind, classify_native_executable,
-        classify_native_image,
+    nyar_backend_machine::{
+        MachineImageBackend, MachineImageBackendInput, MachineImageError, MachineImageKind, classify_machine_executable,
+        classify_machine_image,
     },
     nyar_backend_vm::emit_nyar_module,
     nyar_backend_wasi::{WasmTraitFatPointer, plan_witness_table_layout, resolve_witness_call},
@@ -51,22 +51,22 @@ fn classifies_writer_outputs() {
         entry_point: 0,
     })
     .expect("pe");
-    assert_eq!(classify_native_executable(&pe).expect("pe"), NativeExecutableKind::Pe);
+    assert_eq!(classify_machine_executable(&pe).expect("pe"), MachineImageKind::Pe);
 
     let elf = NativeElfWriter::write_executable(&NativeElfImage { text: vec![0xC3], rodata: Vec::new(), entry_point: 0 }).expect("elf");
-    assert_eq!(classify_native_executable(&elf).expect("elf"), NativeExecutableKind::Elf);
+    assert_eq!(classify_machine_executable(&elf).expect("elf"), MachineImageKind::Elf);
 
     let shared = SharedElfWriter::write_aarch64(
         &SharedElfImage { text: vec![0xC0, 0x03, 0x5F, 0xD6], rodata: Vec::new(), data: Vec::new(), bss: Vec::new() },
         &[SharedObjectExport { name: "asgard_invoke_export".into(), text_offset: 0 }],
     )
     .expect("so");
-    assert_eq!(classify_native_executable(&shared).expect("so"), NativeExecutableKind::ElfShared);
+    assert_eq!(classify_machine_executable(&shared).expect("so"), MachineImageKind::ElfShared);
 }
 
 /// 反例：镜像可被解析但机器类型不受支持时必须返回结构化错误，不得 panic。
 ///
-/// 修复前 `classify_native_executable` 对「解析成功、架构不支持」的镜像调用
+/// 修复前 `classify_machine_executable` 对「解析成功、架构不支持」的镜像调用
 /// `unwrap_err()`，把可诊断的拒绝变成进程 panic。
 #[test]
 fn parsed_but_unsupported_native_image_reports_structured_error() {
@@ -85,9 +85,9 @@ fn parsed_but_unsupported_native_image_reports_structured_error() {
     let machine_offset = pe_offset + 4;
     // 保留 PE32+ 头，只把 machine 改成 i386：parse_pe64 成功但不属于 AMD64 支持集。
     pe[machine_offset..machine_offset + 2].copy_from_slice(&0x014Cu16.to_le_bytes());
-    let error = classify_native_executable(&pe).expect_err("不受支持的机器类型必须拒绝");
+    let error = classify_machine_executable(&pe).expect_err("不受支持的机器类型必须拒绝");
     assert!(
-        matches!(error, NativeExecutableError::ParsedButUnsupported),
+        matches!(error, MachineImageError::ParsedButUnsupported),
         "解析成功但架构不支持必须返回结构化错误，而不是 panic 或 Unrecognized: {error:?}"
     );
 }
@@ -145,8 +145,8 @@ fn x86_64_shared_elf_is_recognized_as_shared_library() {
     let mut x86_64 = shared;
     // ELF64 e_machine 位于 e_ident 之后偏移 18；AArch64(183) → x86_64(62)。
     x86_64[18..20].copy_from_slice(&62u16.to_le_bytes());
-    let facts = classify_native_image(&x86_64).expect("x86_64 ET_DYN 必须可解析");
-    assert_eq!(facts.kind, NativeExecutableKind::ElfShared);
+    let facts = classify_machine_image(&x86_64).expect("x86_64 ET_DYN 必须可解析");
+    assert_eq!(facts.kind, MachineImageKind::ElfShared);
     assert_eq!(facts.arch, BinaryArch::X64);
     assert!(facts.shared, "ET_DYN 必须标记为共享库");
 }
@@ -157,18 +157,18 @@ fn pe_dll_accepts_node_extension_as_dynamic_library() {
     let mut pe = minimal_pe();
     let characteristics = pe_offset(&pe) + 4 + 18;
     pe[characteristics..characteristics + 2].copy_from_slice(&0x2000u16.to_le_bytes());
-    let facts = classify_native_image(&pe).expect("PE32+");
+    let facts = classify_machine_image(&pe).expect("PE32+");
     assert!(facts.shared, "`IMAGE_FILE_DLL` 必须被识别为共享库");
 
     let output_dir = std::env::temp_dir().join(format!("nyar-native-node-{}", std::process::id()));
-    let input = NativeBinaryBackendInput {
+    let input = MachineImageBackendInput {
         executable: pe,
         output_dir: output_dir.clone(),
         entry_symbol: "napi_register_module".to_string(),
         artifact_extension: Some(".node".to_string()),
         host_exports: Vec::new(),
     };
-    let artifacts = NativeBinaryBackend::new().compile(input, &native_options(BinaryArch::X64)).expect("`.node` 共享镜像必须可包装");
+    let artifacts = MachineImageBackend::new().compile(input, &native_options(BinaryArch::X64)).expect("`.node` 共享镜像必须可包装");
     assert_eq!(artifacts.artifacts.len(), 1, "共享库不伪造 COFF sidecar: {artifacts:?}");
     let artifact = &artifacts.artifacts[0];
     assert_eq!(artifact.path, "probe.node");
@@ -180,7 +180,7 @@ fn pe_dll_accepts_node_extension_as_dynamic_library() {
 /// 包装层不得声明自己无法识别的目标架构。
 #[test]
 fn native_descriptor_does_not_advertise_unrecognized_architecture() {
-    let backend = NativeBinaryBackend::new();
+    let backend = MachineImageBackend::new();
     let descriptor = backend.descriptor();
     assert!(
         descriptor.supported_targets.iter().all(|target| target.arch != BinaryArch::X86),
@@ -193,14 +193,14 @@ fn native_descriptor_does_not_advertise_unrecognized_architecture() {
 #[test]
 fn node_extension_on_executable_image_is_rejected() {
     let output_dir = std::env::temp_dir().join(format!("nyar-native-bad-ext-{}", std::process::id()));
-    let input = NativeBinaryBackendInput {
+    let input = MachineImageBackendInput {
         executable: minimal_pe(),
         output_dir,
         entry_symbol: "main".to_string(),
         artifact_extension: Some(".node".to_string()),
         host_exports: Vec::new(),
     };
-    let error = NativeBinaryBackend::new().compile(input, &native_options(BinaryArch::X64)).expect_err("可执行镜像 + `.node` 必须结构化拒绝");
+    let error = MachineImageBackend::new().compile(input, &native_options(BinaryArch::X64)).expect_err("可执行镜像 + `.node` 必须结构化拒绝");
     assert!(error.to_string().contains("需要共享库镜像"), "{error}");
 }
 
@@ -208,13 +208,13 @@ fn node_extension_on_executable_image_is_rejected() {
 #[test]
 fn native_backend_rejects_target_arch_mismatch() {
     let output_dir = std::env::temp_dir().join(format!("nyar-native-arch-{}", std::process::id()));
-    let input = NativeBinaryBackendInput {
+    let input = MachineImageBackendInput {
         executable: minimal_pe(),
         output_dir,
         entry_symbol: "main".to_string(),
         artifact_extension: None,
         host_exports: Vec::new(),
     };
-    let error = NativeBinaryBackend::new().compile(input, &native_options(BinaryArch::Arm64)).expect_err("镜像架构与请求目标不一致必须拒绝");
+    let error = MachineImageBackend::new().compile(input, &native_options(BinaryArch::Arm64)).expect_err("镜像架构与请求目标不一致必须拒绝");
     assert!(error.to_string().contains("不一致"), "{error}");
 }

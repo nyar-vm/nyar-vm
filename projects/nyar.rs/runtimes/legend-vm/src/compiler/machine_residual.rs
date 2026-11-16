@@ -3,10 +3,10 @@
 //! Guests residualize into [`nyar_analyzer::residual::ResidualSink`]; this crate's **product**
 //! sink records ops for the **native / x64** target lane, not NyarVM bytecode.
 //!
-//! 产品路径只有一条：specialization 产出 [`NativeResidualModule`]，多函数 residual lowering
+//! 产品路径只有一条：specialization 产出 [`MachineResidualModule`]，多函数 residual lowering
 //! 提交本 lane 的文本 LIR，由 native 平台编码器产出共享库 / 宿主扩展镜像（`PE32+` DLL、
 //! `ELF64 ET_DYN`）。不存在「纯度检查 → 求值 → 固定整数返回」的独立 exe 出口；常量折叠
-//! 属于优化/参考求值阶段（[`eval_native_residual`]），不得冒充产品。无法真实表示的残差
+//! 属于优化/参考求值阶段（[`eval_machine_residual`]），不得冒充产品。无法真实表示的残差
 //! 一律结构化失败，不产出成功形状的空体或固定答案。
 
 use std::cell::RefCell;
@@ -15,17 +15,17 @@ use std::rc::Rc;
 
 use miette::Result;
 use nyar_analyzer::residual::ResidualSink;
-pub use nyar_emitter::nyar_backend_native::{NativeHostModule, NativePlatform, NativeProductTarget};
-use nyar_emitter::nyar_backend_native::{
-    HostMethod, HostProperty, HostValueKind, NATIVE_TEXT_ARENA_CAPACITY, NativeDataTarget, NativeTextInstruction, NativeTextProgramFunction,
-    NativeTextProgramImage, any_returns_bool, any_returns_utf8, append_text_arena, compile_shared_container,
-    encode_native_text_program_with_dependencies, is_c_identifier, node_addon_registration, node_method_wrapper, node_module_data,
+pub use nyar_emitter::nyar_backend_machine::{HostModule, X64Platform, X64ProductTarget};
+use nyar_emitter::nyar_backend_machine::{
+    HostMethod, HostProperty, HostValueKind, X64_TEXT_ARENA_CAPACITY, X64DataTarget, X64TextInstruction, X64ProgramFunction,
+    X64ProgramImage, any_returns_bool, any_returns_utf8, append_text_arena, compile_shared_container,
+    encode_x64_program_with_dependencies, is_c_identifier, node_addon_registration, node_method_wrapper, node_module_data,
     python_method_wrapper, python_module_data, python_module_exec, python_module_registration,
 };
 
 /// One residual operation (language-neutral; mirrors [`ResidualSink`]).
 #[derive(Debug, Clone, PartialEq)]
-pub enum NativeResidualOp {
+pub enum MachineResidualOp {
     /// Push i64.
     PushI64(i64),
     /// Push bool.
@@ -112,170 +112,170 @@ pub enum NativeResidualOp {
 
 /// One residual function body.
 #[derive(Debug, Clone, PartialEq)]
-pub struct NativeResidualFunction {
+pub struct MachineResidualFunction {
     /// Function name.
     pub name: String,
     /// Parameter names.
     pub parameters: Vec<String>,
     /// Residual ops.
-    pub ops: Vec<NativeResidualOp>,
+    pub ops: Vec<MachineResidualOp>,
 }
 
 /// Native-bound residual module (specialize product).
 #[derive(Debug, Clone, PartialEq)]
-pub struct NativeResidualModule {
+pub struct MachineResidualModule {
     /// Module name.
     pub name: String,
     /// Residual functions (includes `main`).
-    pub functions: Vec<NativeResidualFunction>,
+    pub functions: Vec<MachineResidualFunction>,
 }
 
-impl NativeResidualModule {
+impl MachineResidualModule {
     /// Total residual ops across all functions (proves specialize ran).
     pub fn op_count(&self) -> usize {
         self.functions.iter().map(|function| function.ops.len()).sum()
     }
 
     /// Look up a function by name.
-    pub fn function(&self, name: &str) -> Option<&NativeResidualFunction> {
+    pub fn function(&self, name: &str) -> Option<&MachineResidualFunction> {
         self.functions.iter().find(|function| function.name == name)
     }
 }
 
 /// [`ResidualSink`] that records ops for native / PE emission.
 #[derive(Debug)]
-pub struct NativeResidualSink {
+pub struct MachineResidualSink {
     module_name: String,
-    functions: Vec<NativeResidualFunction>,
-    current: Option<NativeResidualFunction>,
+    functions: Vec<MachineResidualFunction>,
+    current: Option<MachineResidualFunction>,
 }
 
-impl NativeResidualSink {
+impl MachineResidualSink {
     /// Create a sink for `module_name`.
     pub fn new(module_name: impl Into<String>) -> Self {
         Self { module_name: module_name.into(), functions: Vec::new(), current: None }
     }
 
     /// Finish specialization into a native-bound residual module.
-    pub fn finish(mut self) -> NativeResidualModule {
+    pub fn finish(mut self) -> MachineResidualModule {
         if self.current.is_some() {
             self.end_function();
         }
-        NativeResidualModule { name: self.module_name, functions: self.functions }
+        MachineResidualModule { name: self.module_name, functions: self.functions }
     }
 
-    fn push_op(&mut self, op: NativeResidualOp) {
+    fn push_op(&mut self, op: MachineResidualOp) {
         let function = self.current.as_mut().expect("begin_function first");
         function.ops.push(op);
     }
 }
 
-impl ResidualSink for NativeResidualSink {
+impl ResidualSink for MachineResidualSink {
     fn push_i64(&mut self, value: i64) {
-        self.push_op(NativeResidualOp::PushI64(value));
+        self.push_op(MachineResidualOp::PushI64(value));
     }
 
     fn push_bool(&mut self, value: bool) {
-        self.push_op(NativeResidualOp::PushBool(value));
+        self.push_op(MachineResidualOp::PushBool(value));
     }
 
     fn push_string(&mut self, value: &str) {
-        self.push_op(NativeResidualOp::PushString(value.to_string()));
+        self.push_op(MachineResidualOp::PushString(value.to_string()));
     }
 
     fn push_nil(&mut self) {
-        self.push_op(NativeResidualOp::PushNil);
+        self.push_op(MachineResidualOp::PushNil);
     }
 
     fn load(&mut self, name: &str) {
-        self.push_op(NativeResidualOp::Load(name.to_string()));
+        self.push_op(MachineResidualOp::Load(name.to_string()));
     }
 
     fn store(&mut self, name: &str) {
-        self.push_op(NativeResidualOp::Store(name.to_string()));
+        self.push_op(MachineResidualOp::Store(name.to_string()));
     }
 
     fn pop(&mut self) {
-        self.push_op(NativeResidualOp::Pop);
+        self.push_op(MachineResidualOp::Pop);
     }
 
     fn add(&mut self) {
-        self.push_op(NativeResidualOp::Add);
+        self.push_op(MachineResidualOp::Add);
     }
 
     fn sub(&mut self) {
-        self.push_op(NativeResidualOp::Sub);
+        self.push_op(MachineResidualOp::Sub);
     }
 
     fn mul(&mut self) {
-        self.push_op(NativeResidualOp::Mul);
+        self.push_op(MachineResidualOp::Mul);
     }
 
     fn div(&mut self) {
-        self.push_op(NativeResidualOp::Div);
+        self.push_op(MachineResidualOp::Div);
     }
 
     fn rem(&mut self) {
-        self.push_op(NativeResidualOp::Rem);
+        self.push_op(MachineResidualOp::Rem);
     }
 
     fn eq(&mut self) {
-        self.push_op(NativeResidualOp::Eq);
+        self.push_op(MachineResidualOp::Eq);
     }
 
     fn ne(&mut self) {
-        self.push_op(NativeResidualOp::Ne);
+        self.push_op(MachineResidualOp::Ne);
     }
 
     fn lt(&mut self) {
-        self.push_op(NativeResidualOp::Lt);
+        self.push_op(MachineResidualOp::Lt);
     }
 
     fn le(&mut self) {
-        self.push_op(NativeResidualOp::Le);
+        self.push_op(MachineResidualOp::Le);
     }
 
     fn gt(&mut self) {
-        self.push_op(NativeResidualOp::Gt);
+        self.push_op(MachineResidualOp::Gt);
     }
 
     fn ge(&mut self) {
-        self.push_op(NativeResidualOp::Ge);
+        self.push_op(MachineResidualOp::Ge);
     }
 
     fn concat(&mut self) {
-        self.push_op(NativeResidualOp::Concat);
+        self.push_op(MachineResidualOp::Concat);
     }
 
     fn not(&mut self) {
-        self.push_op(NativeResidualOp::Not);
+        self.push_op(MachineResidualOp::Not);
     }
 
     fn print(&mut self, argc: usize) {
-        self.push_op(NativeResidualOp::Print(argc));
+        self.push_op(MachineResidualOp::Print(argc));
     }
 
     fn label(&mut self, name: &str) {
-        self.push_op(NativeResidualOp::Label(name.to_string()));
+        self.push_op(MachineResidualOp::Label(name.to_string()));
     }
 
     fn jump(&mut self, label: &str) {
-        self.push_op(NativeResidualOp::Jump(label.to_string()));
+        self.push_op(MachineResidualOp::Jump(label.to_string()));
     }
 
     fn jump_if_false(&mut self, label: &str) {
-        self.push_op(NativeResidualOp::JumpIfFalse(label.to_string()));
+        self.push_op(MachineResidualOp::JumpIfFalse(label.to_string()));
     }
 
     fn jump_if_true(&mut self, label: &str) {
-        self.push_op(NativeResidualOp::JumpIfTrue(label.to_string()));
+        self.push_op(MachineResidualOp::JumpIfTrue(label.to_string()));
     }
 
     fn begin_function(&mut self, name: &str) {
         if self.current.is_some() {
             self.end_function();
         }
-        self.current = Some(NativeResidualFunction { name: name.to_string(), parameters: Vec::new(), ops: Vec::new() });
+        self.current = Some(MachineResidualFunction { name: name.to_string(), parameters: Vec::new(), ops: Vec::new() });
     }
 
     fn add_parameter(&mut self, name: &str) {
@@ -289,64 +289,64 @@ impl ResidualSink for NativeResidualSink {
     }
 
     fn call(&mut self, name: &str, argc: usize) {
-        self.push_op(NativeResidualOp::Call { name: name.to_string(), argc });
+        self.push_op(MachineResidualOp::Call { name: name.to_string(), argc });
     }
 
     fn ret(&mut self) {
-        self.push_op(NativeResidualOp::Ret);
+        self.push_op(MachineResidualOp::Ret);
     }
 
     fn table_new(&mut self) -> std::result::Result<(), String> {
-        self.push_op(NativeResidualOp::TableNew);
+        self.push_op(MachineResidualOp::TableNew);
         Ok(())
     }
 
     fn table_array_push(&mut self) -> std::result::Result<(), String> {
-        self.push_op(NativeResidualOp::TableArrayPush);
+        self.push_op(MachineResidualOp::TableArrayPush);
         Ok(())
     }
 
     fn table_record_set(&mut self, key: &str) -> std::result::Result<(), String> {
-        self.push_op(NativeResidualOp::TableRecordSet(key.to_string()));
+        self.push_op(MachineResidualOp::TableRecordSet(key.to_string()));
         Ok(())
     }
 
     fn table_index_set(&mut self) -> std::result::Result<(), String> {
-        self.push_op(NativeResidualOp::TableIndexSet);
+        self.push_op(MachineResidualOp::TableIndexSet);
         Ok(())
     }
 
     fn table_field_set(&mut self, name: &str) -> std::result::Result<(), String> {
-        self.push_op(NativeResidualOp::TableFieldSet(name.to_string()));
+        self.push_op(MachineResidualOp::TableFieldSet(name.to_string()));
         Ok(())
     }
 
     fn table_field_get(&mut self, name: &str) -> std::result::Result<(), String> {
-        self.push_op(NativeResidualOp::TableFieldGet(name.to_string()));
+        self.push_op(MachineResidualOp::TableFieldGet(name.to_string()));
         Ok(())
     }
 
     fn table_index_get(&mut self) -> std::result::Result<(), String> {
-        self.push_op(NativeResidualOp::TableIndexGet);
+        self.push_op(MachineResidualOp::TableIndexGet);
         Ok(())
     }
 
     fn length(&mut self) -> std::result::Result<(), String> {
-        self.push_op(NativeResidualOp::Length);
+        self.push_op(MachineResidualOp::Length);
         Ok(())
     }
 
     fn dynamic_call(&mut self, name: &str, argc: usize) -> std::result::Result<(), String> {
-        self.push_op(NativeResidualOp::DynamicCall { name: name.to_string(), argc });
+        self.push_op(MachineResidualOp::DynamicCall { name: name.to_string(), argc });
         Ok(())
     }
 }
 
 /// Specialize `source` for `language` into a **native-bound** residual module.
-pub fn specialize_language(language: &str, source: &str, module_name: &str) -> Result<NativeResidualModule, String> {
+pub fn specialize_language(language: &str, source: &str, module_name: &str) -> Result<MachineResidualModule, String> {
     match language {
         "lua" => {
-            let mut sink = NativeResidualSink::new(module_name);
+            let mut sink = MachineResidualSink::new(module_name);
             rusty_lua::specialize_lua_into(source, &mut sink)?;
             Ok(sink.finish())
         }
@@ -488,24 +488,24 @@ impl ResidualValue {
 /// 该解释器是残差语义的**诊断/对照**工具，不是产品路径：编译期 lowering 只允许
 /// 在残差已证明无副作用时折叠常量，并且受步数预算约束，不能把原程序完整执行后
 /// 丢掉 effect。`main` 的形参是编译时未知输入，由调用方按名提供。
-pub fn eval_native_residual(module: &NativeResidualModule) -> Result<ResidualValue, String> {
-    eval_native_residual_with_inputs(module, &HashMap::new())
+pub fn eval_machine_residual(module: &MachineResidualModule) -> Result<ResidualValue, String> {
+    eval_machine_residual_with_inputs(module, &HashMap::new())
 }
 
 /// 以显式未知输入求值残差 `main`；缺省输入为 `nil`，与 guest 解释器读取
 /// 未绑定环境变量的语义一致。
-pub fn eval_native_residual_with_inputs(
-    module: &NativeResidualModule,
+pub fn eval_machine_residual_with_inputs(
+    module: &MachineResidualModule,
     inputs: &HashMap<String, ResidualValue>,
 ) -> Result<ResidualValue, String> {
-    eval_native_residual_with_trace(module, inputs).map(|(value, _)| value)
+    eval_machine_residual_with_trace(module, inputs).map(|(value, _)| value)
 }
 
 /// 以显式未知输入求值残差，并按发生顺序记录每次 `print` 的显示值。
 ///
 /// 副作用顺序是 guest 语义的一部分：解释器与残差运行时必须产生同一序列。
-pub fn eval_native_residual_with_trace(
-    module: &NativeResidualModule,
+pub fn eval_machine_residual_with_trace(
+    module: &MachineResidualModule,
     inputs: &HashMap<String, ResidualValue>,
 ) -> Result<(ResidualValue, Vec<Vec<String>>), String> {
     let main = module.function("main").ok_or_else(|| "native residual has no `main` function".to_string())?;
@@ -522,7 +522,7 @@ pub fn eval_native_residual_with_trace(
 const MAX_EVAL_STEPS: usize = 1_000_000;
 
 fn call_function(
-    module: &NativeResidualModule,
+    module: &MachineResidualModule,
     name: &str,
     args: Vec<ResidualValue>,
     frames: &mut Vec<()>,
@@ -550,24 +550,24 @@ fn call_function(
             return Err(format!("native residual evaluation exceeded {MAX_EVAL_STEPS} steps"));
         }
         match &function.ops[pc] {
-            NativeResidualOp::PushI64(value) => stack.push(ResidualValue::Int(*value)),
-            NativeResidualOp::PushBool(value) => stack.push(ResidualValue::Bool(*value)),
-            NativeResidualOp::PushString(value) => stack.push(ResidualValue::String(value.clone())),
-            NativeResidualOp::PushNil => stack.push(ResidualValue::Nil),
-            NativeResidualOp::Load(name) => {
+            MachineResidualOp::PushI64(value) => stack.push(ResidualValue::Int(*value)),
+            MachineResidualOp::PushBool(value) => stack.push(ResidualValue::Bool(*value)),
+            MachineResidualOp::PushString(value) => stack.push(ResidualValue::String(value.clone())),
+            MachineResidualOp::PushNil => stack.push(ResidualValue::Nil),
+            MachineResidualOp::Load(name) => {
                 stack.push(locals.get(name).cloned().unwrap_or(ResidualValue::Nil));
             }
-            NativeResidualOp::Store(name) => {
+            MachineResidualOp::Store(name) => {
                 let value = stack.pop().unwrap_or(ResidualValue::Nil);
                 locals.insert(name.clone(), value);
             }
-            NativeResidualOp::Pop => {
+            MachineResidualOp::Pop => {
                 stack.pop();
             }
-            NativeResidualOp::Add => residual_add(&mut stack)?,
-            NativeResidualOp::Sub => bin_numeric(&mut stack, |a, b| a - b)?,
-            NativeResidualOp::Mul => bin_numeric(&mut stack, |a, b| a * b)?,
-            NativeResidualOp::Div => {
+            MachineResidualOp::Add => residual_add(&mut stack)?,
+            MachineResidualOp::Sub => bin_numeric(&mut stack, |a, b| a - b)?,
+            MachineResidualOp::Mul => bin_numeric(&mut stack, |a, b| a * b)?,
+            MachineResidualOp::Div => {
                 let right = stack.pop().unwrap_or(ResidualValue::Nil);
                 let left = stack.pop().unwrap_or(ResidualValue::Nil);
                 let divisor = right.as_f64();
@@ -578,28 +578,28 @@ fn call_function(
                     stack.push(residual_numeric_result(left.as_f64() / divisor, &left, &right));
                 }
             }
-            NativeResidualOp::Rem => {
+            MachineResidualOp::Rem => {
                 let right = stack.pop().unwrap_or(ResidualValue::Nil);
                 let left = stack.pop().unwrap_or(ResidualValue::Nil);
                 let divisor = right.as_int().unwrap_or(0);
                 stack.push(ResidualValue::Int(if divisor == 0 { 0 } else { left.as_int().unwrap_or(0) % divisor }));
             }
-            NativeResidualOp::Eq => bin_cmp(&mut stack, |a, b| a == b)?,
-            NativeResidualOp::Ne => bin_cmp(&mut stack, |a, b| a != b)?,
-            NativeResidualOp::Lt => bin_num_cmp(&mut stack, |a, b| a < b)?,
-            NativeResidualOp::Le => bin_num_cmp(&mut stack, |a, b| a <= b)?,
-            NativeResidualOp::Gt => bin_num_cmp(&mut stack, |a, b| a > b)?,
-            NativeResidualOp::Ge => bin_num_cmp(&mut stack, |a, b| a >= b)?,
-            NativeResidualOp::Concat => {
+            MachineResidualOp::Eq => bin_cmp(&mut stack, |a, b| a == b)?,
+            MachineResidualOp::Ne => bin_cmp(&mut stack, |a, b| a != b)?,
+            MachineResidualOp::Lt => bin_num_cmp(&mut stack, |a, b| a < b)?,
+            MachineResidualOp::Le => bin_num_cmp(&mut stack, |a, b| a <= b)?,
+            MachineResidualOp::Gt => bin_num_cmp(&mut stack, |a, b| a > b)?,
+            MachineResidualOp::Ge => bin_num_cmp(&mut stack, |a, b| a >= b)?,
+            MachineResidualOp::Concat => {
                 let right = stack.pop().unwrap_or(ResidualValue::Nil);
                 let left = stack.pop().unwrap_or(ResidualValue::Nil);
                 stack.push(ResidualValue::String(format!("{}{}", display_value(&left), display_value(&right))));
             }
-            NativeResidualOp::Not => {
+            MachineResidualOp::Not => {
                 let value = stack.pop().unwrap_or(ResidualValue::Nil);
                 stack.push(ResidualValue::Bool(!value.is_truthy()));
             }
-            NativeResidualOp::Print(argc) => {
+            MachineResidualOp::Print(argc) => {
                 let mut args = Vec::with_capacity(*argc);
                 for _ in 0..*argc {
                     args.push(stack.pop().unwrap_or(ResidualValue::Nil));
@@ -615,8 +615,8 @@ fn call_function(
                     stack.push(ResidualValue::Nil);
                 }
             }
-            NativeResidualOp::TableNew => stack.push(ResidualValue::Table(Rc::new(RefCell::new(ResidualTable::default())))),
-            NativeResidualOp::TableArrayPush => {
+            MachineResidualOp::TableNew => stack.push(ResidualValue::Table(Rc::new(RefCell::new(ResidualTable::default())))),
+            MachineResidualOp::TableArrayPush => {
                 let value = stack.pop().unwrap_or(ResidualValue::Nil);
                 let table = stack.pop().unwrap_or(ResidualValue::Nil);
                 if let ResidualValue::Table(table) = &table {
@@ -624,7 +624,7 @@ fn call_function(
                 }
                 stack.push(table);
             }
-            NativeResidualOp::TableRecordSet(key) => {
+            MachineResidualOp::TableRecordSet(key) => {
                 let value = stack.pop().unwrap_or(ResidualValue::Nil);
                 let table = stack.pop().unwrap_or(ResidualValue::Nil);
                 if let ResidualValue::Table(table) = &table {
@@ -632,7 +632,7 @@ fn call_function(
                 }
                 stack.push(table);
             }
-            NativeResidualOp::TableIndexSet => {
+            MachineResidualOp::TableIndexSet => {
                 let key = stack.pop().unwrap_or(ResidualValue::Nil);
                 let table = stack.pop().unwrap_or(ResidualValue::Nil);
                 let value = stack.pop().unwrap_or(ResidualValue::Nil);
@@ -641,7 +641,7 @@ fn call_function(
                 }
                 stack.push(value);
             }
-            NativeResidualOp::TableFieldSet(name) => {
+            MachineResidualOp::TableFieldSet(name) => {
                 let table = stack.pop().unwrap_or(ResidualValue::Nil);
                 let value = stack.pop().unwrap_or(ResidualValue::Nil);
                 if let ResidualValue::Table(table) = &table {
@@ -649,7 +649,7 @@ fn call_function(
                 }
                 stack.push(value);
             }
-            NativeResidualOp::TableFieldGet(name) => {
+            MachineResidualOp::TableFieldGet(name) => {
                 let table = stack.pop().unwrap_or(ResidualValue::Nil);
                 let value = match &table {
                     ResidualValue::Table(table) => table.borrow().map.get(name).cloned().unwrap_or(ResidualValue::Nil),
@@ -657,7 +657,7 @@ fn call_function(
                 };
                 stack.push(value);
             }
-            NativeResidualOp::TableIndexGet => {
+            MachineResidualOp::TableIndexGet => {
                 let key = stack.pop().unwrap_or(ResidualValue::Nil);
                 let table = stack.pop().unwrap_or(ResidualValue::Nil);
                 let value = match &table {
@@ -670,7 +670,7 @@ fn call_function(
                 };
                 stack.push(value);
             }
-            NativeResidualOp::Length => {
+            MachineResidualOp::Length => {
                 let value = stack.pop().unwrap_or(ResidualValue::Nil);
                 let length = match &value {
                     ResidualValue::Table(table) => table.borrow().length(),
@@ -679,7 +679,7 @@ fn call_function(
                 };
                 stack.push(ResidualValue::Int(length));
             }
-            NativeResidualOp::DynamicCall { name, argc } => {
+            MachineResidualOp::DynamicCall { name, argc } => {
                 let mut args = Vec::with_capacity(*argc);
                 for _ in 0..*argc {
                     args.push(stack.pop().unwrap_or(ResidualValue::Nil));
@@ -687,26 +687,26 @@ fn call_function(
                 args.reverse();
                 stack.push(dynamic_call(module, name, args, frames, steps, effects)?);
             }
-            NativeResidualOp::Label(_) => {}
-            NativeResidualOp::Jump(label) => {
+            MachineResidualOp::Label(_) => {}
+            MachineResidualOp::Jump(label) => {
                 pc = *labels.get(label).ok_or_else(|| format!("unknown label '{label}'"))?;
                 continue;
             }
-            NativeResidualOp::JumpIfFalse(label) => {
+            MachineResidualOp::JumpIfFalse(label) => {
                 let cond = stack.pop().unwrap_or(ResidualValue::Nil);
                 if !cond.is_truthy() {
                     pc = *labels.get(label).ok_or_else(|| format!("unknown label '{label}'"))?;
                     continue;
                 }
             }
-            NativeResidualOp::JumpIfTrue(label) => {
+            MachineResidualOp::JumpIfTrue(label) => {
                 let cond = stack.pop().unwrap_or(ResidualValue::Nil);
                 if cond.is_truthy() {
                     pc = *labels.get(label).ok_or_else(|| format!("unknown label '{label}'"))?;
                     continue;
                 }
             }
-            NativeResidualOp::Call { name, argc } => {
+            MachineResidualOp::Call { name, argc } => {
                 let mut args = Vec::with_capacity(*argc);
                 for _ in 0..*argc {
                     args.push(stack.pop().unwrap_or(ResidualValue::Nil));
@@ -715,7 +715,7 @@ fn call_function(
                 let value = call_function(module, name, args, frames, steps, effects)?;
                 stack.push(value);
             }
-            NativeResidualOp::Ret => {
+            MachineResidualOp::Ret => {
                 break stack.pop().unwrap_or(ResidualValue::Nil);
             }
         }
@@ -725,10 +725,10 @@ fn call_function(
     Ok(result)
 }
 
-fn build_labels(ops: &[NativeResidualOp]) -> HashMap<String, usize> {
+fn build_labels(ops: &[MachineResidualOp]) -> HashMap<String, usize> {
     let mut labels = HashMap::new();
     for (index, op) in ops.iter().enumerate() {
-        if let NativeResidualOp::Label(name) = op {
+        if let MachineResidualOp::Label(name) = op {
             labels.insert(name.clone(), index);
         }
     }
@@ -766,7 +766,7 @@ fn residual_string_index(text: &str, index: i64) -> ResidualValue {
 /// 运行时解析的 guest 调用：已残差化函数、`print`、`table_insert`，其余按
 /// 未定义全局函数返回 nil（与解释器一致）。
 fn dynamic_call(
-    module: &NativeResidualModule,
+    module: &MachineResidualModule,
     name: &str,
     args: Vec<ResidualValue>,
     frames: &mut Vec<()>,
@@ -842,20 +842,20 @@ enum ProductValueKind {
 /// 混合载体拼接（字符串 + 数字）、字符串作为调用实参、对象与运行时解析调用
 /// 都显式失败闭合，不在产品路径里静默吞掉语义。字符串的相等与排序按 UTF-8
 /// 字节序（lexicographic）比较内容，与描述符地址无关。
-pub fn lower_native_residual_to_program(
-    module: &NativeResidualModule,
-    target: NativeProductTarget,
-) -> Result<NativeTextProgramImage, String> {
+pub fn lower_machine_residual_to_program(
+    module: &MachineResidualModule,
+    target: X64ProductTarget,
+) -> Result<X64ProgramImage, String> {
     // 产品级 effect：`print` 可出现在任意残差函数；含 effect 的模块给每个函数
     // 增加同一个隐藏的首个整数形参（宿主 effect 通道），调用时逐层传递。
-    let has_print = module.functions.iter().any(|function| function.ops.iter().any(|op| matches!(op, NativeResidualOp::Print(_))));
+    let has_print = module.functions.iter().any(|function| function.ops.iter().any(|op| matches!(op, MachineResidualOp::Print(_))));
     let host = target.host_module();
     let has_methods = host.is_some() && module.functions.iter().any(|function| function.name != "main");
     // Windows 的 IAT 必须指明提供符号的宿主模块：Node 的符号由 `node.exe` 导出，
     // CPython 的在版本化的 `pythonNNN.dll` 里（由构建环境提供，不能猜）。
     let host_library = match (&target, host) {
-        (_, Some(NativeHostModule::Node)) if target.is_windows() => "node.exe".to_string(),
-        (NativeProductTarget::Extension { library, .. }, Some(NativeHostModule::Python)) if target.is_windows() => {
+        (_, Some(HostModule::Node)) if target.is_windows() => "node.exe".to_string(),
+        (X64ProductTarget::Extension { library, .. }, Some(HostModule::Python)) if target.is_windows() => {
             library.clone().ok_or_else(|| {
                 "Windows CPython 扩展必须提供宿主导入 DLL 名（例如 `python312.dll`）：版本相关名不能由编译器猜".to_string()
             })?
@@ -863,8 +863,8 @@ pub fn lower_native_residual_to_program(
         _ => String::new(),
     };
     // `ELF` 没有 IAT：宿主库以 `DT_NEEDED` 显式声明，避免依赖「碰巧在全局作用域」。
-    let native_dependencies: Vec<String> = match (&target, host) {
-        (NativeProductTarget::Extension { library: Some(library), .. }, Some(NativeHostModule::Python)) if !target.is_windows() => {
+    let host_dependencies: Vec<String> = match (&target, host) {
+        (X64ProductTarget::Extension { library: Some(library), .. }, Some(HostModule::Python)) if !target.is_windows() => {
             vec![library.clone()]
         }
         _ => Vec::new(),
@@ -908,12 +908,12 @@ pub fn lower_native_residual_to_program(
     // 数据段属于适配器：CPython 的 `PyModuleDef` 与符号名必须随镜像布局，其他
     // 目标的产物不需要可写数据。
     let mut data = Vec::new();
-    let mut data_relocations: Vec<(u32, NativeDataTarget)> = Vec::new();
+    let mut data_relocations: Vec<(u32, X64DataTarget)> = Vec::new();
     let mut utf8_exports = false;
     let mut bool_exports = false;
-    let mut functions: Vec<NativeTextProgramFunction>;
+    let mut functions: Vec<X64ProgramFunction>;
     match host {
-        Some(NativeHostModule::Node) => {
+        Some(HostModule::Node) => {
             // 残差语言约定：把 `main` 的整数/布尔结果暴露成属性 `value`；
             // 承载服务本身不要求任何特定符号名。
             let properties = extension_value_property("Node addon", module, &probe_lowered)?;
@@ -944,7 +944,7 @@ pub fn lower_native_residual_to_program(
                 arena_offset,
             ));
         }
-        Some(NativeHostModule::Python) => {
+        Some(HostModule::Python) => {
             let properties = extension_value_property("CPython extension", module, &probe_lowered)?;
             if !is_c_identifier(&module.name) {
                 return Err(format!(
@@ -987,7 +987,7 @@ pub fn lower_native_residual_to_program(
         }
     }
     match host {
-        Some(NativeHostModule::Node) => {
+        Some(HostModule::Node) => {
             imports.push((host_library.clone(), "napi_create_int64".to_string()));
             imports.push((host_library.clone(), "napi_set_named_property".to_string()));
             if has_methods {
@@ -1002,7 +1002,7 @@ pub fn lower_native_residual_to_program(
                 imports.push((host_library.clone(), "napi_get_boolean".to_string()));
             }
         }
-        Some(NativeHostModule::Python) => {
+        Some(HostModule::Python) => {
             // 多阶段初始化：宿主负责创建模块，扩展只提供已初始化的定义与执行钩子。
             imports.push((host_library.clone(), "PyModuleDef_Init".to_string()));
             // 模块常量与方法返回值都用 64 位整数装箱：Windows 的 C `long` 只有
@@ -1022,13 +1022,13 @@ pub fn lower_native_residual_to_program(
         None => {}
     }
     // 调用约定与容器都由平台显式给出，编码器不提供默认 ABI。
-    encode_native_text_program_with_dependencies(
+    encode_x64_program_with_dependencies(
         &functions,
         &imports,
         target.abi(),
         &data,
         &data_relocations,
-        &native_dependencies,
+        &host_dependencies,
     )
 }
 
@@ -1038,8 +1038,8 @@ pub fn lower_native_residual_to_program(
 /// 承载服务，服务本身不认识 `main`/`value` 这两个名字。
 fn extension_value_property(
     target: &str,
-    module: &NativeResidualModule,
-    lowered: &[(NativeTextProgramFunction, Option<ProductValueKind>)],
+    module: &MachineResidualModule,
+    lowered: &[(X64ProgramFunction, Option<ProductValueKind>)],
 ) -> Result<Vec<HostProperty>, String> {
     let main_return = lowered
         .iter()
@@ -1068,8 +1068,8 @@ fn extension_value_property(
 /// 产出的 [`HostMethod`] 集合交给目标侧承载服务；残差语言在这里决定哪些函数
 /// 可以暴露，包装体构造不属于本 crate。
 fn extension_methods(
-    module: &NativeResidualModule,
-    lowered: &[(NativeTextProgramFunction, Option<ProductValueKind>)],
+    module: &MachineResidualModule,
+    lowered: &[(X64ProgramFunction, Option<ProductValueKind>)],
     host: &str,
     window: &str,
     max_parameters: usize,
@@ -1105,18 +1105,18 @@ fn extension_methods(
 }
 
 /// 以导出函数 ABI 发射 `PE` DLL（宿主按 Win64 调用约定调用残差函数）。
-pub fn emit_native_pe_library(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
-    let image = lower_native_residual_to_program(module, NativeProductTarget::Library(NativePlatform::windows_x64()))?;
-    compile_shared_container(NativePlatform::windows_x64(), &image).map_err(|error| error.to_string())
+pub fn emit_machine_pe_library(module: &MachineResidualModule) -> Result<Vec<u8>, String> {
+    let image = lower_machine_residual_to_program(module, X64ProductTarget::Library(X64Platform::windows_x64()))?;
+    compile_shared_container(X64Platform::windows_x64(), &image).map_err(|error| error.to_string())
 }
 
 /// 以导出函数 ABI 发射 x86-64 `ELF` 共享库 `.so`（宿主 `dlopen` + `dlsym`）。
 ///
 /// 与 `PE` DLL 对称：残差函数按名导出，未知输入走 SysV64 整数形参；含 `print`
 /// 的模块用隐藏的首个整数形参作为 fd，调用 `write(2)`。
-pub fn emit_native_elf_library(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
-    let image = lower_native_residual_to_program(module, NativeProductTarget::Library(NativePlatform::linux_x64()))?;
-    compile_shared_container(NativePlatform::linux_x64(), &image).map_err(|error| error.to_string())
+pub fn emit_machine_elf_library(module: &MachineResidualModule) -> Result<Vec<u8>, String> {
+    let image = lower_machine_residual_to_program(module, X64ProductTarget::Library(X64Platform::linux_x64()))?;
+    compile_shared_container(X64Platform::linux_x64(), &image).map_err(|error| error.to_string())
 }
 
 /// 发射 Node-API 扩展（`.node` / `.dll`）。
@@ -1124,8 +1124,8 @@ pub fn emit_native_elf_library(module: &NativeResidualModule) -> Result<Vec<u8>,
 /// 宿主 `require()` 时由 Node 的 Node-API 装载器调用注册函数；`main` 的整数值
 /// 通过 `napi_create_int64` 写成 `exports.value`，残差函数注册为同名回调。
 /// Linux 产物是 `ET_DYN`，Windows 产物是 `PE32+` DLL（`.data` + 基址重定位）。
-pub fn emit_native_node_addon(module: &NativeResidualModule, platform: NativePlatform) -> Result<Vec<u8>, String> {
-    let image = lower_native_residual_to_program(module, NativeProductTarget::extension(platform, NativeHostModule::Node))?;
+pub fn emit_machine_node_addon(module: &MachineResidualModule, platform: X64Platform) -> Result<Vec<u8>, String> {
+    let image = lower_machine_residual_to_program(module, X64ProductTarget::extension(platform, HostModule::Node))?;
     compile_extension_container(platform, &image)
 }
 
@@ -1134,35 +1134,35 @@ pub fn emit_native_node_addon(module: &NativeResidualModule, platform: NativePla
 /// 入口为 `PyInit_<module>`：返回多阶段 `PyModuleDef`（`m_slots` 指向
 /// `Py_mod_exec`），模块由宿主创建，`value` 在 exec 阶段安装。Windows 的导入
 /// DLL 名（例如 `python312.dll`）必须由调用方提供——版本相关的名字不能由编译器猜。
-pub fn emit_native_python_extension(
-    module: &NativeResidualModule,
-    platform: NativePlatform,
+pub fn emit_machine_python_extension(
+    module: &MachineResidualModule,
+    platform: X64Platform,
     python_library: Option<&str>,
 ) -> Result<Vec<u8>, String> {
-    let target = NativeProductTarget::Extension {
+    let target = X64ProductTarget::Extension {
         platform,
-        module: NativeHostModule::Python,
+        module: HostModule::Python,
         library: python_library.map(str::to_string),
     };
-    let image = lower_native_residual_to_program(module, target)?;
+    let image = lower_machine_residual_to_program(module, target)?;
     compile_extension_container(platform, &image)
 }
 
 /// 按已冻结的平台身份选择容器：Windows 写 `PE32+` DLL，Linux 写 `ET_DYN`。
 ///
 /// 容器装配归 native 目标 lane 的共享服务；残差产品与正式编译 lane 复用同一条链。
-fn compile_extension_container(platform: NativePlatform, image: &NativeTextProgramImage) -> Result<Vec<u8>, String> {
+fn compile_extension_container(platform: X64Platform, image: &X64ProgramImage) -> Result<Vec<u8>, String> {
     compile_shared_container(platform, image).map_err(|error| error.to_string())
 }
 
 struct ResidualFunctionLowering<'a> {
-    function: &'a NativeResidualFunction,
+    function: &'a MachineResidualFunction,
     locals: HashMap<String, (u16, ProductValueKind)>,
     labels: HashMap<String, u32>,
     stack: Vec<(u16, ProductValueKind)>,
     next_slot: u16,
     next_label: u32,
-    instructions: Vec<NativeTextInstruction>,
+    instructions: Vec<X64TextInstruction>,
     /// 线性残差里的 `ret`/`jump` 之后是死代码；只允许标签重新开启可达区。
     returned: bool,
     /// `main` 的隐藏 effect 通道（第 1 个整数形参：Windows 文件句柄 / Linux fd）。
@@ -1170,13 +1170,13 @@ struct ResidualFunctionLowering<'a> {
     /// effect 通道是否来自宿主形参（Node 扩展固定 stdout，不占用形参）。
     sink_from_parameter: bool,
     /// 目标 OS：决定 effect 写入原语与导入面。
-    target: NativeProductTarget,
+    target: X64ProductTarget,
     /// 运行期文本 arena 的游标偏移；`None` 表示该产物没有入口重置合同（普通库）。
     text_arena: Option<u32>,
 }
 
 impl<'a> ResidualFunctionLowering<'a> {
-    fn new(function: &'a NativeResidualFunction, target: NativeProductTarget, text_arena: Option<u32>) -> Self {
+    fn new(function: &'a MachineResidualFunction, target: X64ProductTarget, text_arena: Option<u32>) -> Self {
         Self {
             function,
             locals: HashMap::new(),
@@ -1217,7 +1217,7 @@ impl<'a> ResidualFunctionLowering<'a> {
 
     fn push_stack_value(&mut self, kind: ProductValueKind) -> u16 {
         let slot = self.alloc_slot();
-        self.instructions.push(NativeTextInstruction::StoreSlot(slot));
+        self.instructions.push(X64TextInstruction::StoreSlot(slot));
         self.stack.push((slot, kind));
         slot
     }
@@ -1226,7 +1226,7 @@ impl<'a> ResidualFunctionLowering<'a> {
         self.stack.pop().ok_or_else(|| format!("residual function `{}` underflows the operand stack", self.function.name))
     }
 
-    fn binary_numeric(&mut self, instruction: NativeTextInstruction, result: ProductValueKind) -> Result<(), String> {
+    fn binary_numeric(&mut self, instruction: X64TextInstruction, result: ProductValueKind) -> Result<(), String> {
         let (right, right_kind) = self.pop()?;
         let (left, left_kind) = self.pop()?;
         if left_kind != ProductValueKind::Int || right_kind != ProductValueKind::Int {
@@ -1235,8 +1235,8 @@ impl<'a> ResidualFunctionLowering<'a> {
                 self.function.name
             ));
         }
-        self.instructions.push(NativeTextInstruction::LoadSlot(left));
-        self.instructions.push(NativeTextInstruction::LoadSlotToRcx(right));
+        self.instructions.push(X64TextInstruction::LoadSlot(left));
+        self.instructions.push(X64TextInstruction::LoadSlotToRcx(right));
         self.instructions.push(instruction);
         self.push_stack_value(result);
         Ok(())
@@ -1244,12 +1244,12 @@ impl<'a> ResidualFunctionLowering<'a> {
 
     /// 通过 effect 通道写入一段静态字节（`WriteFile(handle, ptr, len, 0, 0)`）。
     fn write_static(&mut self, text: &str) -> Result<(), String> {
-        self.instructions.push(NativeTextInstruction::LoadStringPtr(text.to_string()));
+        self.instructions.push(X64TextInstruction::LoadStringPtr(text.to_string()));
         let pointer = self.alloc_slot();
-        self.instructions.push(NativeTextInstruction::StoreSlot(pointer));
-        self.instructions.push(NativeTextInstruction::LoadStringLen(text.to_string()));
+        self.instructions.push(X64TextInstruction::StoreSlot(pointer));
+        self.instructions.push(X64TextInstruction::LoadStringLen(text.to_string()));
         let length = self.alloc_slot();
-        self.instructions.push(NativeTextInstruction::StoreSlot(length));
+        self.instructions.push(X64TextInstruction::StoreSlot(length));
         self.write_bytes(pointer, length)
     }
 
@@ -1262,22 +1262,22 @@ impl<'a> ResidualFunctionLowering<'a> {
         let handle = self.effect_sink.ok_or_else(|| {
             format!("residual function `{}` writes effects without an effect sink", self.function.name)
         })?;
-        self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: handle, index: 0 });
-        self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: pointer, index: 1 });
-        self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: length, index: 2 });
+        self.instructions.push(X64TextInstruction::LoadSlotToArg { slot: handle, index: 0 });
+        self.instructions.push(X64TextInstruction::LoadSlotToArg { slot: pointer, index: 1 });
+        self.instructions.push(X64TextInstruction::LoadSlotToArg { slot: length, index: 2 });
         if self.target.is_windows() {
-            self.instructions.push(NativeTextInstruction::LoadI64(0));
+            self.instructions.push(X64TextInstruction::LoadI64(0));
             let written_out = self.alloc_slot();
-            self.instructions.push(NativeTextInstruction::StoreSlot(written_out));
-            self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: written_out, index: 3 });
-            self.instructions.push(NativeTextInstruction::ZeroStackArg(0));
-            self.instructions.push(NativeTextInstruction::CallImport {
+            self.instructions.push(X64TextInstruction::StoreSlot(written_out));
+            self.instructions.push(X64TextInstruction::LoadSlotToArg { slot: written_out, index: 3 });
+            self.instructions.push(X64TextInstruction::ZeroStackArg(0));
+            self.instructions.push(X64TextInstruction::CallImport {
                 module: "kernel32".to_string(),
                 field: "WriteFile".to_string(),
             });
         }
         else {
-            self.instructions.push(NativeTextInstruction::SyscallWrite);
+            self.instructions.push(X64TextInstruction::SyscallWrite);
         }
         Ok(())
     }
@@ -1289,33 +1289,33 @@ impl<'a> ResidualFunctionLowering<'a> {
     fn effect_channel(&mut self) -> Result<(), String> {
         let slot = self.alloc_slot();
         if self.target.sink_from_parameter() {
-            self.instructions.push(NativeTextInstruction::LoadParam { index: 0, slot });
+            self.instructions.push(X64TextInstruction::LoadParam { index: 0, slot });
             self.effect_sink = Some(slot);
             return Ok(());
         }
         if self.target.is_windows() {
             // `STD_OUTPUT_HANDLE = -11`。
-            self.instructions.push(NativeTextInstruction::LoadI64(-11));
+            self.instructions.push(X64TextInstruction::LoadI64(-11));
             let constant = self.alloc_slot();
-            self.instructions.push(NativeTextInstruction::StoreSlot(constant));
-            self.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: constant, index: 0 });
-            self.instructions.push(NativeTextInstruction::CallImport {
+            self.instructions.push(X64TextInstruction::StoreSlot(constant));
+            self.instructions.push(X64TextInstruction::LoadSlotToArg { slot: constant, index: 0 });
+            self.instructions.push(X64TextInstruction::CallImport {
                 module: "kernel32".to_string(),
                 field: "GetStdHandle".to_string(),
             });
         }
         else {
-            self.instructions.push(NativeTextInstruction::LoadI64(1));
+            self.instructions.push(X64TextInstruction::LoadI64(1));
         }
-        self.instructions.push(NativeTextInstruction::StoreSlot(slot));
+        self.instructions.push(X64TextInstruction::StoreSlot(slot));
         self.effect_sink = Some(slot);
         Ok(())
     }
 
     fn store_immediate(&mut self, value: i64) -> u16 {
-        self.instructions.push(NativeTextInstruction::LoadI64(value));
+        self.instructions.push(X64TextInstruction::LoadI64(value));
         let slot = self.alloc_slot();
-        self.instructions.push(NativeTextInstruction::StoreSlot(slot));
+        self.instructions.push(X64TextInstruction::StoreSlot(slot));
         slot
     }
 
@@ -1326,90 +1326,90 @@ impl<'a> ResidualFunctionLowering<'a> {
         let positive = self.fresh_label();
         let done = self.fresh_label();
         // `value == 0` 直接写 "0"。
-        self.instructions.push(NativeTextInstruction::LoadSlot(value_slot));
-        self.instructions.push(NativeTextInstruction::LoadSlotToRcx(zero));
-        self.instructions.push(NativeTextInstruction::Eq);
-        self.instructions.push(NativeTextInstruction::JumpIfZero(nonzero));
+        self.instructions.push(X64TextInstruction::LoadSlot(value_slot));
+        self.instructions.push(X64TextInstruction::LoadSlotToRcx(zero));
+        self.instructions.push(X64TextInstruction::Eq);
+        self.instructions.push(X64TextInstruction::JumpIfZero(nonzero));
         self.write_static("0")?;
-        self.instructions.push(NativeTextInstruction::Jump(done));
-        self.instructions.push(NativeTextInstruction::Label(nonzero));
+        self.instructions.push(X64TextInstruction::Jump(done));
+        self.instructions.push(X64TextInstruction::Label(nonzero));
         // 负数：写 `-` 并取绝对值。
-        self.instructions.push(NativeTextInstruction::LoadSlot(value_slot));
-        self.instructions.push(NativeTextInstruction::LoadSlotToRcx(zero));
-        self.instructions.push(NativeTextInstruction::Lt);
-        self.instructions.push(NativeTextInstruction::JumpIfZero(positive));
+        self.instructions.push(X64TextInstruction::LoadSlot(value_slot));
+        self.instructions.push(X64TextInstruction::LoadSlotToRcx(zero));
+        self.instructions.push(X64TextInstruction::Lt);
+        self.instructions.push(X64TextInstruction::JumpIfZero(positive));
         self.write_static("-")?;
-        self.instructions.push(NativeTextInstruction::LoadSlot(value_slot));
-        self.instructions.push(NativeTextInstruction::NegateRax);
-        self.instructions.push(NativeTextInstruction::StoreSlot(value_slot));
-        self.instructions.push(NativeTextInstruction::Label(positive));
+        self.instructions.push(X64TextInstruction::LoadSlot(value_slot));
+        self.instructions.push(X64TextInstruction::NegateRax);
+        self.instructions.push(X64TextInstruction::StoreSlot(value_slot));
+        self.instructions.push(X64TextInstruction::Label(positive));
 
         // 统计位数；用副本避免破坏原值。
         let digits_left = self.alloc_slot();
-        self.instructions.push(NativeTextInstruction::LoadSlot(value_slot));
-        self.instructions.push(NativeTextInstruction::StoreSlot(digits_left));
+        self.instructions.push(X64TextInstruction::LoadSlot(value_slot));
+        self.instructions.push(X64TextInstruction::StoreSlot(digits_left));
         let count = self.store_immediate(0);
         let count_loop = self.fresh_label();
         let count_done = self.fresh_label();
-        self.instructions.push(NativeTextInstruction::Label(count_loop));
-        self.instructions.push(NativeTextInstruction::LoadSlot(digits_left));
-        self.instructions.push(NativeTextInstruction::DivideByTen);
-        self.instructions.push(NativeTextInstruction::StoreSlot(digits_left));
-        self.instructions.push(NativeTextInstruction::LoadSlot(count));
-        self.instructions.push(NativeTextInstruction::AddRaxImmediate(1));
-        self.instructions.push(NativeTextInstruction::StoreSlot(count));
-        self.instructions.push(NativeTextInstruction::LoadSlot(digits_left));
-        self.instructions.push(NativeTextInstruction::JumpIfZero(count_done));
-        self.instructions.push(NativeTextInstruction::Jump(count_loop));
-        self.instructions.push(NativeTextInstruction::Label(count_done));
+        self.instructions.push(X64TextInstruction::Label(count_loop));
+        self.instructions.push(X64TextInstruction::LoadSlot(digits_left));
+        self.instructions.push(X64TextInstruction::DivideByTen);
+        self.instructions.push(X64TextInstruction::StoreSlot(digits_left));
+        self.instructions.push(X64TextInstruction::LoadSlot(count));
+        self.instructions.push(X64TextInstruction::AddRaxImmediate(1));
+        self.instructions.push(X64TextInstruction::StoreSlot(count));
+        self.instructions.push(X64TextInstruction::LoadSlot(digits_left));
+        self.instructions.push(X64TextInstruction::JumpIfZero(count_done));
+        self.instructions.push(X64TextInstruction::Jump(count_loop));
+        self.instructions.push(X64TextInstruction::Label(count_done));
 
         // 24 字节连续缓冲区：槽 b0/b1/b2 覆盖 [b2 基址, b0 基址)。
         let _b0 = self.alloc_slot();
         let _b1 = self.alloc_slot();
         let buffer_start = self.alloc_slot();
         let length = self.alloc_slot();
-        self.instructions.push(NativeTextInstruction::LoadSlot(count));
-        self.instructions.push(NativeTextInstruction::StoreSlot(length));
+        self.instructions.push(X64TextInstruction::LoadSlot(count));
+        self.instructions.push(X64TextInstruction::StoreSlot(length));
         let pointer = self.alloc_slot();
         // pointer = buffer_start + (count - 1)
-        self.instructions.push(NativeTextInstruction::LoadSlot(count));
-        self.instructions.push(NativeTextInstruction::SubRaxImmediate(1));
+        self.instructions.push(X64TextInstruction::LoadSlot(count));
+        self.instructions.push(X64TextInstruction::SubRaxImmediate(1));
         let offset = self.alloc_slot();
-        self.instructions.push(NativeTextInstruction::StoreSlot(offset));
-        self.instructions.push(NativeTextInstruction::LoadSlotAddress(buffer_start));
-        self.instructions.push(NativeTextInstruction::LoadSlotToRcx(offset));
-        self.instructions.push(NativeTextInstruction::Add);
-        self.instructions.push(NativeTextInstruction::StoreSlot(pointer));
+        self.instructions.push(X64TextInstruction::StoreSlot(offset));
+        self.instructions.push(X64TextInstruction::LoadSlotAddress(buffer_start));
+        self.instructions.push(X64TextInstruction::LoadSlotToRcx(offset));
+        self.instructions.push(X64TextInstruction::Add);
+        self.instructions.push(X64TextInstruction::StoreSlot(pointer));
 
         // 从低位到高位，逐字节倒着填入缓冲区。
         let remaining = self.alloc_slot();
-        self.instructions.push(NativeTextInstruction::LoadSlot(value_slot));
-        self.instructions.push(NativeTextInstruction::StoreSlot(remaining));
+        self.instructions.push(X64TextInstruction::LoadSlot(value_slot));
+        self.instructions.push(X64TextInstruction::StoreSlot(remaining));
         let write_loop = self.fresh_label();
         let write_done = self.fresh_label();
-        self.instructions.push(NativeTextInstruction::Label(write_loop));
-        self.instructions.push(NativeTextInstruction::LoadSlot(remaining));
-        self.instructions.push(NativeTextInstruction::DivideByTen);
-        self.instructions.push(NativeTextInstruction::StoreSlot(remaining));
-        self.instructions.push(NativeTextInstruction::AddRdxImmediate(i32::from(b'0')));
-        self.instructions.push(NativeTextInstruction::LoadSlot(pointer));
-        self.instructions.push(NativeTextInstruction::StoreByteAtRaxFromRdx);
-        self.instructions.push(NativeTextInstruction::LoadSlot(pointer));
-        self.instructions.push(NativeTextInstruction::SubRaxImmediate(1));
-        self.instructions.push(NativeTextInstruction::StoreSlot(pointer));
-        self.instructions.push(NativeTextInstruction::LoadSlot(count));
-        self.instructions.push(NativeTextInstruction::SubRaxImmediate(1));
-        self.instructions.push(NativeTextInstruction::StoreSlot(count));
-        self.instructions.push(NativeTextInstruction::LoadSlot(count));
-        self.instructions.push(NativeTextInstruction::JumpIfZero(write_done));
-        self.instructions.push(NativeTextInstruction::Jump(write_loop));
-        self.instructions.push(NativeTextInstruction::Label(write_done));
+        self.instructions.push(X64TextInstruction::Label(write_loop));
+        self.instructions.push(X64TextInstruction::LoadSlot(remaining));
+        self.instructions.push(X64TextInstruction::DivideByTen);
+        self.instructions.push(X64TextInstruction::StoreSlot(remaining));
+        self.instructions.push(X64TextInstruction::AddRdxImmediate(i32::from(b'0')));
+        self.instructions.push(X64TextInstruction::LoadSlot(pointer));
+        self.instructions.push(X64TextInstruction::StoreByteAtRaxFromRdx);
+        self.instructions.push(X64TextInstruction::LoadSlot(pointer));
+        self.instructions.push(X64TextInstruction::SubRaxImmediate(1));
+        self.instructions.push(X64TextInstruction::StoreSlot(pointer));
+        self.instructions.push(X64TextInstruction::LoadSlot(count));
+        self.instructions.push(X64TextInstruction::SubRaxImmediate(1));
+        self.instructions.push(X64TextInstruction::StoreSlot(count));
+        self.instructions.push(X64TextInstruction::LoadSlot(count));
+        self.instructions.push(X64TextInstruction::JumpIfZero(write_done));
+        self.instructions.push(X64TextInstruction::Jump(write_loop));
+        self.instructions.push(X64TextInstruction::Label(write_done));
 
-        self.instructions.push(NativeTextInstruction::LoadSlotAddress(buffer_start));
+        self.instructions.push(X64TextInstruction::LoadSlotAddress(buffer_start));
         let base = self.alloc_slot();
-        self.instructions.push(NativeTextInstruction::StoreSlot(base));
+        self.instructions.push(X64TextInstruction::StoreSlot(base));
         self.write_bytes(base, length)?;
-        self.instructions.push(NativeTextInstruction::Label(done));
+        self.instructions.push(X64TextInstruction::Label(done));
         Ok(())
     }
 
@@ -1417,13 +1417,13 @@ impl<'a> ResidualFunctionLowering<'a> {
     fn write_boolean(&mut self, value_slot: u16) -> Result<(), String> {
         let false_label = self.fresh_label();
         let done = self.fresh_label();
-        self.instructions.push(NativeTextInstruction::LoadSlot(value_slot));
-        self.instructions.push(NativeTextInstruction::JumpIfZero(false_label));
+        self.instructions.push(X64TextInstruction::LoadSlot(value_slot));
+        self.instructions.push(X64TextInstruction::JumpIfZero(false_label));
         self.write_static("true")?;
-        self.instructions.push(NativeTextInstruction::Jump(done));
-        self.instructions.push(NativeTextInstruction::Label(false_label));
+        self.instructions.push(X64TextInstruction::Jump(done));
+        self.instructions.push(X64TextInstruction::Label(false_label));
         self.write_static("false")?;
-        self.instructions.push(NativeTextInstruction::Label(done));
+        self.instructions.push(X64TextInstruction::Label(done));
         Ok(())
     }
 
@@ -1433,7 +1433,7 @@ impl<'a> ResidualFunctionLowering<'a> {
     /// `total` 是载荷字节数的帧槽。分配按游标单调推进，越界以 `ud2` 陷入失败闭合；
     /// 扩展模块的入口包装体在每次宿主调用开始时把游标归零。
     fn allocate_text(&mut self, total: u16) -> Result<u16, String> {
-        use NativeTextInstruction as Lir;
+        use X64TextInstruction as Lir;
         let arena = self.text_arena.ok_or_else(|| {
             format!(
                 "residual function `{}` constructs a runtime string, but this product has no entry-reset text arena contract",
@@ -1461,7 +1461,7 @@ impl<'a> ResidualFunctionLowering<'a> {
         let new = self.alloc_slot();
         self.instructions.push(Lir::StoreSlot(new));
         // new > capacity → trap（预算耗尽不能返回伪造的空字符串）。
-        let capacity = self.store_immediate(i64::from(NATIVE_TEXT_ARENA_CAPACITY));
+        let capacity = self.store_immediate(i64::from(X64_TEXT_ARENA_CAPACITY));
         let within_budget = self.fresh_label();
         self.instructions.push(Lir::LoadSlot(new));
         self.instructions.push(Lir::LoadSlotToRcx(capacity));
@@ -1491,7 +1491,7 @@ impl<'a> ResidualFunctionLowering<'a> {
 
     /// 字符串拼接：两个描述符的长度在运行期读取，结果写入 arena。
     fn concat_text(&mut self) -> Result<(), String> {
-        use NativeTextInstruction as Lir;
+        use X64TextInstruction as Lir;
         let (right, right_kind) = self.pop()?;
         let (left, left_kind) = self.pop()?;
         if !matches!(left_kind, ProductValueKind::Str(_)) || !matches!(right_kind, ProductValueKind::Str(_)) {
@@ -1546,7 +1546,7 @@ impl<'a> ResidualFunctionLowering<'a> {
 
     /// 通过 effect 通道写入一个运行期文本描述符指向的字节。
     fn write_text(&mut self, slot: u16) -> Result<(), String> {
-        use NativeTextInstruction as Lir;
+        use X64TextInstruction as Lir;
         self.instructions.push(Lir::LoadSlot(slot));
         self.instructions.push(Lir::LoadDescriptorLength);
         let length = self.alloc_slot();
@@ -1560,7 +1560,7 @@ impl<'a> ResidualFunctionLowering<'a> {
 
     /// 把字符串描述符的运行期长度读入新槽。
     fn text_length(&mut self, descriptor: u16) -> u16 {
-        use NativeTextInstruction as Lir;
+        use X64TextInstruction as Lir;
         self.instructions.push(Lir::LoadSlot(descriptor));
         self.instructions.push(Lir::LoadDescriptorLength);
         let length = self.alloc_slot();
@@ -1578,9 +1578,9 @@ impl<'a> ResidualFunctionLowering<'a> {
         left_kind: ProductValueKind,
         right: u16,
         right_kind: ProductValueKind,
-        predicate: NativeTextInstruction,
+        predicate: X64TextInstruction,
     ) -> Result<(), String> {
-        use NativeTextInstruction as Lir;
+        use X64TextInstruction as Lir;
         if !matches!(left_kind, ProductValueKind::Str(_)) || !matches!(right_kind, ProductValueKind::Str(_)) {
             return Err(format!(
                 "residual function `{}` orders mixed carriers at the product boundary",
@@ -1687,13 +1687,13 @@ impl<'a> ResidualFunctionLowering<'a> {
 }
 
 fn lower_all(
-    module: &NativeResidualModule,
+    module: &MachineResidualModule,
     with_effect_sink: bool,
     sink_from_parameter: bool,
-    target: &NativeProductTarget,
+    target: &X64ProductTarget,
     known_returns: &HashMap<String, ProductValueKind>,
     text_arena: Option<u32>,
-) -> Result<Vec<(NativeTextProgramFunction, Option<ProductValueKind>)>, String> {
+) -> Result<Vec<(X64ProgramFunction, Option<ProductValueKind>)>, String> {
     module
         .functions
         .iter()
@@ -1702,13 +1702,13 @@ fn lower_all(
 }
 
 fn lower_residual_function(
-    function: &NativeResidualFunction,
+    function: &MachineResidualFunction,
     with_effect_sink: bool,
     sink_from_parameter: bool,
-    target: &NativeProductTarget,
+    target: &X64ProductTarget,
     known_returns: &HashMap<String, ProductValueKind>,
     text_arena: Option<u32>,
-) -> Result<(NativeTextProgramFunction, Option<ProductValueKind>), String> {
+) -> Result<(X64ProgramFunction, Option<ProductValueKind>), String> {
     // 该平台寄存器实参上限，减去隐藏 effect 通道占用（仅当通道来自宿主形参）。
     let total = target.abi().integer_argument_limit();
     let available = total - usize::from(sink_from_parameter);
@@ -1731,14 +1731,14 @@ fn lower_residual_function(
     let parameter_shift = u8::from(sink_from_parameter && with_effect_sink);
     for (index, parameter) in function.parameters.iter().enumerate() {
         let slot = lowering.alloc_slot();
-        lowering.instructions.push(NativeTextInstruction::LoadParam { index: index as u8 + parameter_shift, slot });
+        lowering.instructions.push(X64TextInstruction::LoadParam { index: index as u8 + parameter_shift, slot });
         lowering.locals.insert(parameter.clone(), (slot, ProductValueKind::Int));
     }
 
     for op in &function.ops {
         // `ret`/`jump` 后的线性残差不可达；标签是唯一重新可达的入口。
         if lowering.returned {
-            if matches!(op, NativeResidualOp::Label(_)) {
+            if matches!(op, MachineResidualOp::Label(_)) {
                 lowering.returned = false;
             }
             else {
@@ -1746,30 +1746,30 @@ fn lower_residual_function(
             }
         }
         match op {
-            NativeResidualOp::PushI64(value) => {
-                lowering.instructions.push(NativeTextInstruction::LoadI64(*value));
+            MachineResidualOp::PushI64(value) => {
+                lowering.instructions.push(X64TextInstruction::LoadI64(*value));
                 lowering.push_stack_value(ProductValueKind::Int);
             }
-            NativeResidualOp::PushBool(value) => {
-                lowering.instructions.push(NativeTextInstruction::LoadI64(i64::from(*value)));
+            MachineResidualOp::PushBool(value) => {
+                lowering.instructions.push(X64TextInstruction::LoadI64(i64::from(*value)));
                 lowering.push_stack_value(ProductValueKind::Bool);
             }
-            NativeResidualOp::PushString(text) => {
-                lowering.instructions.push(NativeTextInstruction::LoadString(text.clone()));
+            MachineResidualOp::PushString(text) => {
+                lowering.instructions.push(X64TextInstruction::LoadString(text.clone()));
                 lowering.push_stack_value(ProductValueKind::Str(Some(text.clone())));
             }
-            NativeResidualOp::PushNil => {
-                lowering.instructions.push(NativeTextInstruction::LoadI64(0));
+            MachineResidualOp::PushNil => {
+                lowering.instructions.push(X64TextInstruction::LoadI64(0));
                 lowering.push_stack_value(ProductValueKind::Nil);
             }
-            NativeResidualOp::Load(name) => {
+            MachineResidualOp::Load(name) => {
                 let (slot, kind) = lowering.locals.get(name).cloned().ok_or_else(|| {
                     format!("residual function `{}` loads unbound local `{name}` at the product boundary", function.name)
                 })?;
-                lowering.instructions.push(NativeTextInstruction::LoadSlot(slot));
+                lowering.instructions.push(X64TextInstruction::LoadSlot(slot));
                 lowering.push_stack_value(kind);
             }
-            NativeResidualOp::Store(name) => {
+            MachineResidualOp::Store(name) => {
                 let (slot, kind) = lowering.pop()?;
                 // 变量槽是**绑定身份**，不是一次性 SSA 值：循环回边必须能看到
                 // 上一轮写入的值，因此重绑定复用首个分配到的槽，只更新载体类别。
@@ -1781,26 +1781,26 @@ fn lower_residual_function(
                         allocated
                     }
                 };
-                lowering.instructions.push(NativeTextInstruction::LoadSlot(slot));
-                lowering.instructions.push(NativeTextInstruction::StoreSlot(destination));
+                lowering.instructions.push(X64TextInstruction::LoadSlot(slot));
+                lowering.instructions.push(X64TextInstruction::StoreSlot(destination));
                 if let Some((_, existing_kind)) = lowering.locals.get_mut(name) {
                     *existing_kind = kind;
                 }
             }
-            NativeResidualOp::Pop => {
+            MachineResidualOp::Pop => {
                 lowering.pop()?;
             }
-            NativeResidualOp::Add => lowering.binary_numeric(NativeTextInstruction::Add, ProductValueKind::Int)?,
-            NativeResidualOp::Sub => lowering.binary_numeric(NativeTextInstruction::Sub, ProductValueKind::Int)?,
-            NativeResidualOp::Mul => lowering.binary_numeric(NativeTextInstruction::Mul, ProductValueKind::Int)?,
-            NativeResidualOp::Concat => lowering.concat_text()?,
-            NativeResidualOp::Eq | NativeResidualOp::Ne => {
+            MachineResidualOp::Add => lowering.binary_numeric(X64TextInstruction::Add, ProductValueKind::Int)?,
+            MachineResidualOp::Sub => lowering.binary_numeric(X64TextInstruction::Sub, ProductValueKind::Int)?,
+            MachineResidualOp::Mul => lowering.binary_numeric(X64TextInstruction::Mul, ProductValueKind::Int)?,
+            MachineResidualOp::Concat => lowering.concat_text()?,
+            MachineResidualOp::Eq | MachineResidualOp::Ne => {
                 let (right, right_kind) = lowering.pop()?;
                 let (left, left_kind) = lowering.pop()?;
                 // guest 的字符串相等是内容比较；不同载体的结构化比较仍失败闭合。
                 if matches!(left_kind, ProductValueKind::Str(_)) || matches!(right_kind, ProductValueKind::Str(_)) {
                     let predicate =
-                        if matches!(op, NativeResidualOp::Eq) { NativeTextInstruction::Eq } else { NativeTextInstruction::Ne };
+                        if matches!(op, MachineResidualOp::Eq) { X64TextInstruction::Eq } else { X64TextInstruction::Ne };
                     lowering.compare_text_values(left, left_kind, right, right_kind, predicate)?;
                     continue;
                 }
@@ -1810,18 +1810,18 @@ fn lower_residual_function(
                         function.name
                     ));
                 }
-                let instruction = if matches!(op, NativeResidualOp::Eq) {
-                    NativeTextInstruction::Eq
+                let instruction = if matches!(op, MachineResidualOp::Eq) {
+                    X64TextInstruction::Eq
                 }
                 else {
-                    NativeTextInstruction::Ne
+                    X64TextInstruction::Ne
                 };
-                lowering.instructions.push(NativeTextInstruction::LoadSlot(left));
-                lowering.instructions.push(NativeTextInstruction::LoadSlotToRcx(right));
+                lowering.instructions.push(X64TextInstruction::LoadSlot(left));
+                lowering.instructions.push(X64TextInstruction::LoadSlotToRcx(right));
                 lowering.instructions.push(instruction);
                 lowering.push_stack_value(ProductValueKind::Bool);
             }
-            NativeResidualOp::Lt | NativeResidualOp::Le | NativeResidualOp::Gt | NativeResidualOp::Ge => {
+            MachineResidualOp::Lt | MachineResidualOp::Le | MachineResidualOp::Gt | MachineResidualOp::Ge => {
                 let (right, right_kind) = lowering.pop()?;
                 let (left, left_kind) = lowering.pop()?;
                 if matches!(left_kind, ProductValueKind::Nil) || matches!(right_kind, ProductValueKind::Nil) {
@@ -1833,26 +1833,26 @@ fn lower_residual_function(
                 // 字符串按字节序比较（与 guest 的字典序一致），其它载体按有符号整数比较。
                 if matches!(left_kind, ProductValueKind::Str(_)) || matches!(right_kind, ProductValueKind::Str(_)) {
                     let predicate = match op {
-                        NativeResidualOp::Lt => NativeTextInstruction::Lt,
-                        NativeResidualOp::Le => NativeTextInstruction::Le,
-                        NativeResidualOp::Gt => NativeTextInstruction::Gt,
-                        _ => NativeTextInstruction::Ge,
+                        MachineResidualOp::Lt => X64TextInstruction::Lt,
+                        MachineResidualOp::Le => X64TextInstruction::Le,
+                        MachineResidualOp::Gt => X64TextInstruction::Gt,
+                        _ => X64TextInstruction::Ge,
                     };
                     lowering.compare_text_values(left, left_kind, right, right_kind, predicate)?;
                     continue;
                 }
                 let instruction = match op {
-                    NativeResidualOp::Lt => NativeTextInstruction::Lt,
-                    NativeResidualOp::Le => NativeTextInstruction::Le,
-                    NativeResidualOp::Gt => NativeTextInstruction::Gt,
-                    _ => NativeTextInstruction::Ge,
+                    MachineResidualOp::Lt => X64TextInstruction::Lt,
+                    MachineResidualOp::Le => X64TextInstruction::Le,
+                    MachineResidualOp::Gt => X64TextInstruction::Gt,
+                    _ => X64TextInstruction::Ge,
                 };
-                lowering.instructions.push(NativeTextInstruction::LoadSlot(left));
-                lowering.instructions.push(NativeTextInstruction::LoadSlotToRcx(right));
+                lowering.instructions.push(X64TextInstruction::LoadSlot(left));
+                lowering.instructions.push(X64TextInstruction::LoadSlotToRcx(right));
                 lowering.instructions.push(instruction);
                 lowering.push_stack_value(ProductValueKind::Bool);
             }
-            NativeResidualOp::Not => {
+            MachineResidualOp::Not => {
                 let (slot, kind) = lowering.pop()?;
                 if kind != ProductValueKind::Bool {
                     return Err(format!(
@@ -1861,23 +1861,23 @@ fn lower_residual_function(
                     ));
                 }
                 let zero = lowering.alloc_slot();
-                lowering.instructions.push(NativeTextInstruction::LoadI64(0));
-                lowering.instructions.push(NativeTextInstruction::StoreSlot(zero));
-                lowering.instructions.push(NativeTextInstruction::LoadSlot(slot));
-                lowering.instructions.push(NativeTextInstruction::LoadSlotToRcx(zero));
-                lowering.instructions.push(NativeTextInstruction::Eq);
+                lowering.instructions.push(X64TextInstruction::LoadI64(0));
+                lowering.instructions.push(X64TextInstruction::StoreSlot(zero));
+                lowering.instructions.push(X64TextInstruction::LoadSlot(slot));
+                lowering.instructions.push(X64TextInstruction::LoadSlotToRcx(zero));
+                lowering.instructions.push(X64TextInstruction::Eq);
                 lowering.push_stack_value(ProductValueKind::Bool);
             }
-            NativeResidualOp::Label(name) => {
+            MachineResidualOp::Label(name) => {
                 let id = lowering.label_id(name);
-                lowering.instructions.push(NativeTextInstruction::Label(id));
+                lowering.instructions.push(X64TextInstruction::Label(id));
             }
-            NativeResidualOp::Jump(name) => {
+            MachineResidualOp::Jump(name) => {
                 let id = lowering.label_id(name);
-                lowering.instructions.push(NativeTextInstruction::Jump(id));
+                lowering.instructions.push(X64TextInstruction::Jump(id));
                 lowering.returned = true;
             }
-            NativeResidualOp::JumpIfFalse(name) => {
+            MachineResidualOp::JumpIfFalse(name) => {
                 let id = lowering.label_id(name);
                 let (slot, kind) = lowering.pop()?;
                 if kind != ProductValueKind::Bool {
@@ -1886,10 +1886,10 @@ fn lower_residual_function(
                         function.name
                     ));
                 }
-                lowering.instructions.push(NativeTextInstruction::LoadSlot(slot));
-                lowering.instructions.push(NativeTextInstruction::JumpIfZero(id));
+                lowering.instructions.push(X64TextInstruction::LoadSlot(slot));
+                lowering.instructions.push(X64TextInstruction::JumpIfZero(id));
             }
-            NativeResidualOp::JumpIfTrue(name) => {
+            MachineResidualOp::JumpIfTrue(name) => {
                 let id = lowering.label_id(name);
                 let skip = lowering.fresh_label();
                 let (slot, kind) = lowering.pop()?;
@@ -1899,12 +1899,12 @@ fn lower_residual_function(
                         function.name
                     ));
                 }
-                lowering.instructions.push(NativeTextInstruction::LoadSlot(slot));
-                lowering.instructions.push(NativeTextInstruction::JumpIfZero(skip));
-                lowering.instructions.push(NativeTextInstruction::Jump(id));
-                lowering.instructions.push(NativeTextInstruction::Label(skip));
+                lowering.instructions.push(X64TextInstruction::LoadSlot(slot));
+                lowering.instructions.push(X64TextInstruction::JumpIfZero(skip));
+                lowering.instructions.push(X64TextInstruction::Jump(id));
+                lowering.instructions.push(X64TextInstruction::Label(skip));
             }
-            NativeResidualOp::Call { name, argc } => {
+            MachineResidualOp::Call { name, argc } => {
                 // 只有来自宿主形参的 effect 通道会占用一个实参位置。
                 let sink = if lowering.sink_from_parameter { lowering.effect_sink } else { None };
                 let available = target.abi().integer_argument_limit() - usize::from(sink.is_some());
@@ -1927,18 +1927,18 @@ fn lower_residual_function(
                     ));
                 }
                 if let Some(sink) = sink {
-                    lowering.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: sink, index: 0 });
+                    lowering.instructions.push(X64TextInstruction::LoadSlotToArg { slot: sink, index: 0 });
                 }
                 let shift = u8::from(sink.is_some());
                 for (index, (slot, _)) in arguments.iter().enumerate() {
-                    lowering.instructions.push(NativeTextInstruction::LoadSlotToArg { slot: *slot, index: index as u8 + shift });
+                    lowering.instructions.push(X64TextInstruction::LoadSlotToArg { slot: *slot, index: index as u8 + shift });
                 }
-                lowering.instructions.push(NativeTextInstruction::Call(name.clone()));
+                lowering.instructions.push(X64TextInstruction::Call(name.clone()));
                 // 调用结果的载体来自已降低的被调用函数（不动点收敛）。
                 let result_kind = known_returns.get(name).cloned().unwrap_or(ProductValueKind::Int);
                 lowering.push_stack_value(result_kind);
             }
-            NativeResidualOp::Ret => {
+            MachineResidualOp::Ret => {
                 let (slot, kind) = lowering.pop()?;
                 if matches!(kind, ProductValueKind::Nil) {
                     return Err(format!(
@@ -1946,14 +1946,14 @@ fn lower_residual_function(
                         function.name
                     ));
                 }
-                lowering.instructions.push(NativeTextInstruction::LoadSlot(slot));
-                lowering.instructions.push(NativeTextInstruction::Return);
+                lowering.instructions.push(X64TextInstruction::LoadSlot(slot));
+                lowering.instructions.push(X64TextInstruction::Return);
                 // `ret` 之后的线性残差不可达；保持栈形态确定。
                 lowering.stack.clear();
                 lowering.returned = true;
                 return_kind = Some(kind.clone());
             }
-            NativeResidualOp::Print(argc) => {
+            MachineResidualOp::Print(argc) => {
                 // 产品级 effect：只支持静态字符串实参（整数格式化尚未实现），
                 // 每个值之间写 `\t`，结束时写 `\n`，与 guest `print` 的可观察顺序一致。
                 let mut arguments = Vec::with_capacity(*argc);
@@ -1977,25 +1977,25 @@ fn lower_residual_function(
                 }
                 lowering.write_static("\n")?;
                 if let Some((slot, kind)) = arguments.last() {
-                    lowering.instructions.push(NativeTextInstruction::LoadSlot(*slot));
+                    lowering.instructions.push(X64TextInstruction::LoadSlot(*slot));
                     lowering.push_stack_value(kind.clone());
                 }
                 else {
-                    lowering.instructions.push(NativeTextInstruction::LoadI64(0));
+                    lowering.instructions.push(X64TextInstruction::LoadI64(0));
                     lowering.push_stack_value(ProductValueKind::Nil);
                 }
             }
-            NativeResidualOp::Div
-            | NativeResidualOp::Rem
-            | NativeResidualOp::Length
-            | NativeResidualOp::TableNew
-            | NativeResidualOp::TableArrayPush
-            | NativeResidualOp::TableRecordSet(_)
-            | NativeResidualOp::TableIndexSet
-            | NativeResidualOp::TableFieldSet(_)
-            | NativeResidualOp::TableFieldGet(_)
-            | NativeResidualOp::TableIndexGet
-            | NativeResidualOp::DynamicCall { .. } => {
+            MachineResidualOp::Div
+            | MachineResidualOp::Rem
+            | MachineResidualOp::Length
+            | MachineResidualOp::TableNew
+            | MachineResidualOp::TableArrayPush
+            | MachineResidualOp::TableRecordSet(_)
+            | MachineResidualOp::TableIndexSet
+            | MachineResidualOp::TableFieldSet(_)
+            | MachineResidualOp::TableFieldGet(_)
+            | MachineResidualOp::TableIndexGet
+            | MachineResidualOp::DynamicCall { .. } => {
                 return Err(format!(
                     "residual function `{}` contains `{op:?}`, which the current Win64 text ABI cannot carry; failing closed instead of shrinking semantics",
                     function.name
@@ -2004,29 +2004,29 @@ fn lower_residual_function(
         }
     }
 
-    Ok((NativeTextProgramFunction { name: function.name.clone(), slot_count: lowering.next_slot, instructions: lowering.instructions }, return_kind))
+    Ok((X64ProgramFunction { name: function.name.clone(), slot_count: lowering.next_slot, instructions: lowering.instructions }, return_kind))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn residual_main(ops: Vec<NativeResidualOp>) -> NativeResidualModule {
-        NativeResidualModule {
+    fn residual_main(ops: Vec<MachineResidualOp>) -> MachineResidualModule {
+        MachineResidualModule {
             name: "t".into(),
-            functions: vec![NativeResidualFunction { name: "main".into(), parameters: Vec::new(), ops }],
+            functions: vec![MachineResidualFunction { name: "main".into(), parameters: Vec::new(), ops }],
         }
     }
 
     /// Linux 产品 lane 产出 `ET_DYN` 共享库并按名导出残差函数。
     #[test]
     fn linux_product_emits_a_shared_object_with_exports() {
-        use nyar_emitter::nyar_backend_native::{NativeExecutableKind, classify_native_image};
+        use nyar_emitter::nyar_backend_machine::{MachineImageKind, classify_machine_image};
 
-        let module = residual_main(vec![NativeResidualOp::PushI64(7), NativeResidualOp::Ret]);
-        let bytes = emit_native_elf_library(&module).expect("emit linux residual .so");
-        let facts = classify_native_image(&bytes).expect("product must be a parseable image");
-        assert_eq!(facts.kind, NativeExecutableKind::ElfShared, "必须是 ET_DYN 而不是 ET_EXEC");
+        let module = residual_main(vec![MachineResidualOp::PushI64(7), MachineResidualOp::Ret]);
+        let bytes = emit_machine_elf_library(&module).expect("emit linux residual .so");
+        let facts = classify_machine_image(&bytes).expect("product must be a parseable image");
+        assert_eq!(facts.kind, MachineImageKind::ElfShared, "必须是 ET_DYN 而不是 ET_EXEC");
         assert!(facts.shared, "共享库身份");
         assert_eq!(format!("{:?}", facts.arch), "X64", "必须是 AMD64 共享库");
         assert!(String::from_utf8_lossy(&bytes).contains("main"), "残差函数必须出现在动态符号表");
@@ -2035,12 +2035,12 @@ mod tests {
     /// Node 扩展产物：Node-API 注册导出 + 导出对象属性写入所需的动态导入。
     #[test]
     fn node_addon_exposes_registration_and_napi_import() {
-        use nyar_emitter::nyar_backend_native::{NativeExecutableKind, classify_native_image};
+        use nyar_emitter::nyar_backend_machine::{MachineImageKind, classify_machine_image};
 
-        let module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
-        let bytes = emit_native_node_addon(&module, NativePlatform::linux_x64()).expect("emit node addon");
-        let facts = classify_native_image(&bytes).expect("addon must be a parseable image");
-        assert_eq!(facts.kind, NativeExecutableKind::ElfShared, "Node 扩展是 ET_DYN");
+        let module = residual_main(vec![MachineResidualOp::PushI64(42), MachineResidualOp::Ret]);
+        let bytes = emit_machine_node_addon(&module, X64Platform::linux_x64()).expect("emit node addon");
+        let facts = classify_machine_image(&bytes).expect("addon must be a parseable image");
+        assert_eq!(facts.kind, MachineImageKind::ElfShared, "Node 扩展是 ET_DYN");
         let haystack = String::from_utf8_lossy(&bytes);
         assert!(haystack.contains("napi_register_module_v1"), "必须导出 Node-API 注册函数");
         assert!(haystack.contains("napi_create_int64"), "残差 i64 必须按 `napi_create_int64` 装箱");
@@ -2052,23 +2052,23 @@ mod tests {
     /// 取实参、`napi_get_value_int64` 解析、`napi_create_int64` 装箱。
     #[test]
     fn node_addon_registers_a_method_table() {
-        let module = residual_with_method(NativeResidualFunction {
+        let module = residual_with_method(MachineResidualFunction {
             name: "add".into(),
             parameters: vec!["a".into(), "b".into()],
             ops: vec![
-                NativeResidualOp::Load("a".into()),
-                NativeResidualOp::Load("b".into()),
-                NativeResidualOp::Add,
-                NativeResidualOp::Ret,
+                MachineResidualOp::Load("a".into()),
+                MachineResidualOp::Load("b".into()),
+                MachineResidualOp::Add,
+                MachineResidualOp::Ret,
             ],
         });
-        let image = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativePlatform::linux_x64(), NativeHostModule::Node)).expect("lower node methods");
+        let image = lower_machine_residual_to_program(&module, X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Node)).expect("lower node methods");
         assert!(image.symbols.iter().any(|(name, _)| name == "__nyar_node_wrap_add"), "必须生成 Node 回调包装体");
         for symbol in ["napi_create_function", "napi_get_cb_info", "napi_get_value_int64", "napi_throw_type_error"] {
             assert!(image.elf_imports.iter().any(|import| import == symbol), "缺少方法原语导入 `{symbol}`");
         }
         assert!(image.data.windows(4).any(|window| window == b"add\0"), "方法名必须进入数据段");
-        let bytes = emit_native_node_addon(&module, NativePlatform::linux_x64()).expect("emit node methods addon");
+        let bytes = emit_machine_node_addon(&module, X64Platform::linux_x64()).expect("emit node methods addon");
         assert!(String::from_utf8_lossy(&bytes).contains("__nyar_node_wrap_add"));
     }
 
@@ -2076,12 +2076,12 @@ mod tests {
     #[test]
     fn linux_print_uses_the_write_syscall_without_host_imports() {
         let module = residual_main(vec![
-            NativeResidualOp::PushString("a".into()),
-            NativeResidualOp::Print(1),
-            NativeResidualOp::PushI64(0),
-            NativeResidualOp::Ret,
+            MachineResidualOp::PushString("a".into()),
+            MachineResidualOp::Print(1),
+            MachineResidualOp::PushI64(0),
+            MachineResidualOp::Ret,
         ]);
-        let image = lower_native_residual_to_program(&module, NativeProductTarget::Library(NativePlatform::linux_x64())).expect("lower linux print residual");
+        let image = lower_machine_residual_to_program(&module, X64ProductTarget::Library(X64Platform::linux_x64())).expect("lower linux print residual");
         assert!(image.imports.is_empty(), "Linux 产品不得声明 PE 导入");
         assert!(image.idata.is_empty(), "Linux 产品不得生成 `.idata`");
         assert!(
@@ -2094,9 +2094,9 @@ mod tests {
     /// `PyInit_<module>` / `__nyar_py_exec` 两个入口。
     #[test]
     fn python_extension_exposes_pyinit_and_module_def() {
-        let mut module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
+        let mut module = residual_main(vec![MachineResidualOp::PushI64(42), MachineResidualOp::Ret]);
         module.name = "demo".into();
-        let image = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativePlatform::linux_x64(), NativeHostModule::Python)).expect("lower python extension");
+        let image = lower_machine_residual_to_program(&module, X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Python)).expect("lower python extension");
         assert!(image.symbols.iter().any(|(name, _)| name == "PyInit_demo"), "必须导出 `PyInit_demo`");
         assert!(image.symbols.iter().any(|(name, _)| name == "__nyar_py_exec"), "必须导出多阶段执行钩子");
         assert!(
@@ -2113,7 +2113,7 @@ mod tests {
         // 模块名、`m_slots` 与槽位函数指针各一条自相对重定位。
         assert_eq!(image.data_relocations.len(), 3, "模块名 / m_slots / 槽位函数指针");
         assert!(image.data_references.iter().any(|(_, data_offset)| *data_offset == 0), "入口必须取 `PyModuleDef` 地址");
-        let bytes = emit_native_python_extension(&module, NativePlatform::linux_x64(), None).expect("emit python extension");
+        let bytes = emit_machine_python_extension(&module, X64Platform::linux_x64(), None).expect("emit python extension");
         let haystack = String::from_utf8_lossy(&bytes);
         assert!(haystack.contains("PyInit_demo"));
         assert!(haystack.contains("__nyar_py_exec"));
@@ -2121,14 +2121,14 @@ mod tests {
 
     #[test]
     fn python_extension_rejects_invalid_module_names() {
-        let mut module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
+        let mut module = residual_main(vec![MachineResidualOp::PushI64(42), MachineResidualOp::Ret]);
         module.name = "not-an-identifier".into();
-        let error = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativePlatform::linux_x64(), NativeHostModule::Python)).expect_err("非法模块名必须失败闭合");
+        let error = lower_machine_residual_to_program(&module, X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Python)).expect_err("非法模块名必须失败闭合");
         assert!(error.contains("C 标识符"), "unexpected error: {error}");
     }
 
-    fn residual_with_method(method: NativeResidualFunction) -> NativeResidualModule {
-        let mut module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
+    fn residual_with_method(method: MachineResidualFunction) -> MachineResidualModule {
+        let mut module = residual_main(vec![MachineResidualOp::PushI64(42), MachineResidualOp::Ret]);
         module.name = "demo".into();
         module.functions.push(method);
         module
@@ -2138,17 +2138,17 @@ mod tests {
     /// `PyArg_ParseTuple` 包装体，`ml_name` 指向数据段里 NUL 结尾的方法名。
     #[test]
     fn python_extension_builds_a_method_table() {
-        let module = residual_with_method(NativeResidualFunction {
+        let module = residual_with_method(MachineResidualFunction {
             name: "add".into(),
             parameters: vec!["a".into(), "b".into()],
             ops: vec![
-                NativeResidualOp::Load("a".into()),
-                NativeResidualOp::Load("b".into()),
-                NativeResidualOp::Add,
-                NativeResidualOp::Ret,
+                MachineResidualOp::Load("a".into()),
+                MachineResidualOp::Load("b".into()),
+                MachineResidualOp::Add,
+                MachineResidualOp::Ret,
             ],
         });
-        let image = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativePlatform::linux_x64(), NativeHostModule::Python)).expect("lower python methods");
+        let image = lower_machine_residual_to_program(&module, X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Python)).expect("lower python methods");
         assert!(image.symbols.iter().any(|(name, _)| name == "__nyar_py_wrap_add"), "必须生成方法包装体");
         assert!(image.elf_imports.iter().any(|symbol| symbol == "PyArg_ParseTuple"), "方法实参必须经宿主解析");
         assert!(image.elf_imports.iter().any(|symbol| symbol == "PyLong_FromLongLong"), "返回值必须 64 位装箱成 Python int");
@@ -2157,11 +2157,11 @@ mod tests {
         assert!(image.data.windows(6).any(|window| window == b"nn:add"), "格式串必须带方法名");
         // 编码器必须把命名函数解析成 `.text` 偏移；容器不应看到 `Function`。
         assert!(
-            image.data_relocations.iter().all(|(_, target)| matches!(target, NativeDataTarget::Text(_) | NativeDataTarget::Data(_))),
+            image.data_relocations.iter().all(|(_, target)| matches!(target, X64DataTarget::Text(_) | X64DataTarget::Data(_))),
             "命名函数重定位必须在编码阶段解析为节内偏移"
         );
         assert_eq!(image.data_relocations.len(), 6, "模块名 / m_methods / 方法名 / ml_meth / m_slots / 槽位函数指针");
-        let bytes = emit_native_python_extension(&module, NativePlatform::linux_x64(), None).expect("emit python methods extension");
+        let bytes = emit_machine_python_extension(&module, X64Platform::linux_x64(), None).expect("emit python methods extension");
         let haystack = String::from_utf8_lossy(&bytes);
         assert!(haystack.contains("__nyar_py_wrap_add"));
         assert!(haystack.contains("PyArg_ParseTuple"));
@@ -2169,12 +2169,12 @@ mod tests {
 
     #[test]
     fn python_methods_fail_closed_beyond_the_host_argument_window() {
-        let module = residual_with_method(NativeResidualFunction {
+        let module = residual_with_method(MachineResidualFunction {
             name: "many".into(),
             parameters: vec!["a".into(), "b".into(), "c".into(), "d".into(), "e".into()],
-            ops: vec![NativeResidualOp::Load("a".into()), NativeResidualOp::Ret],
+            ops: vec![MachineResidualOp::Load("a".into()), MachineResidualOp::Ret],
         });
-        let error = lower_native_residual_to_program(&module, NativeProductTarget::extension(NativePlatform::linux_x64(), NativeHostModule::Python)).expect_err("超出行参窗口必须失败闭合");
+        let error = lower_machine_residual_to_program(&module, X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Python)).expect_err("超出行参窗口必须失败闭合");
         assert!(error.contains("PyArg_ParseTuple"), "unexpected error: {error}");
         assert!(error.contains("many"), "错误必须指名方法: {error}");
     }
@@ -2182,20 +2182,20 @@ mod tests {
     /// 字符串返回的方法：镜像内描述符由宿主侧复制成原生字符串，不跨 CRT 释放。
     #[test]
     fn methods_can_return_static_strings() {
-        let module = residual_with_method(NativeResidualFunction {
+        let module = residual_with_method(MachineResidualFunction {
             name: "greet".into(),
             parameters: Vec::new(),
-            ops: vec![NativeResidualOp::PushString("hi".into()), NativeResidualOp::Ret],
+            ops: vec![MachineResidualOp::PushString("hi".into()), MachineResidualOp::Ret],
         });
-        let image = lower_native_residual_to_program(
+        let image = lower_machine_residual_to_program(
             &module,
-            NativeProductTarget::extension(NativePlatform::linux_x64(), NativeHostModule::Python),
+            X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Python),
         )
         .expect("字符串方法必须可暴露");
         assert!(image.elf_imports.iter().any(|symbol| symbol == "PyUnicode_FromStringAndSize"));
-        let node = lower_native_residual_to_program(
+        let node = lower_machine_residual_to_program(
             &module,
-            NativeProductTarget::extension(NativePlatform::linux_x64(), NativeHostModule::Node),
+            X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Node),
         )
         .expect("Node 也必须支持字符串方法");
         assert!(node.elf_imports.iter().any(|symbol| symbol == "napi_create_string_utf8"));
@@ -2205,47 +2205,47 @@ mod tests {
     /// CPython 方法在 Win64 上最多 2 个整数形参（Linux 为 4）。
     #[test]
     fn windows_python_method_window_is_two_parameters() {
-        let module = residual_with_method(NativeResidualFunction {
+        let module = residual_with_method(MachineResidualFunction {
             name: "three".into(),
             parameters: vec!["a".into(), "b".into(), "c".into()],
-            ops: vec![NativeResidualOp::Load("a".into()), NativeResidualOp::Ret],
+            ops: vec![MachineResidualOp::Load("a".into()), MachineResidualOp::Ret],
         });
-        let windows = NativeProductTarget::Extension {
-            platform: NativePlatform::windows_x64(),
-            module: NativeHostModule::Python,
+        let windows = X64ProductTarget::Extension {
+            platform: X64Platform::windows_x64(),
+            module: HostModule::Python,
             library: Some("python312.dll".into()),
         };
-        let error = lower_native_residual_to_program(&module, windows).expect_err("Win64 行参窗口更窄");
+        let error = lower_machine_residual_to_program(&module, windows).expect_err("Win64 行参窗口更窄");
         assert!(error.contains("three"), "unexpected error: {error}");
         assert!(error.contains("上限 2"), "错误必须说明该 OS 的窗口: {error}");
     }
 
     #[test]
     fn resolved_target_keeps_platform_and_contract() {
-        let resolver = nyar::TargetResolver::with_host(NativePlatform::linux_x64().canonical());
+        let resolver = nyar::TargetResolver::with_host(X64Platform::linux_x64().canonical());
         let resolved = resolver
-            .resolve_with_platform(nyar::TargetRequest::Node, NativePlatform::windows_x64().canonical())
+            .resolve_with_platform(nyar::TargetRequest::Node, X64Platform::windows_x64().canonical())
             .expect("node on windows resolves");
-        let target = NativeProductTarget::from_resolved(&resolved).expect("product target");
+        let target = X64ProductTarget::from_resolved(&resolved).expect("product target");
         assert!(target.is_windows(), "显式目标必须覆盖宿主平台");
-        assert_eq!(target.host_module(), Some(NativeHostModule::Node));
+        assert_eq!(target.host_module(), Some(HostModule::Node));
         assert_eq!(target.platform().canonical(), resolved.platform, "产物目标必须保留冻结的平台身份");
     }
 
     #[test]
     fn resolved_target_rejects_unimplemented_platform() {
-        let resolver = nyar::TargetResolver::with_host(NativePlatform::linux_x64().canonical());
+        let resolver = nyar::TargetResolver::with_host(X64Platform::linux_x64().canonical());
         let resolved = resolver.resolve_label("aarch64-apple-macos").expect("macos resolves as a platform");
-        let error = NativeProductTarget::from_resolved(&resolved).expect_err("macOS 容器尚未实现");
+        let error = X64ProductTarget::from_resolved(&resolved).expect_err("macOS 容器尚未实现");
         assert!(error.contains("尚不支持"), "unexpected error: {error}");
     }
 
     #[test]
     fn windows_python_extension_requires_the_host_library() {
-        let mut module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
+        let mut module = residual_main(vec![MachineResidualOp::PushI64(42), MachineResidualOp::Ret]);
         module.name = "demo".into();
-        let target = NativeProductTarget::extension(NativePlatform::windows_x64(), NativeHostModule::Python);
-        let error = lower_native_residual_to_program(&module, target).expect_err("缺 DLL 名必须失败闭合");
+        let target = X64ProductTarget::extension(X64Platform::windows_x64(), HostModule::Python);
+        let error = lower_machine_residual_to_program(&module, target).expect_err("缺 DLL 名必须失败闭合");
         assert!(error.contains("python312.dll"), "unexpected error: {error}");
     }
 }

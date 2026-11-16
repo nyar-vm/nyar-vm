@@ -1,14 +1,14 @@
 //! Futamura / partial-evaluation pipeline proofs.
 //!
 //! Host-script product path: specialize(interpret, program) → **native residual**
-//! → native lane 文本 LIR → 共享库 / 宿主扩展镜像（不是 OVM，也没有独立的固定答案
+//! → 机器码 lane 文本 LIR → 共享库 / 宿主扩展镜像（不是 OVM，也没有独立的固定答案
 //! exe 出口）。Languages without a compiled lane must fail closed.
 
 use std::collections::HashMap;
 
 use legend_vm::{
     GuestValueHandle, LegendVmRunner,
-    compiler::{ResidualValue, eval_native_residual, eval_native_residual_with_inputs, eval_native_residual_with_trace},
+    compiler::{ResidualValue, eval_machine_residual, eval_machine_residual_with_inputs, eval_machine_residual_with_trace},
     evaluator::lua_host_value,
 };
 use rusty_lua::LuaValue;
@@ -41,7 +41,7 @@ fn languages_without_a_compiled_lane_report_unsupported() {
 }
 
 #[test]
-fn lua_pe_specializes_to_native_residual() {
+fn lua_pe_specializes_to_machine_residual() {
     let runner = LegendVmRunner::new();
     let module = runner.compile_module("lua", "return 1", "ok").expect("lua compile_module");
     assert!(module.op_count() > 0);
@@ -49,7 +49,7 @@ fn lua_pe_specializes_to_native_residual() {
 }
 
 #[test]
-fn lua_pe_first_projection_arithmetic_matches_interpret_via_native_residual() {
+fn lua_pe_first_projection_arithmetic_matches_interpret_via_machine_residual() {
     let source = "local x = 1 + 2\nreturn x\n";
     assert_residual_matches_interpret(source, "3");
 }
@@ -68,13 +68,13 @@ fn lua_short_circuit_residual_preserves_operand_values() {
     for (source, expected) in cases {
         let runner = LegendVmRunner::new();
         let residual = runner.specialize_native("lua", source, "lua_pe").expect("specialize");
-        let evaluated = eval_native_residual(&residual).expect("eval native residual");
+        let evaluated = eval_machine_residual(&residual).expect("eval native residual");
         assert_eq!(evaluated, expected, "source: {source}");
     }
 }
 
 #[test]
-fn lua_pe_first_projection_control_flow_matches_interpret_via_native_residual() {
+fn lua_pe_first_projection_control_flow_matches_interpret_via_machine_residual() {
     let source = r#"
 local sum = 0
 for i = 1, 3 do
@@ -90,7 +90,7 @@ end
 }
 
 #[test]
-fn lua_pe_first_projection_function_and_concat_matches_interpret_via_native_residual() {
+fn lua_pe_first_projection_function_and_concat_matches_interpret_via_machine_residual() {
     let source = r#"
 function add(x, y)
   return x + y
@@ -180,7 +180,7 @@ fn lua_pe_effect_order_matches_interpret() {
         let residual = LegendVmRunner::new().specialize_native("lua", source, "lua_pe").expect("specialize");
         let mut inputs: HashMap<String, ResidualValue> = HashMap::new();
         inputs.insert("flag".to_string(), ResidualValue::Bool(true));
-        let (specialized, trace) = eval_native_residual_with_trace(&residual, &inputs).expect("eval native residual");
+        let (specialized, trace) = eval_machine_residual_with_trace(&residual, &inputs).expect("eval native residual");
 
         assert_eq!(trace, recorded.prints, "source: {source}");
         assert_eq!(specialized.to_key(), interpreted.to_string_value(), "source: {source}");
@@ -222,7 +222,7 @@ fn assert_residual_matches_interpret(source: &str, expected: &str) {
     let mut env = HashMap::new();
     let interpreted = runner.run("lua", source, &mut env).expect("interpret");
     let residual = runner.specialize_native("lua", source, "lua_pe").expect("specialize → native");
-    let specialized = eval_native_residual(&residual).expect("eval native residual");
+    let specialized = eval_machine_residual(&residual).expect("eval native residual");
     assert_eq!(specialized.to_key(), legacy_key(&interpreted), "residual={specialized:?} interpret={interpreted}");
     assert_eq!(specialized.to_key(), expected, "source: {source}; residual={specialized:?}");
 }
@@ -244,7 +244,7 @@ fn assert_unknown_input_matches_interpret(
 
     let residual_inputs: HashMap<String, ResidualValue> =
         inputs.iter().map(|(name, value)| (name.to_string(), residual_input_value(value))).collect();
-    let specialized = eval_native_residual_with_inputs(&residual, &residual_inputs).expect("eval native residual");
+    let specialized = eval_machine_residual_with_inputs(&residual, &residual_inputs).expect("eval native residual");
     assert!(residual_ok(&specialized), "residual result unexpected: {specialized:?}; interpret={interpreted}");
     assert_eq!(specialized.to_key(), interpreted.to_string(), "residual={specialized:?} interpret={interpreted}");
 }
@@ -272,7 +272,7 @@ mod exported_abi {
     use std::collections::HashMap;
     use std::path::PathBuf;
 
-    use legend_vm::compiler::{ResidualValue, emit_native_pe_library, eval_native_residual_with_inputs};
+    use legend_vm::compiler::{ResidualValue, emit_machine_pe_library, eval_machine_residual_with_inputs};
 
     unsafe extern "system" {
         fn LoadLibraryA(name: *const u8) -> *mut core::ffi::c_void;
@@ -336,10 +336,10 @@ mod exported_abi {
         }
     }
 
-    fn evaluate(module: &legend_vm::compiler::NativeResidualModule, arguments: &[&str]) -> i64 {
+    fn evaluate(module: &legend_vm::compiler::MachineResidualModule, arguments: &[&str]) -> i64 {
         let inputs: HashMap<String, ResidualValue> =
             arguments.iter().enumerate().map(|(index, name)| ((*name).to_string(), ResidualValue::Int(index as i64 + 1))).collect();
-        match eval_native_residual_with_inputs(module, &inputs).expect("eval residual") {
+        match eval_machine_residual_with_inputs(module, &inputs).expect("eval residual") {
             ResidualValue::Int(value) => value,
             other => panic!("expected integer residual result, got {other:?}"),
         }
@@ -348,12 +348,12 @@ mod exported_abi {
     fn assert_exported_matches_evaluator(source: &str, cases: &[(&[i64], &[(&str, i64)])], tag: &str) {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", source, "lua_pe").expect("specialize");
-        let dll = emit_native_pe_library(&residual).expect("emit residual dll");
+        let dll = emit_machine_pe_library(&residual).expect("emit residual dll");
         let library = load(&dll, tag);
         for (arguments, inputs) in cases {
             let inputs: HashMap<String, ResidualValue> =
                 inputs.iter().map(|(name, value)| ((*name).to_string(), ResidualValue::Int(*value))).collect();
-            let expected = match eval_native_residual_with_inputs(&residual, &inputs).expect("eval residual") {
+            let expected = match eval_machine_residual_with_inputs(&residual, &inputs).expect("eval residual") {
                 ResidualValue::Int(value) => value,
                 other => panic!("expected integer residual result, got {other:?}"),
             };
@@ -392,7 +392,7 @@ mod exported_abi {
     fn exported_residual_returns_static_string_descriptors() {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", "return \"hello\"\n", "lua_pe").expect("specialize");
-        let dll = emit_native_pe_library(&residual).expect("emit residual dll");
+        let dll = emit_machine_pe_library(&residual).expect("emit residual dll");
         let library = load(&dll, "string");
         let descriptor = call(library.module, "main", &[]);
         assert_eq!(read_descriptor(descriptor), "hello");
@@ -403,7 +403,7 @@ mod exported_abi {
         let runner = legend_vm::LegendVmRunner::new();
         let residual =
             runner.specialize_native("lua", "if x > 0 then return \"pos\" else return \"neg\" end\n", "lua_pe").expect("specialize");
-        let dll = emit_native_pe_library(&residual).expect("emit residual dll");
+        let dll = emit_machine_pe_library(&residual).expect("emit residual dll");
         let library = load(&dll, "string-branch");
         assert_eq!(read_descriptor(call(library.module, "main", &[1])), "pos");
         assert_eq!(read_descriptor(call(library.module, "main", &[-1])), "neg");
@@ -429,7 +429,7 @@ mod exported_abi {
 
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", "print(\"a\")\nprint(\"b\")\nreturn 0\n", "lua_pe").expect("specialize");
-        let dll = emit_native_pe_library(&residual).expect("emit residual dll");
+        let dll = emit_machine_pe_library(&residual).expect("emit residual dll");
         let library = load(&dll, "print");
         {
             let file = std::fs::File::create(&path).expect("create capture file");
@@ -440,7 +440,7 @@ mod exported_abi {
         assert_eq!(observed, "a\nb\n", "print order must reach the host sink");
 
         let residual = runner.specialize_native("lua", "print(\"a\", \"b\")\nreturn 0\n", "lua_pe").expect("specialize");
-        let dll = emit_native_pe_library(&residual).expect("emit residual dll");
+        let dll = emit_machine_pe_library(&residual).expect("emit residual dll");
         let library = load(&dll, "print-tab");
         {
             let file = std::fs::File::create(&path).expect("create capture file");
@@ -463,7 +463,7 @@ mod exported_abi {
         let runner = legend_vm::LegendVmRunner::new();
         let source = "print(42)\nprint(-7, true, false)\nprint()\nprint(nil)\nreturn 0\n";
         let residual = runner.specialize_native("lua", source, "lua_pe").expect("specialize");
-        let dll = emit_native_pe_library(&residual).expect("emit residual dll");
+        let dll = emit_machine_pe_library(&residual).expect("emit residual dll");
         let library = load(&dll, "format");
         {
             let file = std::fs::File::create(&path).expect("create capture file");
@@ -486,7 +486,7 @@ mod exported_abi {
         let source = "function add(a, b)\n  return a + b\nend\nfunction show(v)\n  print(v)\n  return v\nend\nprint(add(2, 3))\nshow(9)\nreturn 0\n";
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", source, "lua_pe").expect("specialize");
-        let dll = emit_native_pe_library(&residual).expect("emit residual dll");
+        let dll = emit_machine_pe_library(&residual).expect("emit residual dll");
         let library = load(&dll, "print-nested");
         {
             let file = std::fs::File::create(&path).expect("create capture file");
@@ -512,7 +512,7 @@ mod exported_abi {
             ("return \"a\" .. \"b\"\n", "entry-reset text arena contract"),
         ] {
             let residual = runner.specialize_native("lua", source, "lua_pe").expect("specialize");
-            let error = emit_native_pe_library(&residual).expect_err("unsupported residual must fail closed");
+            let error = emit_machine_pe_library(&residual).expect_err("unsupported residual must fail closed");
             assert!(error.contains(needle), "source: {source}; unexpected error: {error}");
         }
     }
@@ -534,7 +534,7 @@ mod exported_elf_abi {
     use std::os::unix::io::AsRawFd;
     use std::path::PathBuf;
 
-    use legend_vm::compiler::{ResidualValue, emit_native_elf_library, eval_native_residual_with_inputs};
+    use legend_vm::compiler::{ResidualValue, emit_machine_elf_library, eval_machine_residual_with_inputs};
 
     unsafe extern "C" {
         fn dlopen(filename: *const i8, flag: i32) -> *mut core::ffi::c_void;
@@ -621,12 +621,12 @@ mod exported_elf_abi {
     fn assert_exported_matches_evaluator(source: &str, cases: &[(&[i64], &[(&str, i64)])], tag: &str) {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", source, "lua_elf").expect("specialize");
-        let shared = emit_native_elf_library(&residual).expect("emit residual .so");
+        let shared = emit_machine_elf_library(&residual).expect("emit residual .so");
         let library = load(&shared, tag);
         for (arguments, inputs) in cases {
             let inputs: HashMap<String, ResidualValue> =
                 inputs.iter().map(|(name, value)| ((*name).to_string(), ResidualValue::Int(*value))).collect();
-            let expected = match eval_native_residual_with_inputs(&residual, &inputs).expect("eval residual") {
+            let expected = match eval_machine_residual_with_inputs(&residual, &inputs).expect("eval residual") {
                 ResidualValue::Int(value) => value,
                 other => panic!("expected integer residual result, got {other:?}"),
             };
@@ -662,7 +662,7 @@ mod exported_elf_abi {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", "if x > 0 then return \"pos\" else return \"neg\" end\n", "lua_elf")
             .expect("specialize");
-        let shared = emit_native_elf_library(&residual).expect("emit residual .so");
+        let shared = emit_machine_elf_library(&residual).expect("emit residual .so");
         let library = load(&shared, "elf-string");
         assert_eq!(read_descriptor(call(library.module, "main", &[1])), "pos");
         assert_eq!(read_descriptor(call(library.module, "main", &[-1])), "neg");
@@ -697,7 +697,7 @@ mod exported_elf_abi {
             ),
         ] {
             let residual = runner.specialize_native("lua", source, "lua_elf").expect("specialize");
-            let shared = emit_native_elf_library(&residual).expect("emit residual .so");
+            let shared = emit_machine_elf_library(&residual).expect("emit residual .so");
             let library = load(&shared, "elf-print");
             {
                 let file = std::fs::File::create(&path).expect("create capture file");
@@ -717,7 +717,7 @@ mod exported_elf_abi {
         let runner = legend_vm::LegendVmRunner::new();
         for (source, needle) in [("local t = { 1 }\nreturn t[1]\n", "TableNew"), ("return x / y\n", "Div")] {
             let residual = runner.specialize_native("lua", source, "lua_elf").expect("specialize");
-            let error = emit_native_elf_library(&residual).expect_err("unsupported residual must fail closed");
+            let error = emit_machine_elf_library(&residual).expect_err("unsupported residual must fail closed");
             assert!(error.contains(needle), "source: {source}; unexpected error: {error}");
         }
     }
@@ -726,12 +726,12 @@ mod exported_elf_abi {
 /// Node-API `.node` lane：Node 的 Node-API 装载器 `require()` 产物并取回残差值。
 #[cfg(target_os = "linux")]
 mod node_addon_abi {
-    use legend_vm::compiler::{NativePlatform, emit_native_node_addon};
+    use legend_vm::compiler::{X64Platform, emit_machine_node_addon};
 
     fn addon(source: &str, tag: &str) -> std::path::PathBuf {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", source, "lua_node").expect("specialize");
-        let bytes = emit_native_node_addon(&residual, NativePlatform::linux_x64()).expect("emit node addon");
+        let bytes = emit_machine_node_addon(&residual, X64Platform::linux_x64()).expect("emit node addon");
         let path = std::env::temp_dir().join(format!("legend-addon-{tag}-{}.node", std::process::id()));
         std::fs::write(&path, bytes).expect("write addon");
         path
@@ -792,7 +792,7 @@ mod node_addon_abi {
     fn node_addon_rejects_non_integer_results() {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", "return \"text\"\n", "lua_node").expect("specialize");
-        let error = emit_native_node_addon(&residual, NativePlatform::linux_x64()).expect_err("字符串结果必须失败闭合");
+        let error = emit_machine_node_addon(&residual, X64Platform::linux_x64()).expect_err("字符串结果必须失败闭合");
         assert!(error.contains("Node"), "unexpected error: {error}");
     }
 }
@@ -800,7 +800,7 @@ mod node_addon_abi {
 /// CPython 扩展模块 lane：CPython 的导入器 `import` 产物并读取模块常量。
 #[cfg(target_os = "linux")]
 mod python_extension_abi {
-    use legend_vm::compiler::{NativePlatform, emit_native_python_extension};
+    use legend_vm::compiler::{X64Platform, emit_machine_python_extension};
 
     const MODULE_NAME: &str = "demo";
 
@@ -813,7 +813,7 @@ mod python_extension_abi {
     fn extension_dir_with_dependency(source: &str, tag: &str, dependency: Option<&str>) -> std::path::PathBuf {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", source, MODULE_NAME).expect("specialize");
-        let bytes = emit_native_python_extension(&residual, NativePlatform::linux_x64(), dependency).expect("emit python extension");
+        let bytes = emit_machine_python_extension(&residual, X64Platform::linux_x64(), dependency).expect("emit python extension");
         let dir = std::env::temp_dir().join(format!("legend-python-{tag}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("create module dir");
         std::fs::write(dir.join(format!("{MODULE_NAME}.so")), bytes).expect("write extension");
@@ -960,7 +960,7 @@ mod python_extension_abi {
     fn python_extension_rejects_non_integer_results() {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", "return \"text\"\n", MODULE_NAME).expect("specialize");
-        let error = emit_native_python_extension(&residual, NativePlatform::linux_x64(), None).expect_err("字符串结果必须失败闭合");
+        let error = emit_machine_python_extension(&residual, X64Platform::linux_x64(), None).expect_err("字符串结果必须失败闭合");
         assert!(error.contains("CPython"), "unexpected error: {error}");
     }
 }
@@ -968,7 +968,7 @@ mod python_extension_abi {
 /// Windows 宿主扩展 lane：`.pyd` / `.node` 都是带 `.data` 与基址重定位的 `PE32+` DLL。
 #[cfg(windows)]
 mod windows_extension_abi {
-    use legend_vm::compiler::{NativePlatform, emit_native_node_addon, emit_native_python_extension};
+    use legend_vm::compiler::{X64Platform, emit_machine_node_addon, emit_machine_python_extension};
 
     const MODULE_NAME: &str = "demo";
 
@@ -1018,7 +1018,7 @@ mod windows_extension_abi {
             )
             .expect("specialize");
         let library = python_library();
-        let bytes = emit_native_python_extension(&residual, NativePlatform::windows_x64(), Some(&library)).expect("emit pyd");
+        let bytes = emit_machine_python_extension(&residual, X64Platform::windows_x64(), Some(&library)).expect("emit pyd");
         std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
         assert_eq!(
             run_python(&dir, "print(demo.value)\nprint(demo.add(2, 3))\nprint(demo.greet())"),
@@ -1042,7 +1042,7 @@ mod windows_extension_abi {
             )
             .expect("specialize");
         let library = python_library();
-        let bytes = emit_native_python_extension(&residual, NativePlatform::windows_x64(), Some(&library)).expect("emit pyd");
+        let bytes = emit_machine_python_extension(&residual, X64Platform::windows_x64(), Some(&library)).expect("emit pyd");
         std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
         assert_eq!(
             run_python(&dir, "print(demo.value)\nprint(demo.big())\nprint(demo.below())"),
@@ -1058,7 +1058,7 @@ mod windows_extension_abi {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", "print(\"hello\")\nreturn 7\n", MODULE_NAME).expect("specialize");
         let library = python_library();
-        let bytes = emit_native_python_extension(&residual, NativePlatform::windows_x64(), Some(&library)).expect("emit pyd");
+        let bytes = emit_machine_python_extension(&residual, X64Platform::windows_x64(), Some(&library)).expect("emit pyd");
         std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
         assert_eq!(run_python(&dir, "print(demo.value)"), "hello\n7", "Windows effect 必须写入真实 stdout");
         let _ = std::fs::remove_dir_all(&dir);
@@ -1072,7 +1072,7 @@ mod windows_extension_abi {
             .specialize_native("lua", "function join()\n  return \"a\" .. \"b\"\nend\nreturn 42\n", MODULE_NAME)
             .expect("specialize");
         let library = python_library();
-        let bytes = emit_native_python_extension(&residual, NativePlatform::windows_x64(), Some(&library)).expect("emit pyd");
+        let bytes = emit_machine_python_extension(&residual, X64Platform::windows_x64(), Some(&library)).expect("emit pyd");
         std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
         // 两次调用验证入口重置 arena：第二次结果不能叠加第一次的分配。
         assert_eq!(run_python(&dir, "print(demo.join())\nprint(demo.join())"), "ab\nab", "运行期拼接必须由镜像 arena 承载");
@@ -1086,7 +1086,7 @@ mod windows_extension_abi {
         let source = "function grow()\n  local s = \"\"\n  for i = 1, 3 do\n    s = s .. \"x\"\n  end\n  return s\nend\nreturn 42\n";
         let residual = runner.specialize_native("lua", source, MODULE_NAME).expect("specialize");
         let library = python_library();
-        let bytes = emit_native_python_extension(&residual, NativePlatform::windows_x64(), Some(&library)).expect("emit pyd");
+        let bytes = emit_machine_python_extension(&residual, X64Platform::windows_x64(), Some(&library)).expect("emit pyd");
         std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
         assert_eq!(run_python(&dir, "print(demo.grow())"), "xxx", "循环内逐步拼接必须共享同一次调用的 arena");
         let _ = std::fs::remove_dir_all(&dir);
@@ -1100,7 +1100,7 @@ mod windows_extension_abi {
         let source = "function sum()\n  local total = 0\n  for i = 1, 3 do\n    total = total + i\n  end\n  return total\nend\nreturn 42\n";
         let residual = runner.specialize_native("lua", source, MODULE_NAME).expect("specialize");
         let library = python_library();
-        let bytes = emit_native_python_extension(&residual, NativePlatform::windows_x64(), Some(&library)).expect("emit pyd");
+        let bytes = emit_machine_python_extension(&residual, X64Platform::windows_x64(), Some(&library)).expect("emit pyd");
         std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
         assert_eq!(run_python(&dir, "print(demo.sum())"), "6", "循环回边必须读到上一轮的变量值");
         let _ = std::fs::remove_dir_all(&dir);
@@ -1114,7 +1114,7 @@ mod windows_extension_abi {
         let source = "function equal()\n  return (\"a\" .. \"b\") == \"ab\"\nend\nfunction less()\n  return (\"ab\" .. \"c\") < \"abd\"\nend\nfunction longer()\n  return (\"ab\" .. \"c\") < \"ab\"\nend\nreturn 42\n";
         let residual = runner.specialize_native("lua", source, MODULE_NAME).expect("specialize");
         let library = python_library();
-        let bytes = emit_native_python_extension(&residual, NativePlatform::windows_x64(), Some(&library)).expect("emit pyd");
+        let bytes = emit_machine_python_extension(&residual, X64Platform::windows_x64(), Some(&library)).expect("emit pyd");
         std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
         // 布尔按宿主原生 `bool` 跨越边界（`PyBool_FromLong`），不再被压成 1/0。
         assert_eq!(run_python(&dir, "print(demo.equal()); print(demo.less()); print(demo.longer())"), "True\nTrue\nFalse", "字符串比较必须按内容字节序");
@@ -1127,7 +1127,7 @@ mod windows_extension_abi {
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", "print(\"a\" .. \"b\")\nreturn 7\n", MODULE_NAME).expect("specialize");
         let library = python_library();
-        let bytes = emit_native_python_extension(&residual, NativePlatform::windows_x64(), Some(&library)).expect("emit pyd");
+        let bytes = emit_machine_python_extension(&residual, X64Platform::windows_x64(), Some(&library)).expect("emit pyd");
         std::fs::write(dir.join(format!("{MODULE_NAME}.pyd")), bytes).expect("write pyd");
         assert_eq!(run_python(&dir, "print(demo.value)"), "ab\n7", "动态字符串必须按 guest 顺序写入 stdout");
         let _ = std::fs::remove_dir_all(&dir);
@@ -1144,7 +1144,7 @@ mod windows_extension_abi {
                 MODULE_NAME,
             )
             .expect("specialize");
-        let bytes = emit_native_node_addon(&residual, NativePlatform::windows_x64()).expect("emit node dll");
+        let bytes = emit_machine_node_addon(&residual, X64Platform::windows_x64()).expect("emit node dll");
         let path = dir.join("addon.node");
         std::fs::write(&path, bytes).expect("write .node");
         let script = format!("const m = require(String.raw`{}`); console.log(m.join()); console.log(m.join());", path.display());
@@ -1157,7 +1157,7 @@ mod windows_extension_abi {
         let dir = extension_dir("node-concat-print");
         let runner = legend_vm::LegendVmRunner::new();
         let residual = runner.specialize_native("lua", "print(\"a\" .. \"b\")\nreturn 7\n", MODULE_NAME).expect("specialize");
-        let bytes = emit_native_node_addon(&residual, NativePlatform::windows_x64()).expect("emit node dll");
+        let bytes = emit_machine_node_addon(&residual, X64Platform::windows_x64()).expect("emit node dll");
         let path = dir.join("addon.node");
         std::fs::write(&path, bytes).expect("write .node");
         let script = format!("require(String.raw`{}`);", path.display());
@@ -1176,7 +1176,7 @@ mod windows_extension_abi {
                 MODULE_NAME,
             )
             .expect("specialize");
-        let bytes = emit_native_node_addon(&residual, NativePlatform::windows_x64()).expect("emit node dll");
+        let bytes = emit_machine_node_addon(&residual, X64Platform::windows_x64()).expect("emit node dll");
         let path = dir.join("addon.node");
         std::fs::write(&path, bytes).expect("write .node");
         let script = format!(

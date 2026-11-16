@@ -5,7 +5,7 @@ use std::{collections::HashMap, path::Path};
 use miette::{Result, miette};
 
 use crate::{
-    compiler::NativeResidualModule,
+    compiler::MachineResidualModule,
     evaluator::{evaluate_bash_script, evaluate_c_script, evaluate_lua_script, evaluate_powershell_script, evaluate_tcl_script},
     guest::{FnGuestInterpret, GuestEnv, GuestInterpretFn, GuestValueHandle},
 };
@@ -84,7 +84,7 @@ impl LegendVmRunner {
     /// Host-script languages: Futamura specialize → native residual → PE/ELF.
     /// Languages without a compiled lane (currently JS / Python) report that
     /// compilation is unsupported instead of returning a stub artifact.
-    pub fn compile_module(&self, language: &str, source: &str, module_name: &str) -> Result<NativeResidualModule> {
+    pub fn compile_module(&self, language: &str, source: &str, module_name: &str) -> Result<MachineResidualModule> {
         let language = language.to_ascii_lowercase();
         match language.as_str() {
             "lua" | "bash" | "sh" | "powershell" | "ps1" | "pwsh" | "tcl" | "c" => {
@@ -98,7 +98,7 @@ impl LegendVmRunner {
     }
 
     /// Specialize a host-script language into a native-bound residual module.
-    pub fn specialize_native(&self, language: &str, source: &str, module_name: &str) -> Result<NativeResidualModule> {
+    pub fn specialize_native(&self, language: &str, source: &str, module_name: &str) -> Result<MachineResidualModule> {
         self.compile_module(language, source, module_name)
     }
 

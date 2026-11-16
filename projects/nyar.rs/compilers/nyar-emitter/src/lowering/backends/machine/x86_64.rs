@@ -1,6 +1,6 @@
 //! x86-64 正式 lane 降低：计划事实 → 文本 LIR → 唯一程序装配器 → 容器。
 //!
-//! 本文件是 **x86-64 ISA 后端**，由 [`super::lower_fragment_to_native_image`] 按
+//! 本文件是 **x86-64 ISA 后端**，由 [`super::lower_fragment_to_machine_image`] 按
 //! 规范目标四元组分派进入；这里不判断「native」形态，只实现四元组确定的编码、
 //! 调用约定与容器：
 //!
@@ -11,7 +11,7 @@
 //!   `exit(2)` 结束进程。
 //!
 //! exe、共享库与宿主扩展复用同一条执行链：降低器把冻结的计划事实转成
-//! [`NativeTextProgramFunction`]（文本 LIR），[`super::x64_program`] 的唯一程序
+//! [`X64ProgramFunction`]（文本 LIR），[`super::x64_program`] 的唯一程序
 //! 装配器负责帧序言、符号布局、`rel32` 回填与导入/数据装配，字节图元只在
 //! [`super::x64_lir`] 一处实现。本文件不再维护第二套函数级编码器。
 //!
@@ -30,7 +30,7 @@ use crate::{
     },
     contracts::{Constant, InstructionKind, Operand, Terminator},
     lowering::shared::executable::{collect_reachable_blocks, slots::ExecutableSlotPlan},
-    nyar_backend_native::{NativeExecutableKind, classify_native_image},
+    nyar_backend_machine::{MachineImageKind, classify_machine_image},
     target_operator::{TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
     transitional::binary::pe::{NativePeImage, NativePeWriter},
 };
@@ -39,7 +39,7 @@ use nyar_types::ItemInstanceId;
 
 use acorn_pe::elf::{NativeElfImage, NativeElfWriter};
 
-use super::{NativeAbi, NativeLoweredFragment, NativeTextInstruction, NativeTextProgramFunction, encode_native_text_program, x64_lir};
+use super::{X64CallConv, X64LoweredProgram, X64TextInstruction, X64ProgramFunction, encode_x64_program, x64_lir};
 
 /// 已冻结的 x86-64 operator 编码。
 ///
@@ -184,14 +184,14 @@ impl X86_64OperatorCode {
 ///
 /// 容器选择来自规范目标的 `os`，不由 `arch` 推断。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum NativeContainer {
+enum ContainerKind {
     /// Windows `PE32+`：loader 通过 `call` 进入入口，`rax` 作为退出码。
     Pe,
     /// Linux `ELF64 ET_EXEC`：内核直接 `jmp` 到入口，过程末尾必须以 `exit(2)` 结束。
     Elf,
 }
 
-impl NativeContainer {
+impl ContainerKind {
     fn name(self) -> &'static str {
         match self {
             Self::Pe => "PE",
@@ -201,21 +201,21 @@ impl NativeContainer {
 }
 
 /// 把 `x86_64-pc-windows-msvc` 片段降低为 `PE32+` 可执行文件。
-pub(crate) fn lower_x86_64_windows_pe(submission: &FragmentSubmission) -> Result<NativeLoweredFragment> {
-    lower_x86_64(submission, NativeAbi::Win64, NativeContainer::Pe)
+pub(crate) fn lower_x86_64_windows_pe(submission: &FragmentSubmission) -> Result<X64LoweredProgram> {
+    lower_x86_64(submission, X64CallConv::Win64, ContainerKind::Pe)
 }
 
 /// 把 `x86_64-unknown-linux-gnu` 片段降低为 `ELF64 ET_EXEC` 可执行文件。
-pub(crate) fn lower_x86_64_linux_elf(submission: &FragmentSubmission) -> Result<NativeLoweredFragment> {
-    lower_x86_64(submission, NativeAbi::SystemV64, NativeContainer::Elf)
+pub(crate) fn lower_x86_64_linux_elf(submission: &FragmentSubmission) -> Result<X64LoweredProgram> {
+    lower_x86_64(submission, X64CallConv::SystemV64, ContainerKind::Elf)
 }
 
 /// 共享的 x86-64 降低流程：计划事实 → 文本 LIR → 唯一程序装配器 → 指定容器。
 ///
 /// 调用约定与容器都由调用方按规范目标显式给出；本函数不按 `arch` 猜 `os`/`abi`。
-fn lower_x86_64(submission: &FragmentSubmission, abi: NativeAbi, container: NativeContainer) -> Result<NativeLoweredFragment> {
+fn lower_x86_64(submission: &FragmentSubmission, abi: X64CallConv, container: ContainerKind) -> Result<X64LoweredProgram> {
     let plan = &submission.backend_plan;
-    let reachable = collect_native_functions(submission);
+    let reachable = collect_reachable_functions(submission);
     if reachable.is_empty() {
         return Err(format!(
             "x86_64 lowering 没有可达函数：片段既无导出也无入口操作，拒绝凭空生成 {}",
@@ -238,7 +238,7 @@ fn lower_x86_64(submission: &FragmentSubmission, abi: NativeAbi, container: Nati
     }
 
     // 唯一程序装配器：帧、符号布局、`rel32` 回填与导入/数据装配不再各写一遍。
-    let image = encode_native_text_program(&functions, abi)?;
+    let image = encode_x64_program(&functions, abi)?;
     let entry_name = names.get(&entry).expect("入口实例在可达函数符号表内").clone();
     let entry_function = u32::try_from(
         image
@@ -251,7 +251,7 @@ fn lower_x86_64(submission: &FragmentSubmission, abi: NativeAbi, container: Nati
     .map_err(|_| "x86_64 lowering：入口偏移超出 `u32`".to_string())?;
 
     let (executable, entry_offset, text_len) = match container {
-        NativeContainer::Pe => {
+        ContainerKind::Pe => {
             let text_len = image.text.len();
             let executable = NativePeWriter::write_executable(&NativePeImage {
                 text: image.text,
@@ -266,7 +266,7 @@ fn lower_x86_64(submission: &FragmentSubmission, abi: NativeAbi, container: Nati
             .map_err(|error| format!("x86_64 `PE` 编码失败：{error}"))?;
             (executable, entry_function, text_len)
         }
-        NativeContainer::Elf => {
+        ContainerKind::Elf => {
             let (text, entry_point) = append_elf_entry_exit_stub(image.text, entry_function as usize)?;
             let text_len = text.len();
             let executable = NativeElfWriter::write_executable(&NativeElfImage { text, rodata: Vec::new(), entry_point })
@@ -276,10 +276,10 @@ fn lower_x86_64(submission: &FragmentSubmission, abi: NativeAbi, container: Nati
     };
 
     // 自检：产物必须是 AMD64 可执行镜像，且容器与规范目标一致。
-    let facts = classify_native_image(&executable).map_err(|error| format!("x86_64 产物自检失败：{error}"))?;
+    let facts = classify_machine_image(&executable).map_err(|error| format!("x86_64 产物自检失败：{error}"))?;
     let (expected_kind, expected_arch) = match container {
-        NativeContainer::Pe => (NativeExecutableKind::Pe, BinaryArch::X64),
-        NativeContainer::Elf => (NativeExecutableKind::Elf, BinaryArch::X64),
+        ContainerKind::Pe => (MachineImageKind::Pe, BinaryArch::X64),
+        ContainerKind::Elf => (MachineImageKind::Elf, BinaryArch::X64),
     };
     if facts.kind != expected_kind || facts.arch != expected_arch || facts.shared {
         return Err(format!(
@@ -288,7 +288,7 @@ fn lower_x86_64(submission: &FragmentSubmission, abi: NativeAbi, container: Nati
         ));
     }
 
-    Ok(NativeLoweredFragment { executable, entry_offset, text_len })
+    Ok(X64LoweredProgram { executable, entry_offset, text_len })
 }
 
 /// exe 镜像内的符号名：实例身份是唯一权威，名字不参与语义，也不跨产物复用。
@@ -317,7 +317,7 @@ fn append_elf_entry_exit_stub(mut text: Vec<u8>, entry_function: usize) -> Resul
 ///
 /// 两个容器都以 `rax` 作为进程退出码（PE loader 读取返回值，ELF 入口桩把它传给
 /// `exit`）；loader 不提供有意义的形参，因此入口只接受可直接作为退出码的标量返回。
-fn validate_entry(function: &MirFunction, container: NativeContainer) -> Result<()> {
+fn validate_entry(function: &MirFunction, container: ContainerKind) -> Result<()> {
     let entry_block = function
         .blocks
         .get(function.entry.0 as usize)
@@ -342,7 +342,7 @@ fn validate_entry(function: &MirFunction, container: NativeContainer) -> Result<
 }
 
 /// 收集可达函数（导出面 + 入口 + 同片段调用闭包），按实例身份升序稳定输出。
-pub(super) fn collect_native_functions(submission: &FragmentSubmission) -> Vec<ItemInstanceId> {
+pub(super) fn collect_reachable_functions(submission: &FragmentSubmission) -> Vec<ItemInstanceId> {
     let plan = &submission.backend_plan;
     let mut roots = BTreeSet::new();
     roots.extend(plan.export_names().keys().copied());
@@ -388,8 +388,8 @@ pub(super) fn lower_function_to_text_program(
     function: &MirFunction,
     reachable: &[ItemInstanceId],
     names: &BTreeMap<ItemInstanceId, String>,
-    abi: NativeAbi,
-) -> Result<NativeTextProgramFunction> {
+    abi: X64CallConv,
+) -> Result<X64ProgramFunction> {
     let slots = ExecutableSlotPlan::plan_nyar(function);
     let local_count = u16::try_from(slots.local_types.len()).map_err(|_| "x86_64 lowering：局部槽数量超出 `u16`".to_string())?;
     let mut lowerer = FunctionLowerer { submission, function, slots, reachable, names, abi, local_count, temps_used: 0, instructions: Vec::new() };
@@ -411,7 +411,7 @@ pub(super) fn lower_function_to_text_program(
 
     let temps = u16::try_from(lowerer.temps_used).map_err(|_| "x86_64 lowering：临时槽数量超出 `u16`".to_string())?;
     let slot_count = local_count.checked_add(temps).ok_or_else(|| "x86_64 lowering：帧槽数量溢出".to_string())?;
-    Ok(NativeTextProgramFunction {
+    Ok(X64ProgramFunction {
         name: names.get(instance).expect("可达操作有符号名").clone(),
         slot_count,
         instructions: lowerer.instructions,
@@ -427,16 +427,16 @@ struct FunctionLowerer<'a> {
     /// 实例 → 镜像符号名。
     names: &'a BTreeMap<ItemInstanceId, String>,
     /// 由规范目标 `os`/`abi` 冻结的调用约定。
-    abi: NativeAbi,
+    abi: X64CallConv,
     /// 局部槽数量；临时槽从该编号起分配。
     local_count: u16,
     /// 本函数同时需要的最大临时槽数。
     temps_used: usize,
-    instructions: Vec<NativeTextInstruction>,
+    instructions: Vec<X64TextInstruction>,
 }
 
 impl FunctionLowerer<'_> {
-    fn push(&mut self, instruction: NativeTextInstruction) {
+    fn push(&mut self, instruction: X64TextInstruction) {
         self.instructions.push(instruction);
     }
 
@@ -488,13 +488,13 @@ impl FunctionLowerer<'_> {
             {
                 return Err(format!("x86_64 lowering：函数 `{}` 的形参类型 `{ty}` 没有 x86_64 标量载体", self.function.symbol));
             }
-            self.push(NativeTextInstruction::LoadParam { index: index as u8, slot: local });
+            self.push(X64TextInstruction::LoadParam { index: index as u8, slot: local });
         }
         Ok(())
     }
 
     fn lower_block(&mut self, block: &MirBlock) -> Result<()> {
-        self.push(NativeTextInstruction::Label(block.id.0));
+        self.push(X64TextInstruction::Label(block.id.0));
         for instruction in &block.instructions {
             self.lower_instruction(instruction)?;
         }
@@ -513,13 +513,13 @@ impl FunctionLowerer<'_> {
             InstructionKind::LoadConstant { constant, .. } => {
                 let local = self.require_output_local(instruction)?;
                 self.emit_constant_to_rax(constant)?;
-                self.push(NativeTextInstruction::StoreSlot(local));
+                self.push(X64TextInstruction::StoreSlot(local));
                 Ok(())
             }
             InstructionKind::Copy { source } => {
                 let local = self.require_output_local(instruction)?;
                 self.emit_operand_to_rax(source)?;
-                self.push(NativeTextInstruction::StoreSlot(local));
+                self.push(X64TextInstruction::StoreSlot(local));
                 Ok(())
             }
             InstructionKind::StoreVar { value, .. } => {
@@ -529,7 +529,7 @@ impl FunctionLowerer<'_> {
                 }
                 let local = self.require_output_local(instruction)?;
                 self.emit_operand_to_rax(value)?;
-                self.push(NativeTextInstruction::StoreSlot(local));
+                self.push(X64TextInstruction::StoreSlot(local));
                 Ok(())
             }
             InstructionKind::Call { callee, arguments } => self.emit_call(instruction, callee, arguments),
@@ -552,13 +552,13 @@ impl FunctionLowerer<'_> {
                     return Err(format!("x86_64 lowering 只支持无块参数的条件分支：function={}", self.function.symbol));
                 }
                 self.emit_operand_to_rax(condition)?;
-                self.push(NativeTextInstruction::JumpIfZero(else_target.0));
-                self.push(NativeTextInstruction::Jump(then_target.0));
+                self.push(X64TextInstruction::JumpIfZero(else_target.0));
+                self.push(X64TextInstruction::Jump(then_target.0));
                 Ok(())
             }
             Terminator::Unreachable => {
                 // `ud2`：到达即故障，不伪造返回。
-                self.push(NativeTextInstruction::Trap);
+                self.push(X64TextInstruction::Trap);
                 Ok(())
             }
             other => Err(format!("x86_64 lowering 尚不支持终结符 `{other:?}`: function={}", self.function.symbol)),
@@ -568,11 +568,11 @@ impl FunctionLowerer<'_> {
     fn emit_return(&mut self, value: Option<&Operand>) -> Result<()> {
         let returns_unit = matches!(self.function.return_type, NyarType::Unit | NyarType::Bottom);
         match (value, returns_unit) {
-            (None, true) => self.push(NativeTextInstruction::LoadI64(0)),
+            (None, true) => self.push(X64TextInstruction::LoadI64(0)),
             (None, false) => {
                 return Err(format!("x86_64 lowering：非 void 函数 `{}` 缺少返回值", self.function.symbol));
             }
-            (Some(Operand::Constant(Constant::Unit)), true) => self.push(NativeTextInstruction::LoadI64(0)),
+            (Some(Operand::Constant(Constant::Unit)), true) => self.push(X64TextInstruction::LoadI64(0)),
             (Some(Operand::Constant(Constant::Unit)), false) => {
                 return Err(format!("x86_64 lowering：非 void 函数 `{}` 返回了 unit 常量", self.function.symbol));
             }
@@ -582,7 +582,7 @@ impl FunctionLowerer<'_> {
             }
         }
         // 尾声由程序装配器按 LIR `Return` 统一产生。
-        self.push(NativeTextInstruction::Return);
+        self.push(X64TextInstruction::Return);
         Ok(())
     }
 
@@ -616,7 +616,7 @@ impl FunctionLowerer<'_> {
         for (index, argument) in arguments.iter().enumerate() {
             self.emit_operand_to_rax(argument)?;
             let slot = self.temp_slot(base, index)?;
-            self.push(NativeTextInstruction::StoreSlot(slot));
+            self.push(X64TextInstruction::StoreSlot(slot));
         }
         for index in 0..arguments.len() {
             let local = self
@@ -626,10 +626,10 @@ impl FunctionLowerer<'_> {
                 .copied()
                 .ok_or_else(|| format!("x86_64 lowering：跳转目标块 {:?} 形参 {index} 缺少局部槽", target))?;
             let slot = self.temp_slot(base, index)?;
-            self.push(NativeTextInstruction::LoadSlot(slot));
-            self.push(NativeTextInstruction::StoreSlot(local));
+            self.push(X64TextInstruction::LoadSlot(slot));
+            self.push(X64TextInstruction::StoreSlot(local));
         }
-        self.push(NativeTextInstruction::Jump(target.0));
+        self.push(X64TextInstruction::Jump(target.0));
         Ok(())
     }
 
@@ -678,13 +678,13 @@ impl FunctionLowerer<'_> {
         for (index, argument) in arguments.iter().enumerate() {
             self.emit_operand_to_rax(argument)?;
             let slot = self.temp_slot(base, index)?;
-            self.push(NativeTextInstruction::StoreSlot(slot));
+            self.push(X64TextInstruction::StoreSlot(slot));
         }
         for index in 0..arguments.len() {
             let slot = self.temp_slot(base, index)?;
-            self.push(NativeTextInstruction::LoadSlotToArg { slot, index: index as u8 });
+            self.push(X64TextInstruction::LoadSlotToArg { slot, index: index as u8 });
         }
-        self.push(NativeTextInstruction::Call(name));
+        self.push(X64TextInstruction::Call(name));
 
         if matches!(callee_function.return_type, NyarType::Unit | NyarType::Bottom) {
             if self.output_local(instruction)?.is_some() {
@@ -696,7 +696,7 @@ impl FunctionLowerer<'_> {
             return Ok(());
         }
         let local = self.require_output_local(instruction)?;
-        self.push(NativeTextInstruction::StoreSlot(local));
+        self.push(X64TextInstruction::StoreSlot(local));
         Ok(())
     }
 
@@ -764,19 +764,19 @@ impl FunctionLowerer<'_> {
         if plan.arity == 2 {
             self.emit_operand_to_rcx(&arguments[1])?;
         }
-        self.push(NativeTextInstruction::Operator(code));
-        self.push(NativeTextInstruction::StoreSlot(local));
+        self.push(X64TextInstruction::Operator(code));
+        self.push(X64TextInstruction::StoreSlot(local));
         Ok(())
     }
 
     fn emit_constant_to_rax(&mut self, constant: &Constant) -> Result<()> {
         match constant {
             Constant::Int(value) => {
-                self.push(NativeTextInstruction::LoadI64(*value));
+                self.push(X64TextInstruction::LoadI64(*value));
                 Ok(())
             }
             Constant::Bool(value) => {
-                self.push(NativeTextInstruction::LoadI64(i64::from(*value)));
+                self.push(X64TextInstruction::LoadI64(i64::from(*value)));
                 Ok(())
             }
             other => Err(format!("x86_64 lowering 尚不支持常量 `{other:?}`：缺少 x86_64 常量载体合同，function={}", self.function.symbol)),
@@ -787,7 +787,7 @@ impl FunctionLowerer<'_> {
         match operand {
             Operand::Value(value) => {
                 let local = self.value_local(*value)?;
-                self.push(NativeTextInstruction::LoadSlot(local));
+                self.push(X64TextInstruction::LoadSlot(local));
                 Ok(())
             }
             Operand::Constant(constant) => self.emit_constant_to_rax(constant),
@@ -803,7 +803,7 @@ impl FunctionLowerer<'_> {
         match operand {
             Operand::Value(value) => {
                 let local = self.value_local(*value)?;
-                self.push(NativeTextInstruction::LoadSlotToRcx(local));
+                self.push(X64TextInstruction::LoadSlotToRcx(local));
                 Ok(())
             }
             Operand::Constant(constant) => {
@@ -816,8 +816,8 @@ impl FunctionLowerer<'_> {
                 self.emit_constant_to_rax(constant)?;
                 let base = self.reserve_temps(1);
                 let slot = self.temp_slot(base, 0)?;
-                self.push(NativeTextInstruction::StoreSlot(slot));
-                self.push(NativeTextInstruction::LoadSlotToRcx(slot));
+                self.push(X64TextInstruction::StoreSlot(slot));
+                self.push(X64TextInstruction::LoadSlotToRcx(slot));
                 Ok(())
             }
             Operand::Item(instance) => {

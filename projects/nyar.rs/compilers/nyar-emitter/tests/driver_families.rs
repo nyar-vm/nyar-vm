@@ -32,7 +32,7 @@ fn clr_family_advertises_capability_and_driver_compiler() {
 
 #[test]
 fn native_family_exposes_capability_and_requires_adapter_prepared_input() {
-    let descriptor = bundled_backend_capability_descriptor(TargetBackendFamily::MachineCode).expect("native lane must expose a capability descriptor");
+    let descriptor = bundled_backend_capability_descriptor(TargetBackendFamily::MachineCode).expect("机器码 lane must expose a capability descriptor");
     assert_eq!(descriptor.backend_name, "machine-code");
     assert_eq!(descriptor.lane, nyar::TargetLane::MachineCode);
     // 原生镜像输入必须由语言 × 目标适配器在持有已解析目标四元组时准备；

@@ -14,19 +14,19 @@ use nyar::{
     packaging::{ArtifactDescriptor, ArtifactSet, TargetLane},
 };
 
-pub use crate::lowering::backends::native::{
-    HostMethod, HostProperty, HostValueKind, NATIVE_TEXT_ARENA_CAPACITY, NativeAbi, NativeDataTarget, NativeHostModule, NativeLoweredExtension,
-    NativePlatform, NativeProductTarget, NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage, any_returns_bool,
-    any_returns_utf8, append_text_arena, compile_shared_container, encode_native_text_program, encode_native_text_program_with_data,
-    encode_native_text_program_with_dependencies, encode_native_text_program_with_imports, is_c_identifier, node_addon_registration,
+pub use crate::lowering::backends::machine::{
+    HostMethod, HostProperty, HostValueKind, X64_TEXT_ARENA_CAPACITY, X64CallConv, X64DataTarget, HostModule, X64LoweredExtension,
+    X64Platform, X64ProductTarget, X64TextInstruction, X64ProgramFunction, X64ProgramImage, any_returns_bool,
+    any_returns_utf8, append_text_arena, compile_shared_container, encode_x64_program, encode_x64_program_with_data,
+    encode_x64_program_with_dependencies, encode_x64_program_with_imports, is_c_identifier, node_addon_registration,
     node_method_wrapper, node_module_data, python_method_wrapper, python_module_data, python_module_exec, python_module_registration,
     reset_text_arena,
 };
-pub use executable::{NativeExecutableError, NativeExecutableKind, NativeImageFacts, classify_native_executable, classify_native_image};
+pub use executable::{MachineImageError, MachineImageKind, MachineImageFacts, classify_machine_executable, classify_machine_image};
 
 /// `Native` 后端输入。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NativeBinaryBackendInput {
+pub struct MachineImageBackendInput {
     /// 已编码的可执行文件（`PE` 或 `ELF`）。
     pub executable: Vec<u8>,
     /// 输出目录。
@@ -45,11 +45,11 @@ pub struct NativeBinaryBackendInput {
 }
 
 /// `Native` 二进制后端（Windows PE / Linux ELF）。
-pub struct NativeBinaryBackend {
+pub struct MachineImageBackend {
     descriptor: BackendDescriptor,
 }
 
-impl NativeBinaryBackend {
+impl MachineImageBackend {
     /// 创建一个新的原生二进制后端。
     pub fn new() -> Self {
         Self {
@@ -66,29 +66,29 @@ impl NativeBinaryBackend {
     }
 }
 
-impl Default for NativeBinaryBackend {
+impl Default for MachineImageBackend {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl NativeBinaryBackend {
-    fn validate_artifact(&self, input: &NativeBinaryBackendInput) -> Result<()> {
-        let facts = classify_native_image(&input.executable).map_err(|error| format!("Native 后端 executable 格式无效: {error}"))?;
+impl MachineImageBackend {
+    fn validate_artifact(&self, input: &MachineImageBackendInput) -> Result<()> {
+        let facts = classify_machine_image(&input.executable).map_err(|error| format!("机器码后端 executable 格式无效: {error}"))?;
         if let Some(extension) = input.artifact_extension.as_deref() {
             validate_artifact_extension(extension, facts.shared)?;
         }
         Ok(())
     }
 
-    fn compile_artifact(&self, input: NativeBinaryBackendInput, options: &CompilationOptions) -> Result<ArtifactSet> {
+    fn compile_artifact(&self, input: MachineImageBackendInput, options: &CompilationOptions) -> Result<ArtifactSet> {
         if options.target.family != TargetFamily::MachineCode {
-            return Err(format!("Native 后端只接受 `Native` 目标族，实际得到 {:?}", options.target.family));
+            return Err(format!("机器码后端只接受 机器码目标族，实际得到 {:?}", options.target.family));
         }
-        let facts = classify_native_image(&input.executable).map_err(|error| format!("Native 后端 executable 格式无效: {error}"))?;
+        let facts = classify_machine_image(&input.executable).map_err(|error| format!("机器码后端 executable 格式无效: {error}"))?;
         // 产物架构必须与请求目标一致：包装层不得把 AMD64 镜像写成 Arm64 产物。
         if options.target.arch != facts.arch {
-            return Err(format!("Native 后端镜像架构 {:?} 与请求目标架构 {:?} 不一致", facts.arch, options.target.arch));
+            return Err(format!("机器码后端镜像架构 {:?} 与请求目标架构 {:?} 不一致", facts.arch, options.target.arch));
         }
         // OS 规格与 ABI 是规范四元组的一部分：声明了就必须与镜像容器一致，
         // 不得只看 arch 让 PE 伪装成 Linux/GNU 产物。
@@ -99,14 +99,14 @@ impl NativeBinaryBackend {
         std::fs::create_dir_all(&input.output_dir).map_err(|e| format!("创建输出目录失败：{}: {e}", input.output_dir.display()))?;
 
         match facts.kind {
-            NativeExecutableKind::Elf | NativeExecutableKind::ElfShared => compile_elf(input, options, facts),
-            NativeExecutableKind::Pe => compile_pe(input, options, facts),
+            MachineImageKind::Elf | MachineImageKind::ElfShared => compile_elf(input, options, facts),
+            MachineImageKind::Pe => compile_pe(input, options, facts),
         }
     }
 }
 
-impl TargetCodeGenBackend for NativeBinaryBackend {
-    type Input = NativeBinaryBackendInput;
+impl TargetCodeGenBackend for MachineImageBackend {
+    type Input = MachineImageBackendInput;
 
     fn descriptor(&self) -> &BackendDescriptor {
         &self.descriptor
@@ -125,9 +125,9 @@ impl TargetCodeGenBackend for NativeBinaryBackend {
 ///
 /// `None` 表示该后端声明未细化规格（粗粒度目标），此时只按镜像容器包装；
 /// 一旦声明，PE 只能对应 Windows/MSVC，ELF 只能对应 Linux/GNU 或 System V。
-fn validate_target_image(facts: NativeImageFacts, target: &BinaryTarget) -> Result<()> {
-    let is_pe = facts.kind == NativeExecutableKind::Pe;
-    let is_elf = matches!(facts.kind, NativeExecutableKind::Elf | NativeExecutableKind::ElfShared);
+fn validate_target_image(facts: MachineImageFacts, target: &BinaryTarget) -> Result<()> {
+    let is_pe = facts.kind == MachineImageKind::Pe;
+    let is_elf = matches!(facts.kind, MachineImageKind::Elf | MachineImageKind::ElfShared);
     if let Some(specification) = target.specification {
         let compatible = match specification {
             CanonicalSpecification::Windows => is_pe,
@@ -136,7 +136,7 @@ fn validate_target_image(facts: NativeImageFacts, target: &BinaryTarget) -> Resu
             CanonicalSpecification::Unknown | CanonicalSpecification::Browser | CanonicalSpecification::Wasi => false,
         };
         if !compatible {
-            return Err(format!("Native 后端镜像容器 {:?} 与目标规格 {:?} 不一致：不得把镜像写成其他平台的产物", facts.kind, specification));
+            return Err(format!("机器码后端镜像容器 {:?} 与目标规格 {:?} 不一致：不得把镜像写成其他平台的产物", facts.kind, specification));
         }
     }
     if let Some(abi) = target.abi {
@@ -152,7 +152,7 @@ fn validate_target_image(facts: NativeImageFacts, target: &BinaryTarget) -> Resu
             | CanonicalAbi::WasiP3 => false,
         };
         if !compatible {
-            return Err(format!("Native 后端镜像容器 {:?} 与目标 ABI {:?} 不一致：不得把镜像写成其他 ABI 的产物", facts.kind, abi));
+            return Err(format!("机器码后端镜像容器 {:?} 与目标 ABI {:?} 不一致：不得把镜像写成其他 ABI 的产物", facts.kind, abi));
         }
     }
     Ok(())
@@ -176,22 +176,22 @@ fn validate_artifact_extension(extension: &str, shared: bool) -> Result<()> {
     }
 }
 
-fn output_file_name(options: &CompilationOptions, input: &NativeBinaryBackendInput, facts: NativeImageFacts) -> String {
+fn output_file_name(options: &CompilationOptions, input: &MachineImageBackendInput, facts: MachineImageFacts) -> String {
     if let Some(extension) = input.artifact_extension.as_deref() {
         return format!("{}{extension}", options.artifact_name);
     }
     match facts.kind {
-        NativeExecutableKind::ElfShared => format!("{}.so", options.artifact_name),
-        NativeExecutableKind::Pe => format!("{}.exe", options.artifact_name),
-        NativeExecutableKind::Elf => options.artifact_name.clone(),
+        MachineImageKind::ElfShared => format!("{}.so", options.artifact_name),
+        MachineImageKind::Pe => format!("{}.exe", options.artifact_name),
+        MachineImageKind::Elf => options.artifact_name.clone(),
     }
 }
 
-fn artifact_kind(facts: NativeImageFacts) -> nyar::ArtifactKind {
+fn artifact_kind(facts: MachineImageFacts) -> nyar::ArtifactKind {
     if facts.shared { nyar::ArtifactKind::DynamicLibrary } else { nyar::ArtifactKind::Executable }
 }
 
-fn compile_pe(input: NativeBinaryBackendInput, options: &CompilationOptions, facts: NativeImageFacts) -> Result<ArtifactSet> {
+fn compile_pe(input: MachineImageBackendInput, options: &CompilationOptions, facts: MachineImageFacts) -> Result<ArtifactSet> {
     let file_name = output_file_name(options, &input, facts);
     let executable_path = input.output_dir.join(&file_name);
     std::fs::write(&executable_path, &input.executable).map_err(|e| format!("写入 PE 可执行文件失败：{}: {e}", executable_path.display()))?;
@@ -211,7 +211,7 @@ fn compile_pe(input: NativeBinaryBackendInput, options: &CompilationOptions, fac
     Ok(artifacts)
 }
 
-fn compile_elf(input: NativeBinaryBackendInput, options: &CompilationOptions, facts: NativeImageFacts) -> Result<ArtifactSet> {
+fn compile_elf(input: MachineImageBackendInput, options: &CompilationOptions, facts: MachineImageFacts) -> Result<ArtifactSet> {
     let file_name = output_file_name(options, &input, facts);
     let executable_path = input.output_dir.join(&file_name);
     std::fs::write(&executable_path, &input.executable).map_err(|e| format!("写入 ELF 可执行文件失败：{}: {e}", executable_path.display()))?;

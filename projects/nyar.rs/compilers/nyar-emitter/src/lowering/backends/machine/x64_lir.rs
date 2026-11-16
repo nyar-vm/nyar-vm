@@ -1,4 +1,4 @@
-//! x86-64 机器码图元权威（native lane 唯一字节表）。
+//! x86-64 机器码图元权威（机器码 lane 唯一字节表）。
 //!
 //! 所有权边界（01 §5）：`ExecutableFunction` 是语言语义事实，本模块不读取它。
 //! 帧序言/尾声、寄存器前缀表、算子编码、`rel32` 回填与数据/导入寻址图元在这里
@@ -10,7 +10,7 @@
 
 use crate::Result;
 
-use super::{NativeAbi, x86_64::X86_64OperatorCode};
+use super::{X64CallConv, x86_64::X86_64OperatorCode};
 
 /// x86-64 通用寄存器（本 lane 目前只使用有固定编码职责的子集）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,10 +38,10 @@ impl X64Reg {
     pub(super) const SYSTEM_V_ARGS: [Self; 6] = [Self::Rdi, Self::Rsi, Self::Rdx, Self::Rcx, Self::R8, Self::R9];
 
     /// 按调用约定返回整数形参/实参的寄存器顺序。
-    pub(super) fn argument_registers(abi: NativeAbi) -> &'static [Self] {
+    pub(super) fn argument_registers(abi: X64CallConv) -> &'static [Self] {
         match abi {
-            NativeAbi::Win64 => &Self::WIN64_ARGS,
-            NativeAbi::SystemV64 => &Self::SYSTEM_V_ARGS,
+            X64CallConv::Win64 => &Self::WIN64_ARGS,
+            X64CallConv::SystemV64 => &Self::SYSTEM_V_ARGS,
         }
     }
 
@@ -180,7 +180,7 @@ pub(super) fn emit_lea_rax_from_frame(text: &mut Vec<u8>, slot: u16) {
 }
 
 /// 按调用约定取第 `index` 个整数形参寄存器；超出寄存器上限返回 `None`。
-pub(super) fn argument_register(abi: NativeAbi, index: u8) -> Option<X64Reg> {
+pub(super) fn argument_register(abi: X64CallConv, index: u8) -> Option<X64Reg> {
     X64Reg::argument_registers(abi).get(index as usize).copied()
 }
 

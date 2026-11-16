@@ -5,7 +5,7 @@ pub mod clr;
 #[cfg(feature = "format-spy")]
 pub mod jvm;
 #[cfg(feature = "format-spy")]
-pub mod native;
+pub mod machine;
 #[cfg(feature = "format-spy")]
 pub mod pe_dump;
 #[cfg(feature = "format-spy")]
@@ -110,7 +110,7 @@ pub fn run(options: &SpyOptions) -> LegionResult<ExitCode> {
             SpyMode::Clr(_) => clr::run(options),
             SpyMode::Wasm(_) => wasm::run(options),
             SpyMode::Jvm(_) => jvm::run(options),
-            SpyMode::Native(_) => native::run(options),
+            SpyMode::Native(_) => machine::run(options),
             SpyMode::Lir(_) | SpyMode::Mir(_) | SpyMode::Verify(_) => {
                 let (mode, _) = options.split();
                 Err(LegionError::msg(report!("spy 模式 '{}' 尚未实现，当前只支持 `clr`、`wasm`、`jvm` 和 `native`", mode)))

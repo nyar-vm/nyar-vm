@@ -12,7 +12,7 @@
 //!   入口桩以 `exit(2)` 结束进程。
 //!
 //! 其余四元组（aarch64、Mach-O 等）一律结构化失败，不借用其他平台的编码或容器。
-//! 调用约定（[`NativeAbi`]）与容器一样由 `os`/`abi` 决定，编码器不提供默认 ABI。
+//! 调用约定（[`X64CallConv`]）与容器一样由 `os`/`abi` 决定，编码器不提供默认 ABI。
 //!
 //! 算子编码同样按 ISA 冻结（[`x86_64::X86_64OperatorCode`]），不按「native」命名：
 //! Node `.node` / Python `.pyd` 只是同一 ISA 上的宿主装载与 ABI 包装形态，不是独立
@@ -27,19 +27,19 @@ mod x64_program;
 pub mod x86_64;
 
 pub use container::compile_shared_container;
-pub(crate) use extension::lower_fragment_to_native_extension;
-pub use extension::NativeLoweredExtension;
+pub(crate) use extension::lower_fragment_to_machine_extension;
+pub use extension::X64LoweredExtension;
 
 pub use carrier::{
-    HostMethod, HostProperty, HostValueKind, NATIVE_TEXT_ARENA_CAPACITY, PYTHON_EXEC_NAME, any_returns_bool, any_returns_utf8, append_text_arena,
+    HostMethod, HostProperty, HostValueKind, X64_TEXT_ARENA_CAPACITY, PYTHON_EXEC_NAME, any_returns_bool, any_returns_utf8, append_text_arena,
     is_c_identifier, node_addon_registration, node_method_wrapper, node_module_data, python_method_wrapper, python_module_data, python_module_exec,
     python_module_registration, reset_text_arena,
 };
-pub use host::{NativeHostModule, NativePlatform, NativeProductTarget};
+pub use host::{HostModule, X64Platform, X64ProductTarget};
 
 pub use x64_program::{
-    encode_native_text_program, encode_native_text_program_with_data, encode_native_text_program_with_dependencies,
-    encode_native_text_program_with_imports,
+    encode_x64_program, encode_x64_program_with_data, encode_x64_program_with_dependencies,
+    encode_x64_program_with_imports,
 };
 
 use nyar::abstractions::{CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget};
@@ -52,14 +52,14 @@ use crate::{FragmentSubmission, Result};
 /// 在 Windows/PE 上是 Win64，在 Linux/ELF 上是 SysV64。编码器与文本 LIR 都显式
 /// 携带本值，不提供「默认 ABI」。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NativeAbi {
+pub enum X64CallConv {
     /// Win64（x86-64 Windows / `PE32+`）：`rcx`/`rdx`/`r8`/`r9`，调用点上方 32 字节 shadow space。
     Win64,
     /// SysV64（x86-64 Linux / `ELF64`）：`rdi`/`rsi`/`rdx`/`rcx`/`r8`/`r9`，无 shadow space。
     SystemV64,
 }
 
-impl NativeAbi {
+impl X64CallConv {
     /// 调用前调用方必须预留的 shadow space 字节数（Win64 为 32，SysV 为 0）。
     pub fn shadow_space(self) -> u32 {
         match self {
@@ -98,7 +98,7 @@ impl NativeAbi {
 
 /// 降低结果：完整原生镜像字节与入口位置事实。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NativeLoweredFragment {
+pub struct X64LoweredProgram {
     /// 完整镜像字节（`PE32+` 或 `ELF64 ET_EXEC`，由规范目标决定）。
     pub executable: Vec<u8>,
     /// 入口点在文本节内的偏移。
@@ -112,14 +112,14 @@ pub struct NativeLoweredFragment {
 /// 这是语言/平台适配器复用 native 平台编码能力的公开入口：适配器保留自己的
 /// 语言语义与 residual，只把已决定的目标操作交给本 lane 的 LIR/编码器。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NativeTextInstruction {
+pub enum X64TextInstruction {
     /// `mov rax, imm64`：整数值进入返回值寄存器。
     LoadI64(i64),
     /// 函数返回（含帧还原）；返回值已在 `rax`。
     Return,
     /// 把目标 ABI 的整数形参 `index` 存入帧槽 `slot`。
     ///
-    /// 寄存器由 [`NativeAbi`] 决定：Win64 为 rcx/rdx/r8/r9，SysV64 为
+    /// 寄存器由 [`X64CallConv`] 决定：Win64 为 rcx/rdx/r8/r9，SysV64 为
     /// rdi/rsi/rdx/rcx/r8/r9。
     LoadParam {
         /// 形参序号（uint 序；超过该 ABI 的寄存器上限即失败）。
@@ -285,13 +285,13 @@ pub enum NativeTextInstruction {
 
 /// 多函数文本程序中的一个函数。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NativeTextProgramFunction {
+pub struct X64ProgramFunction {
     /// 函数名（导出符号与调用目标）。
     pub name: String,
     /// 帧槽数量（每槽 8 字节）。
     pub slot_count: u16,
     /// 目标 LIR。
-    pub instructions: Vec<NativeTextInstruction>,
+    pub instructions: Vec<X64TextInstruction>,
 }
 
 /// 数据段自相对指针的目标。
@@ -299,7 +299,7 @@ pub struct NativeTextProgramFunction {
 /// 数据段起点由容器（页对齐）决定，适配器无法提前知道最终虚拟地址，所以目标按
 /// 「节 + 节内偏移」声明，由容器换算成自相对重定位的加数。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NativeDataTarget {
+pub enum X64DataTarget {
     /// `.text` 内偏移（例如导出函数地址）。
     Text(u32),
     /// `.data` 内偏移（例如模块名、常量名）。
@@ -311,7 +311,7 @@ pub enum NativeDataTarget {
 
 /// 多函数文本程序编码结果。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NativeTextProgramImage {
+pub struct X64ProgramImage {
     /// `.text` 节字节。
     pub text: Vec<u8>,
     /// 导出符号及其在 `.text` 内的偏移。
@@ -331,25 +331,25 @@ pub struct NativeTextProgramImage {
     /// `.data` 节内容（可读写、文件内初始化；容器保证 `p_vaddr == 文件偏移`）。
     pub data: Vec<u8>,
     /// `.data` 内的自相对指针重定位：`(数据段偏移, 目标节与偏移)`。
-    pub data_relocations: Vec<(u32, NativeDataTarget)>,
+    pub data_relocations: Vec<(u32, X64DataTarget)>,
     /// `.text` 内指向 `.data` 的 `rel32` 引用：`(字段偏移, 数据段偏移)`。
     pub data_references: Vec<(u32, u32)>,
     /// 产物声明依赖的宿主库 `SONAME`（`ELF` 写成 `DT_NEEDED`；`PE` 走导入表，忽略）。
-    pub native_dependencies: Vec<String>,
+    pub host_dependencies: Vec<String>,
 }
 
 /// 按解析后的规范目标四元组降低为原生镜像。
 ///
 /// 四元组是唯一分派依据；`TargetFamily::MachineCode` 只说明产物形态，不能用来选编码、
 /// 容器或 ABI。未实现的目标四元组必须失败闭合，指名具体四元组。
-pub(crate) fn lower_fragment_to_native_image(submission: &FragmentSubmission, target: CanonicalTarget) -> Result<NativeLoweredFragment> {
+pub(crate) fn lower_fragment_to_machine_image(submission: &FragmentSubmission, target: CanonicalTarget) -> Result<X64LoweredProgram> {
     match target.arch {
         CanonicalArch::X86_64 => match target.specification {
             CanonicalSpecification::Windows => match target.abi {
                 // x86-64 Windows 的 MSVC 与 GNU 目标共用 Win64 调用约定与 PE 容器。
                 None | Some(CanonicalAbi::Msvc) | Some(CanonicalAbi::Gnu) => x86_64::lower_x86_64_windows_pe(submission),
                 Some(other) => Err(format!(
-                    "Native 后端不支持 `x86_64` + `windows` + `{}` 的 ABI：只闭合 Win64 调用约定（target={}）",
+                    "机器码后端不支持 `x86_64` + `windows` + `{}` 的 ABI：只闭合 Win64 调用约定（target={}）",
                     abi_name(other),
                     target.as_canonical_str()
                 )),
@@ -358,18 +358,18 @@ pub(crate) fn lower_fragment_to_native_image(submission: &FragmentSubmission, ta
             CanonicalSpecification::Linux => match target.abi {
                 None | Some(CanonicalAbi::Gnu) | Some(CanonicalAbi::SystemV) => x86_64::lower_x86_64_linux_elf(submission),
                 Some(other) => Err(format!(
-                    "Native 后端不支持 `x86_64` + `linux` + `{}` 的 ABI：只闭合 SysV64 调用约定（target={}）",
+                    "机器码后端不支持 `x86_64` + `linux` + `{}` 的 ABI：只闭合 SysV64 调用约定（target={}）",
                     abi_name(other),
                     target.as_canonical_str()
                 )),
             },
             other => Err(format!(
-                "Native 后端没有 `x86_64` + `{}` 的容器实现：拒绝借用其他平台的镜像格式（target={}）",
+                "机器码后端没有 `x86_64` + `{}` 的容器实现：拒绝借用其他平台的镜像格式（target={}）",
                 specification_name(other),
                 target.as_canonical_str()
             )),
         },
-        other => Err(format!("Native 后端尚未实现架构 `{}` 的机器码降低（target={}）", other.as_str(), target.as_canonical_str())),
+        other => Err(format!("机器码后端尚未实现架构 `{}` 的机器码降低（target={}）", other.as_str(), target.as_canonical_str())),
     }
 }
 

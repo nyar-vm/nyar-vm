@@ -19,21 +19,21 @@ use std::collections::BTreeMap;
 
 use crate::{
     FragmentSubmission, Result, backend_plan_views::NyarType, lowering::sanitize_symbol,
-    nyar_backend_native::HostProperty,
+    nyar_backend_machine::HostProperty,
 };
 use nyar_types::ItemInstanceId;
 
 use super::{
-    HostMethod, HostValueKind, NativeHostModule, NativePlatform, NativeProductTarget,
+    HostMethod, HostValueKind, HostModule, X64Platform, X64ProductTarget,
     any_returns_bool, append_text_arena, compile_shared_container, is_c_identifier, node_addon_registration, node_method_wrapper, node_module_data,
     python_method_wrapper, python_module_data, python_module_exec, python_module_registration,
-    x86_64::{collect_native_functions, lower_function_to_text_program},
-    x64_program::encode_native_text_program_with_dependencies,
+    x86_64::{collect_reachable_functions, lower_function_to_text_program},
+    x64_program::encode_x64_program_with_dependencies,
 };
 
 /// 宿主扩展降低结果：完整共享库镜像与宿主装载事实。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NativeLoweredExtension {
+pub struct X64LoweredExtension {
     /// 共享库镜像字节（`PE32+` DLL 或 `ELF64 ET_DYN`，由平台身份决定）。
     pub executable: Vec<u8>,
     /// 宿主装载入口符号（`napi_register_module_v1` / `PyInit_<module>`）。
@@ -48,14 +48,14 @@ pub struct NativeLoweredExtension {
 ///
 /// `target` 必须来自统一目标解析服务的宿主合同；`module_name` 是 CPython 的
 /// 导入名（Node-API 不使用模块名，但仍参与产物身份命名）。
-pub(crate) fn lower_fragment_to_native_extension(
+pub(crate) fn lower_fragment_to_machine_extension(
     submission: &FragmentSubmission,
-    target: &NativeProductTarget,
+    target: &X64ProductTarget,
     module_name: &str,
-) -> Result<NativeLoweredExtension> {
+) -> Result<X64LoweredExtension> {
     let (platform, host) = match target {
-        NativeProductTarget::Extension { platform, module, .. } => (*platform, *module),
-        NativeProductTarget::Library(_) => return Err("目标不是宿主扩展合同；普通共享库交付尚未接线".to_string()),
+        X64ProductTarget::Extension { platform, module, .. } => (*platform, *module),
+        X64ProductTarget::Library(_) => return Err("目标不是宿主扩展合同；普通共享库交付尚未接线".to_string()),
     };
     let abi = platform.abi();
 
@@ -64,7 +64,7 @@ pub(crate) fn lower_fragment_to_native_extension(
         return Err(format!("宿主扩展不接受进程入口（`{entry:?}`）；导出面与入口是两个独立事实，应用交付请改用 native 可执行目标"));
     }
 
-    let reachable = collect_native_functions(submission);
+    let reachable = collect_reachable_functions(submission);
     if reachable.is_empty() {
         return Err(format!("宿主扩展 `{}` 没有可达函数：冻结导出面为空，拒绝产出无导出的扩展", target.name()));
     }
@@ -91,8 +91,8 @@ pub(crate) fn lower_fragment_to_native_extension(
 
     let host_library = host_import_library(target, platform)?;
     // `ELF` 没有 IAT：宿主库以 `DT_NEEDED` 显式声明。
-    let native_dependencies: Vec<String> = match target {
-        NativeProductTarget::Extension { module: NativeHostModule::Python, library: Some(library), .. } if !platform.is_windows() => {
+    let host_dependencies: Vec<String> = match target {
+        X64ProductTarget::Extension { module: HostModule::Python, library: Some(library), .. } if !platform.is_windows() => {
             vec![library.clone()]
         }
         _ => Vec::new(),
@@ -100,7 +100,7 @@ pub(crate) fn lower_fragment_to_native_extension(
     let properties: &[HostProperty] = &[];
 
     let (image, entry_symbol, artifact_extension) = match host {
-        NativeHostModule::Node => {
+        HostModule::Node => {
             let (node_data, property_name_offsets, method_name_offsets, error_message_offset) = node_module_data(properties, &methods);
             let mut data = node_data;
             let arena_offset = Some(append_text_arena(&mut data));
@@ -110,10 +110,10 @@ pub(crate) fn lower_fragment_to_native_extension(
             }
             functions.push(node_addon_registration(properties, &property_name_offsets, methods.as_slice(), &method_name_offsets, platform, &host_library, arena_offset));
             let imports = node_imports(&methods, bool_exports, &host_library);
-            let image = encode_native_text_program_with_dependencies(&functions, &imports, abi, &data, &[], &native_dependencies)?;
+            let image = encode_x64_program_with_dependencies(&functions, &imports, abi, &data, &[], &host_dependencies)?;
             (image, "napi_register_module_v1".to_string(), ".node".to_string())
         }
-        NativeHostModule::Python => {
+        HostModule::Python => {
             if !is_c_identifier(module_name) {
                 return Err(format!(
                     "CPython 扩展模块名 `{module_name}` 不是合法 C 标识符：`PyInit_<module>` 必须能在 C 中声明"
@@ -129,7 +129,7 @@ pub(crate) fn lower_fragment_to_native_extension(
             functions.push(python_module_exec(properties, &property_name_offsets, &host_library, arena_offset));
             functions.push(python_module_registration(module_name, &host_library));
             let imports = python_imports(&methods, bool_exports, &host_library);
-            let image = encode_native_text_program_with_dependencies(&functions, &imports, abi, &data, &relocations, &native_dependencies)?;
+            let image = encode_x64_program_with_dependencies(&functions, &imports, abi, &data, &relocations, &host_dependencies)?;
             let entry_symbol = format!("PyInit_{module_name}");
             let extension = if platform.is_windows() { ".pyd" } else { ".so" };
             (image, entry_symbol, extension.to_string())
@@ -139,7 +139,7 @@ pub(crate) fn lower_fragment_to_native_extension(
     let executable = compile_shared_container(platform, &image)?;
     verify_shared_image(&executable, platform)?;
 
-    Ok(NativeLoweredExtension {
+    Ok(X64LoweredExtension {
         executable,
         entry_symbol,
         host_exports: methods.iter().map(|method| method.name.clone()).collect(),
@@ -148,7 +148,7 @@ pub(crate) fn lower_fragment_to_native_extension(
 }
 
 /// 从冻结导出面构造类型化宿主方法事实；未闭合的载体在写出前拒绝。
-fn frozen_host_methods(submission: &FragmentSubmission, target: &NativeProductTarget, reachable: &[ItemInstanceId]) -> Result<Vec<HostMethod>> {
+fn frozen_host_methods(submission: &FragmentSubmission, target: &X64ProductTarget, reachable: &[ItemInstanceId]) -> Result<Vec<HostMethod>> {
     let limit = target.method_parameter_limit();
     let mut methods = Vec::new();
     for (instance, export_name) in submission.backend_plan.export_names() {
@@ -226,16 +226,16 @@ fn extension_symbol_names(
 }
 
 /// Windows 宿主导入模块名；Linux 的 `CallImport` 模块名必须为空。
-fn host_import_library(target: &NativeProductTarget, platform: NativePlatform) -> Result<String> {
-    let NativeProductTarget::Extension { module, library, .. } = target else {
+fn host_import_library(target: &X64ProductTarget, platform: X64Platform) -> Result<String> {
+    let X64ProductTarget::Extension { module, library, .. } = target else {
         return Err("目标不是宿主扩展合同".to_string());
     };
     if !platform.is_windows() {
         return Ok(String::new());
     }
     match module {
-        NativeHostModule::Node => Ok("node.exe".to_string()),
-        NativeHostModule::Python => library.clone().ok_or_else(|| {
+        HostModule::Node => Ok("node.exe".to_string()),
+        HostModule::Python => library.clone().ok_or_else(|| {
             "Windows CPython 扩展必须提供宿主导入 DLL 名（例如 `python312.dll`）：版本相关名不能由编译器猜".to_string()
         }),
     }
@@ -275,13 +275,13 @@ fn python_imports(methods: &[HostMethod], bool_exports: bool, dll: &str) -> Vec<
 }
 
 /// 自检：产物必须是与平台身份一致的共享库镜像。
-fn verify_shared_image(executable: &[u8], platform: NativePlatform) -> Result<()> {
-    use crate::nyar_backend_native::{NativeExecutableKind, classify_native_image};
-    let facts = classify_native_image(executable).map_err(|error| format!("宿主扩展产物自检失败：{error}"))?;
+fn verify_shared_image(executable: &[u8], platform: X64Platform) -> Result<()> {
+    use crate::nyar_backend_machine::{MachineImageKind, classify_machine_image};
+    let facts = classify_machine_image(executable).map_err(|error| format!("宿主扩展产物自检失败：{error}"))?;
     if !facts.shared {
         return Err("宿主扩展产物自检失败：镜像不是共享库".to_string());
     }
-    let expected = if platform.is_windows() { NativeExecutableKind::Pe } else { NativeExecutableKind::ElfShared };
+    let expected = if platform.is_windows() { MachineImageKind::Pe } else { MachineImageKind::ElfShared };
     if facts.kind != expected {
         return Err(format!("宿主扩展产物自检失败：平台 `{}` 期望 {expected:?}，实际 {facts:?}", platform.name()));
     }

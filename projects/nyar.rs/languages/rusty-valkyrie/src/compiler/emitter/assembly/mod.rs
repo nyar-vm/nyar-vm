@@ -93,13 +93,13 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter {
     fn prepare(&self, request: &TargetInputRequest<'_>) -> nyar_emitter::Result<LoweredBackendInput> {
         let submission = FragmentSubmission::from_backend_plan((*self.plan).clone());
         if request.backend_family == nyar::TargetBackendFamily::MachineCode {
-            // 原生镜像由 native lane 的 LIR/编码服务产出；适配器只提交目标输入
+            // 原生镜像由 机器码 lane 的 LIR/编码服务产出；适配器只提交目标输入
             // 与已冻结的宿主合同，不自行拼接机器码或 PE/ELF 容器。
             if request.artifact_purpose == nyar::ArtifactPurpose::HostExtension {
-                let product = nyar_emitter::nyar_backend_native::NativeProductTarget::from_resolved(&request.resolved)
+                let product = nyar_emitter::nyar_backend_machine::X64ProductTarget::from_resolved(&request.resolved)
                     .map_err(|error| format!("宿主扩展目标不合法：{error}"))?;
-                let lowered = nyar_emitter::testing::lower_fragment_to_native_extension(&submission, &product, request.project_name)?;
-                return Ok(LoweredBackendInput::native(nyar_emitter::nyar_backend_native::NativeBinaryBackendInput {
+                let lowered = nyar_emitter::testing::lower_fragment_to_machine_extension(&submission, &product, request.project_name)?;
+                return Ok(LoweredBackendInput::machine(nyar_emitter::nyar_backend_machine::MachineImageBackendInput {
                     executable: lowered.executable,
                     output_dir: request.output_dir.to_path_buf(),
                     entry_symbol: lowered.entry_symbol,
@@ -107,14 +107,14 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter {
                     host_exports: lowered.host_exports,
                 }));
             }
-            let lowered = nyar_emitter::testing::lower_fragment_to_native_image(&submission, request.resolved.platform.clone())?;
+            let lowered = nyar_emitter::testing::lower_fragment_to_machine_image(&submission, request.resolved.platform.clone())?;
             let entry_symbol = self
                 .plan
                 .entry_operation()
                 .and_then(|instance| self.plan.abi_name_for_instance(instance))
                 .map(|name| name.to_string())
                 .unwrap_or_else(|| "main".to_string());
-            return Ok(LoweredBackendInput::native(nyar_emitter::nyar_backend_native::NativeBinaryBackendInput {
+            return Ok(LoweredBackendInput::machine(nyar_emitter::nyar_backend_machine::MachineImageBackendInput {
                 executable: lowered.executable,
                 output_dir: request.output_dir.to_path_buf(),
                 entry_symbol,

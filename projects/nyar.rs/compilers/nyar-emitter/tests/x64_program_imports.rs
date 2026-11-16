@@ -1,22 +1,22 @@
 //! 原生文本程序的宿主导入 ABI：`.idata` 构造、IAT 槽与 `call [rip+disp32]` 回填。
 
-use nyar_emitter::nyar_backend_native::{
-    NativeAbi, NativeTextInstruction, NativeTextProgramFunction, encode_native_text_program,
-    encode_native_text_program_with_imports,
+use nyar_emitter::nyar_backend_machine::{
+    X64CallConv, X64TextInstruction, X64ProgramFunction, encode_x64_program,
+    encode_x64_program_with_imports,
 };
 
 #[test]
 fn call_import_freezes_idata_and_rel32_fixups() {
-    let functions = vec![NativeTextProgramFunction {
+    let functions = vec![X64ProgramFunction {
         name: "main".to_string(),
         slot_count: 0,
         instructions: vec![
-            NativeTextInstruction::CallImport { module: "nyar_provider".to_string(), field: "nyar_probe".to_string() },
-            NativeTextInstruction::Return,
+            X64TextInstruction::CallImport { module: "nyar_provider".to_string(), field: "nyar_probe".to_string() },
+            X64TextInstruction::Return,
         ],
     }];
     let imports = vec![("nyar_provider".to_string(), "nyar_probe".to_string())];
-    let image = encode_native_text_program_with_imports(&functions, &imports, NativeAbi::Win64).expect("encode program with import");
+    let image = encode_x64_program_with_imports(&functions, &imports, X64CallConv::Win64).expect("encode program with import");
 
     assert_eq!(image.imports.len(), 1);
     assert_eq!(image.imports[0].dll, "nyar_provider");
@@ -30,16 +30,16 @@ fn call_import_freezes_idata_and_rel32_fixups() {
 
 #[test]
 fn call_import_requires_a_declared_slot() {
-    let functions = vec![NativeTextProgramFunction {
+    let functions = vec![X64ProgramFunction {
         name: "main".to_string(),
         slot_count: 0,
         instructions: vec![
-            NativeTextInstruction::CallImport { module: "nyar_provider".to_string(), field: "missing".to_string() },
-            NativeTextInstruction::Return,
+            X64TextInstruction::CallImport { module: "nyar_provider".to_string(), field: "missing".to_string() },
+            X64TextInstruction::Return,
         ],
     }];
     let error =
-        encode_native_text_program_with_imports(&functions, &[], NativeAbi::Win64).expect_err("undeclared import must fail closed");
+        encode_x64_program_with_imports(&functions, &[], X64CallConv::Win64).expect_err("undeclared import must fail closed");
     assert!(error.contains("IAT"), "unexpected error: {error}");
 }
 
@@ -67,16 +67,16 @@ fn exported_dll_resolves_a_host_import_at_load_time() {
     };
     let provider_bytes = NativePeWriter::write_executable(&provider).expect("write provider");
 
-    let functions = vec![NativeTextProgramFunction {
+    let functions = vec![X64ProgramFunction {
         name: "main".to_string(),
         slot_count: 0,
         instructions: vec![
-            NativeTextInstruction::CallImport { module: "nyar_provider".to_string(), field: "nyar_probe".to_string() },
-            NativeTextInstruction::Return,
+            X64TextInstruction::CallImport { module: "nyar_provider".to_string(), field: "nyar_probe".to_string() },
+            X64TextInstruction::Return,
         ],
     }];
     let image =
-        encode_native_text_program_with_imports(&functions, &[("nyar_provider".to_string(), "nyar_probe".to_string())], NativeAbi::Win64)
+        encode_x64_program_with_imports(&functions, &[("nyar_provider".to_string(), "nyar_probe".to_string())], X64CallConv::Win64)
             .expect("encode consumer");
     let consumer = NativePeImage {
         text: image.text,
@@ -121,21 +121,21 @@ fn exported_dll_resolves_a_host_import_at_load_time() {
 /// `add(a, b)` 形参与实参寄存器必须按 ABI 选择，而不是固定 Win64 顺序。
 #[test]
 fn parameter_registers_follow_the_declared_abi() {
-    let functions = vec![NativeTextProgramFunction {
+    let functions = vec![X64ProgramFunction {
         name: "add".to_string(),
         slot_count: 3,
         instructions: vec![
-            NativeTextInstruction::LoadParam { index: 0, slot: 0 },
-            NativeTextInstruction::LoadParam { index: 1, slot: 1 },
-            NativeTextInstruction::LoadSlot(0),
-            NativeTextInstruction::LoadSlotToRcx(1),
-            NativeTextInstruction::Add,
-            NativeTextInstruction::Return,
+            X64TextInstruction::LoadParam { index: 0, slot: 0 },
+            X64TextInstruction::LoadParam { index: 1, slot: 1 },
+            X64TextInstruction::LoadSlot(0),
+            X64TextInstruction::LoadSlotToRcx(1),
+            X64TextInstruction::Add,
+            X64TextInstruction::Return,
         ],
     }];
 
     // SysV64：第 1/2 个形参来自 rdi/rsi。
-    let sysv = encode_native_text_program(&functions, NativeAbi::SystemV64).expect("sysv program");
+    let sysv = encode_x64_program(&functions, X64CallConv::SystemV64).expect("sysv program");
     assert!(
         sysv.text.windows(3).any(|window| window == [0x48, 0x89, 0xBD]),
         "SysV 第 1 形参必须存 rdi: {:02x?}",
@@ -148,7 +148,7 @@ fn parameter_registers_follow_the_declared_abi() {
     );
 
     // Win64：同一 LIR 必须落到 rcx/rdx。
-    let win64 = encode_native_text_program(&functions, NativeAbi::Win64).expect("win64 program");
+    let win64 = encode_x64_program(&functions, X64CallConv::Win64).expect("win64 program");
     assert!(
         win64.text.windows(3).any(|window| window == [0x48, 0x89, 0x8D]),
         "Win64 第 1 形参必须存 rcx: {:02x?}",
@@ -164,17 +164,17 @@ fn parameter_registers_follow_the_declared_abi() {
 /// SysV64 有 6 个寄存器实参；Win64 只有 4 个，第 5 个必须失败闭合。
 #[test]
 fn integer_argument_limit_depends_on_abi() {
-    let fifth_argument = || NativeTextProgramFunction {
+    let fifth_argument = || X64ProgramFunction {
         name: "takes5".to_string(),
         slot_count: 5,
         instructions: vec![
-            NativeTextInstruction::LoadSlotToArg { slot: 0, index: 4 },
-            NativeTextInstruction::LoadI64(0),
-            NativeTextInstruction::Return,
+            X64TextInstruction::LoadSlotToArg { slot: 0, index: 4 },
+            X64TextInstruction::LoadI64(0),
+            X64TextInstruction::Return,
         ],
     };
-    encode_native_text_program(&[fifth_argument()], NativeAbi::SystemV64).expect("SysV64 支持第 5 个寄存器实参");
-    let error = encode_native_text_program(&[fifth_argument()], NativeAbi::Win64)
+    encode_x64_program(&[fifth_argument()], X64CallConv::SystemV64).expect("SysV64 支持第 5 个寄存器实参");
+    let error = encode_x64_program(&[fifth_argument()], X64CallConv::Win64)
         .expect_err("Win64 第 5 个实参必须走栈，本 lane 尚未实现");
     assert!(error.contains("Win64"), "unexpected error: {error}");
 }
@@ -182,18 +182,18 @@ fn integer_argument_limit_depends_on_abi() {
 /// `.idata`/IAT 是 Win64 `PE` 合同：ELF 目标上的导入必须显式失败。
 #[test]
 fn host_imports_are_rejected_on_the_system_v_lane() {
-    let functions = vec![NativeTextProgramFunction {
+    let functions = vec![X64ProgramFunction {
         name: "main".to_string(),
         slot_count: 0,
         instructions: vec![
-            NativeTextInstruction::CallImport { module: "libc".to_string(), field: "write".to_string() },
-            NativeTextInstruction::Return,
+            X64TextInstruction::CallImport { module: "libc".to_string(), field: "write".to_string() },
+            X64TextInstruction::Return,
         ],
     }];
-    let error = encode_native_text_program_with_imports(
+    let error = encode_x64_program_with_imports(
         &functions,
         &[("libc".to_string(), "write".to_string())],
-        NativeAbi::SystemV64,
+        X64CallConv::SystemV64,
     )
     .expect_err("ELF 目标不得生成 PE 导入表");
     assert!(error.contains("宿主导入"), "unexpected error: {error}");

@@ -196,7 +196,7 @@ mod frozen_operator_tests {
     use crate::lowering::backends::clr::mir::freeze_clr_operator_binding;
     use crate::lowering::backends::jvm::JvmOperatorCode;
     use crate::lowering::backends::jvm::recipe::freeze_jvm_operator_binding;
-    use crate::lowering::backends::native::x86_64::{X86_64OperatorCode, freeze_x86_64_operator_binding};
+    use crate::lowering::backends::machine::x86_64::{X86_64OperatorCode, freeze_x86_64_operator_binding};
     use crate::transitional::msil::MsilOpcode;
 
     /// `u64` 无符号小于的托管目标配方：CLR 冻结为原生 `clt.un`，JVM 冻结为符号位

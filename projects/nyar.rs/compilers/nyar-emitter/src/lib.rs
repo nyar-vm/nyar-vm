@@ -30,11 +30,11 @@ use std::{
 };
 
 use crate::{
-    nyar_backend_clr::ClrBinaryBackendInput, nyar_backend_jvm::JvmBinaryBackendInput, nyar_backend_native::NativeBinaryBackendInput,
+    nyar_backend_clr::ClrBinaryBackendInput, nyar_backend_jvm::JvmBinaryBackendInput, nyar_backend_machine::MachineImageBackendInput,
     nyar_backend_wasi::WasmBinaryBackendInput,
 };
 pub use backend::{
-    clr as nyar_backend_clr, jvm as nyar_backend_jvm, native as nyar_backend_native, vm as nyar_backend_vm, wasi as nyar_backend_wasi,
+    clr as nyar_backend_clr, jvm as nyar_backend_jvm, machine as nyar_backend_machine, vm as nyar_backend_vm, wasi as nyar_backend_wasi,
     wasm_js_glue as nyar_backend_wasm_js_glue,
 };
 use nyar::{
@@ -192,20 +192,20 @@ pub mod testing {
     }
 
     /// Lower a fragment submission to a native image for a resolved canonical target.
-    pub fn lower_fragment_to_native_image(
+    pub fn lower_fragment_to_machine_image(
         submission: &FragmentSubmission,
         target: nyar::abstractions::CanonicalTarget,
-    ) -> Result<super::lowering::backends::native::NativeLoweredFragment> {
-        super::lowering::testing_lower_fragment_to_native_image(submission, target)
+    ) -> Result<super::lowering::backends::machine::X64LoweredProgram> {
+        super::lowering::testing_lower_fragment_to_machine_image(submission, target)
     }
 
     /// Lower a fragment submission to a host-extension shared library.
-    pub fn lower_fragment_to_native_extension(
+    pub fn lower_fragment_to_machine_extension(
         submission: &FragmentSubmission,
-        target: &super::nyar_backend_native::NativeProductTarget,
+        target: &super::nyar_backend_machine::X64ProductTarget,
         module_name: &str,
-    ) -> Result<super::lowering::backends::native::NativeLoweredExtension> {
-        super::lowering::testing_lower_fragment_to_native_extension(submission, target, module_name)
+    ) -> Result<super::lowering::backends::machine::X64LoweredExtension> {
+        super::lowering::testing_lower_fragment_to_machine_extension(submission, target, module_name)
     }
 
     /// Decode one WASM uleb128 integer (test helper for section parsing).
@@ -661,8 +661,8 @@ pub enum DriverBackendInput {
     Jvm(JvmBinaryBackendInput),
     /// `WASM/WASI` 二进制输入。
     Wasm(WasmBinaryBackendInput),
-    /// `native` 二进制输入。
-    Native(NativeBinaryBackendInput),
+    /// 机器码镜像输入（`PE` / `ELF`，由真实四元组与产物合同决定）。
+    Machine(MachineImageBackendInput),
     /// `ovm` first-class suspend 输入。
     Ovm(OvmBackendInput),
 }
@@ -694,9 +694,9 @@ impl LoweredBackendInput {
         Self::new(DriverBackendInput::Wasm(input))
     }
 
-    /// 直接提交 `native` backend 输入。
-    pub fn native(input: NativeBinaryBackendInput) -> Self {
-        Self::new(DriverBackendInput::Native(input))
+    /// 直接提交机器码 backend 输入。
+    pub fn machine(input: MachineImageBackendInput) -> Self {
+        Self::new(DriverBackendInput::Machine(input))
     }
 
     /// 直接提交 `ovm` backend 输入。
@@ -897,10 +897,10 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
         let fragment = request.bundle.assemble_fragment_for_partition(partition_index)?;
         let host_flavor = request.bundle.target_host_flavor().ok_or_else(|| format!("分区计划缺少目标 host flavor"))?;
         let backend_family = backend_family_for_partition(partition);
-        // 宿主扩展只由 native lane 承载：其余 lane 在写出前拒绝，不降级成平台产物。
+        // 宿主扩展只由 机器码 lane 承载：其余 lane 在写出前拒绝，不降级成平台产物。
         if purpose == nyar::ArtifactPurpose::HostExtension && backend_family != nyar::TargetBackendFamily::MachineCode {
             return Err(format!(
-                "宿主扩展只由 native lane 承载；分区 `{}` 的后端家族 `{backend_family:?}` 不支持该产物用途",
+                "宿主扩展只由 机器码 lane 承载；分区 `{}` 的后端家族 `{backend_family:?}` 不支持该产物用途",
                 partition.name
             ));
         }

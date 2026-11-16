@@ -4,7 +4,7 @@ Language-neutral guest execution and specialization substrate. Languages own AST
 
 Futamura's first projection specializes a language interpreter with respect to a known program: `R_L,P = S(I_L, P)`. The residual program preserves unknown runtime operations and explicit language/runtime dependencies. Nyar provides reusable transformation and analysis tools, while separate language-to-target adapters lower residual programs into Wasm, CLR, JVM, OVM or native representations.
 
-This is an ownership contract, not a delivered support matrix. Current Lua specialization is wired to a limited `NativeResidualModule` path and Windows PE wrapping. Full per-operation native frame/stack code generation remains incomplete: integer exit-code folding or a stub is not full compilation. Other guest specialization paths can remain incomplete. Python and TypeScript directories are not active workspace members.
+This is an ownership contract, not a delivered support matrix. Current Lua specialization is wired to a limited `MachineResidualModule` path and Windows PE wrapping. Full per-operation native frame/stack code generation remains incomplete: integer exit-code folding or a stub is not full compilation. Other guest specialization paths can remain incomplete. Python and TypeScript directories are not active workspace members.
 
 There is no separate bytecode or probe compilation lane: a language either specializes into its target lane or reports that compilation is unsupported. Future OVM support must implement its own language-to-OVM adapter and runtime contract rather than route every target through OdinVM. Second/third projections remain future work.
 

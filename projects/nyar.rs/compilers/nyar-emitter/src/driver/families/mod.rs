@@ -5,7 +5,7 @@ use crate::{DriverCompileReport, DriverCompileRequest};
 
 mod clr;
 mod jvm;
-mod native;
+mod machine;
 #[cfg(feature = "ovm-lane")]
 #[doc(hidden)]
 pub mod ovm;
@@ -34,7 +34,7 @@ impl DriverCompilerRegistration {
 
 static CLR_COMPILER: clr::ClrFamilyCompiler = clr::ClrFamilyCompiler;
 static JVM_COMPILER: jvm::JvmFamilyCompiler = jvm::JvmFamilyCompiler;
-static NATIVE_COMPILER: native::NativeFamilyCompiler = native::NativeFamilyCompiler;
+static MACHINE_COMPILER: machine::MachineFamilyCompiler = machine::MachineFamilyCompiler;
 static WASM_COMPILER: wasm::WasmFamilyCompiler = wasm::WasmFamilyCompiler;
 #[cfg(feature = "ovm-lane")]
 static OVM_COMPILER: ovm::OvmFamilyCompiler = ovm::OvmFamilyCompiler;
@@ -43,7 +43,7 @@ static OVM_COMPILER: ovm::OvmFamilyCompiler = ovm::OvmFamilyCompiler;
 static DRIVER_COMPILERS: [DriverCompilerRegistration; 5] = [
     DriverCompilerRegistration { name: "clr-binary", priority: 100, supports: clr::supports_requirement, compiler: &CLR_COMPILER },
     DriverCompilerRegistration { name: "jvm-jar", priority: 100, supports: jvm::supports_requirement, compiler: &JVM_COMPILER },
-    DriverCompilerRegistration { name: "machine-code", priority: 100, supports: native::supports_requirement, compiler: &NATIVE_COMPILER },
+    DriverCompilerRegistration { name: "machine-code", priority: 100, supports: machine::supports_requirement, compiler: &MACHINE_COMPILER },
     DriverCompilerRegistration { name: "wasm-binary", priority: 100, supports: wasm::supports_requirement, compiler: &WASM_COMPILER },
     DriverCompilerRegistration { name: "ovm", priority: 100, supports: ovm::supports_requirement, compiler: &OVM_COMPILER },
 ];
@@ -52,7 +52,7 @@ static DRIVER_COMPILERS: [DriverCompilerRegistration; 5] = [
 static DRIVER_COMPILERS: [DriverCompilerRegistration; 4] = [
     DriverCompilerRegistration { name: "clr-binary", priority: 100, supports: clr::supports_requirement, compiler: &CLR_COMPILER },
     DriverCompilerRegistration { name: "jvm-jar", priority: 100, supports: jvm::supports_requirement, compiler: &JVM_COMPILER },
-    DriverCompilerRegistration { name: "machine-code", priority: 100, supports: native::supports_requirement, compiler: &NATIVE_COMPILER },
+    DriverCompilerRegistration { name: "machine-code", priority: 100, supports: machine::supports_requirement, compiler: &MACHINE_COMPILER },
     DriverCompilerRegistration { name: "wasm-binary", priority: 100, supports: wasm::supports_requirement, compiler: &WASM_COMPILER },
 ];
 

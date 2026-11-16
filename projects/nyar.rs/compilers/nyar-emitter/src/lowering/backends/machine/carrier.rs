@@ -20,8 +20,8 @@
 //! - 实参解析失败不静默成 `0`：Node 抛 `TypeError`、CPython 原样传播宿主异常，
 //!   `PyModuleDef_Init` / 装箱失败按宿主错误返回。
 
-use super::host::NativePlatform;
-use super::{NativeDataTarget, NativeTextInstruction, NativeTextProgramFunction};
+use super::host::X64Platform;
+use super::{X64DataTarget, X64TextInstruction, X64ProgramFunction};
 
 /// 宿主边界值种类：每个宿主闭合的编组能力在这里显式建模。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,23 +95,23 @@ const NODE_METHOD_MAX_PARAMETERS: usize = 6;
 ///
 /// 所有权归镜像；扩展模块的入口包装体在每次宿主调用开始时把游标归零，
 /// 因此单个镜像的峰值占用有界。预算耗尽按 `ud2` 陷入失败闭合。
-pub const NATIVE_TEXT_ARENA_CAPACITY: u32 = 64 * 1024;
+pub const X64_TEXT_ARENA_CAPACITY: u32 = 64 * 1024;
 
-/// 在 `.data` 末尾追加文本 arena：8 字节游标 + [`NATIVE_TEXT_ARENA_CAPACITY`] 字节载荷。
+/// 在 `.data` 末尾追加文本 arena：8 字节游标 + [`X64_TEXT_ARENA_CAPACITY`] 字节载荷。
 ///
 /// 返回游标偏移；`arena_offset + 8` 是载荷起点，游标值按载荷起点相对编码。
 pub fn append_text_arena(data: &mut Vec<u8>) -> u32 {
     let offset = u32::try_from(data.len()).expect("native 数据段长度超出 u32");
     data.extend_from_slice(&0u64.to_le_bytes());
-    data.resize(data.len() + NATIVE_TEXT_ARENA_CAPACITY as usize, 0);
+    data.resize(data.len() + X64_TEXT_ARENA_CAPACITY as usize, 0);
     offset
 }
 
 /// 入口处重置 arena 游标：`[arena_offset] = 0`。
 ///
 /// `reset_slot` 是包装体可用的临时帧槽；必须在调用任何被包装符号之前执行。
-pub fn reset_text_arena(reset_slot: u16, arena_offset: u32) -> Vec<NativeTextInstruction> {
-    use NativeTextInstruction as Lir;
+pub fn reset_text_arena(reset_slot: u16, arena_offset: u32) -> Vec<X64TextInstruction> {
+    use X64TextInstruction as Lir;
     vec![
         Lir::LoadDataAddress(arena_offset),
         Lir::StoreSlot(reset_slot),
@@ -173,7 +173,7 @@ pub fn python_module_data(
     module_name: &str,
     properties: &[HostProperty],
     methods: &[HostMethod],
-) -> (Vec<u8>, Vec<(u32, NativeDataTarget)>, Vec<u32>, Vec<u32>) {
+) -> (Vec<u8>, Vec<(u32, X64DataTarget)>, Vec<u32>, Vec<u32>) {
     let mut data = vec![0u8; PY_MODULE_DEF_BASE_LEN as usize];
     let mut relocations = Vec::new();
     data[..8].copy_from_slice(&1i64.to_le_bytes()); // ob_refcnt = 1
@@ -181,7 +181,7 @@ pub fn python_module_data(
 
     let name_offset = data.len() as u32;
     push_cstring(&mut data, module_name);
-    relocations.push((40, NativeDataTarget::Data(name_offset)));
+    relocations.push((40, X64DataTarget::Data(name_offset)));
 
     let mut property_name_offsets = Vec::with_capacity(properties.len());
     for property in properties {
@@ -205,12 +205,12 @@ pub fn python_module_data(
         let methods_offset = data.len() as u32;
         // `m_methods` 指向 NUL 结尾的 `PyMethodDef` 数组；多阶段执行时由
         // `_PyModule_ExecDef` 在槽位执行前安装。
-        relocations.push((64, NativeDataTarget::Data(methods_offset)));
+        relocations.push((64, X64DataTarget::Data(methods_offset)));
         for (index, method) in methods.iter().enumerate() {
             let entry = data.len() as u32;
             data.extend_from_slice(&[0u8; PY_METHOD_DEF_LEN as usize]);
-            relocations.push((entry, NativeDataTarget::Data(method_name_offsets[index])));
-            relocations.push((entry + 8, NativeDataTarget::Function(python_wrapper_name(&method.symbol))));
+            relocations.push((entry, X64DataTarget::Data(method_name_offsets[index])));
+            relocations.push((entry + 8, X64DataTarget::Function(python_wrapper_name(&method.symbol))));
             data[entry as usize + 16..entry as usize + 20].copy_from_slice(&PY_METH_VARARGS.to_le_bytes());
         }
         data.extend_from_slice(&[0u8; PY_METHOD_DEF_LEN as usize]); // 空终止项
@@ -221,8 +221,8 @@ pub fn python_module_data(
     let slots_offset = data.len() as u32;
     push_module_slot(&mut data, PY_MOD_EXEC);
     push_module_slot(&mut data, 0);
-    relocations.push((72, NativeDataTarget::Data(slots_offset)));
-    relocations.push((slots_offset + 8, NativeDataTarget::Function(PYTHON_EXEC_NAME.to_string())));
+    relocations.push((72, X64DataTarget::Data(slots_offset)));
+    relocations.push((slots_offset + 8, X64DataTarget::Function(PYTHON_EXEC_NAME.to_string())));
 
     (data, relocations, property_name_offsets, format_offsets)
 }
@@ -241,8 +241,8 @@ pub fn python_method_wrapper(
     format_offset: u32,
     dll: &str,
     arena: Option<u32>,
-) -> NativeTextProgramFunction {
-    use NativeTextInstruction as Lir;
+) -> X64ProgramFunction {
+    use X64TextInstruction as Lir;
     const ARGS_SLOT: u16 = 0;
     const FORMAT_SLOT: u16 = 1;
     const TEMP_SLOT: u16 = 2;
@@ -313,7 +313,7 @@ pub fn python_method_wrapper(
     instructions.push(Lir::LoadI64(0));
     instructions.push(Lir::Return);
 
-    NativeTextProgramFunction { name: python_wrapper_name(&method.symbol), slot_count: length_slot + 1, instructions }
+    X64ProgramFunction { name: python_wrapper_name(&method.symbol), slot_count: length_slot + 1, instructions }
 }
 
 /// `PyInit_<module>` 入口：多阶段初始化返回经 `PyModuleDef_Init` 初始化的定义地址。
@@ -321,9 +321,9 @@ pub fn python_method_wrapper(
 /// CPython 的导入器用 `PyObject_TypeCheck(m, &PyModuleDef_Type)` 判定多阶段模块，
 /// 因此定义必须先由 `PyModuleDef_Init` 设置 `ob_type`；随后宿主调用
 /// `PyModule_FromDefAndSpec2` 创建模块并执行 `Py_mod_exec` 槽位。
-pub fn python_module_registration(module_name: &str, dll: &str) -> NativeTextProgramFunction {
-    use NativeTextInstruction as Lir;
-    NativeTextProgramFunction {
+pub fn python_module_registration(module_name: &str, dll: &str) -> X64ProgramFunction {
+    use X64TextInstruction as Lir;
+    X64ProgramFunction {
         name: format!("PyInit_{module_name}"),
         slot_count: 1,
         instructions: vec![
@@ -344,8 +344,8 @@ pub fn python_module_registration(module_name: &str, dll: &str) -> NativeTextPro
 /// `Int64` 先经 `PyLong_FromLongLong` 装箱再交给 `PyModule_AddObject`：
 /// `PyModule_AddIntConstant` 走 C `long`，在 Windows 上只有 32 位，会把 i64 截断；
 /// `Bool` 经 `PyBool_FromLong` 得到原生 `bool`，不与整数混为同一返回类别。
-pub fn python_module_exec(properties: &[HostProperty], property_name_offsets: &[u32], dll: &str, arena: Option<u32>) -> NativeTextProgramFunction {
-    use NativeTextInstruction as Lir;
+pub fn python_module_exec(properties: &[HostProperty], property_name_offsets: &[u32], dll: &str, arena: Option<u32>) -> X64ProgramFunction {
+    use X64TextInstruction as Lir;
     const MODULE_SLOT: u16 = 0;
     const VALUE_SLOT: u16 = 1;
     const OBJECT_SLOT: u16 = 2;
@@ -395,7 +395,7 @@ pub fn python_module_exec(properties: &[HostProperty], property_name_offsets: &[
         ]);
     }
     instructions.extend([Lir::LoadI64(0), Lir::Return, Lir::Label(FAIL_LABEL), Lir::LoadI64(-1), Lir::Return]);
-    NativeTextProgramFunction { name: PYTHON_EXEC_NAME.to_string(), slot_count: 6, instructions }
+    X64ProgramFunction { name: PYTHON_EXEC_NAME.to_string(), slot_count: 6, instructions }
 }
 
 /// Node-API 数据段：属性名、错误消息与各方法名（全部 NUL 结尾）。
@@ -426,11 +426,11 @@ pub fn node_addon_registration(
     property_name_offsets: &[u32],
     methods: &[HostMethod],
     method_name_offsets: &[u32],
-    platform: NativePlatform,
+    platform: X64Platform,
     dll: &str,
     arena: Option<u32>,
-) -> NativeTextProgramFunction {
-    use NativeTextInstruction as Lir;
+) -> X64ProgramFunction {
+    use X64TextInstruction as Lir;
     const ENV_SLOT: u16 = 0;
     const EXPORTS_SLOT: u16 = 1;
     const VALUE_SLOT: u16 = 2;
@@ -516,7 +516,7 @@ pub fn node_addon_registration(
     instructions.push(Lir::LoadSlot(EXPORTS_SLOT));
     instructions.push(Lir::Return);
 
-    NativeTextProgramFunction { name: "napi_register_module_v1".to_string(), slot_count: 7, instructions }
+    X64ProgramFunction { name: "napi_register_module_v1".to_string(), slot_count: 7, instructions }
 }
 
 /// `napi_value wrapper(napi_env env, napi_callback_info info)`：把 Node 实参解析成
@@ -525,8 +525,8 @@ pub fn node_addon_registration(
 /// `Bool → napi_get_boolean`、`Utf8 → napi_create_string_utf8`。
 ///
 /// 参数个数不符或不是整数时抛 `TypeError` 并返回 `NULL`，不把错误静默成 0。
-pub fn node_method_wrapper(method: &HostMethod, error_message_offset: u32, platform: NativePlatform, dll: &str, arena: Option<u32>) -> NativeTextProgramFunction {
-    use NativeTextInstruction as Lir;
+pub fn node_method_wrapper(method: &HostMethod, error_message_offset: u32, platform: X64Platform, dll: &str, arena: Option<u32>) -> X64ProgramFunction {
+    use X64TextInstruction as Lir;
     const ENV_SLOT: u16 = 0;
     const INFO_SLOT: u16 = 1;
     const ARGC_SLOT: u16 = 2;
@@ -668,5 +668,5 @@ pub fn node_method_wrapper(method: &HostMethod, error_message_offset: u32, platf
         Lir::Return,
     ]);
 
-    NativeTextProgramFunction { name: node_wrapper_name(&method.symbol), slot_count: STRING_SLOT + 1, instructions }
+    X64ProgramFunction { name: node_wrapper_name(&method.symbol), slot_count: STRING_SLOT + 1, instructions }
 }

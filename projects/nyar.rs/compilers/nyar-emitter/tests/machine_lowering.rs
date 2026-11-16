@@ -15,10 +15,10 @@ use nyar::{
 };
 use nyar_emitter::{
     BackendImport, FragmentSubmission, TargetExecutionPlan,
-    lowering::backends::native::x86_64::X86_64OperatorCode,
-    nyar_backend_native::{NativeBinaryBackend, NativeBinaryBackendInput, NativeExecutableKind, classify_native_image},
+    lowering::backends::machine::x86_64::X86_64OperatorCode,
+    nyar_backend_machine::{MachineImageBackend, MachineImageBackendInput, MachineImageKind, classify_machine_image},
     target_operator::{TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
-    testing::lower_fragment_to_native_image,
+    testing::lower_fragment_to_machine_image,
 };
 use nyar_emitter::contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef};
 use nyar_types::{ImportIndex, ItemInstanceId, NyarType};
@@ -38,8 +38,8 @@ fn windows_x64() -> CanonicalTarget {
     CanonicalTarget::parse("x86_64-pc-windows-msvc").expect("canonical target")
 }
 
-fn lower_windows_x64(submission: &FragmentSubmission) -> nyar_emitter::Result<nyar_emitter::lowering::backends::native::NativeLoweredFragment> {
-    lower_fragment_to_native_image(submission, windows_x64())
+fn lower_windows_x64(submission: &FragmentSubmission) -> nyar_emitter::Result<nyar_emitter::lowering::backends::machine::X64LoweredProgram> {
+    lower_fragment_to_machine_image(submission, windows_x64())
 }
 
 fn function(symbol: &str, return_type: NyarType, parameters: Vec<NyarType>) -> ExecutableFunction {
@@ -172,15 +172,15 @@ fn with_function_mut(plan: &mut TargetExecutionPlan, symbol: &str, mutate: impl 
 }
 
 fn expect_pe(executable: &[u8]) {
-    let facts = classify_native_image(executable).expect("native 产物必须是可解析镜像");
-    assert_eq!(facts.kind, NativeExecutableKind::Pe, "必须是 PE32+ 而不是 ELF");
+    let facts = classify_machine_image(executable).expect("native 产物必须是可解析镜像");
+    assert_eq!(facts.kind, MachineImageKind::Pe, "必须是 PE32+ 而不是 ELF");
     assert_eq!(facts.arch, BinaryArch::X64, "必须是 AMD64 镜像");
     assert!(!facts.shared, "必须是可执行镜像而不是共享库");
 }
 
 fn expect_elf(executable: &[u8]) {
-    let facts = classify_native_image(executable).expect("native 产物必须是可解析镜像");
-    assert_eq!(facts.kind, NativeExecutableKind::Elf, "必须是 ELF64 ET_EXEC");
+    let facts = classify_machine_image(executable).expect("native 产物必须是可解析镜像");
+    assert_eq!(facts.kind, MachineImageKind::Elf, "必须是 ELF64 ET_EXEC");
     assert_eq!(facts.arch, BinaryArch::X64, "必须是 AMD64 镜像");
     assert!(!facts.shared, "必须是可执行镜像而不是共享库");
 }
@@ -238,7 +238,7 @@ fn parameters_calls_and_frozen_operator_run_natively() {
 fn parameters_calls_and_frozen_operator_run_on_linux_elf() {
     let plan = add_fixture();
     let linux = CanonicalTarget::parse("x86_64-unknown-linux-gnu").expect("linux quad");
-    let lowered = lower_fragment_to_native_image(&FragmentSubmission::from_backend_plan(plan), linux)
+    let lowered = lower_fragment_to_machine_image(&FragmentSubmission::from_backend_plan(plan), linux)
         .expect("linux 纵切必须生成 ELF");
     expect_elf(&lowered.executable);
     assert!(lowered.text_len > 0, "`.text` 必须包含真实机器码与入口桩");
@@ -359,14 +359,14 @@ fn native_backend_rejects_image_container_mismatching_target_os_or_abi() {
     let lowered = lower_windows_x64(&FragmentSubmission::from_backend_plan(plan)).expect("unit 入口必须生成 PE");
 
     let directory = tempfile::tempdir().expect("temp dir");
-    let backend = NativeBinaryBackend::new();
+    let backend = MachineImageBackend::new();
     let mut options = CompilationOptions {
         target: BinaryTarget::new(TargetFamily::MachineCode, BinaryArch::X64, BinaryFlavor::MachineCode),
         artifact_name: "native-target-check".to_string(),
         emit_debug_symbols: false,
         optimize: false,
     };
-    let input = || NativeBinaryBackendInput {
+    let input = || MachineImageBackendInput {
         executable: lowered.executable.clone(),
         output_dir: directory.path().to_path_buf(),
         entry_symbol: "main".to_string(),
@@ -541,11 +541,11 @@ fn unclosed_canonical_targets_are_rejected() {
     let submission = FragmentSubmission::from_backend_plan(plan);
 
     let macos = CanonicalTarget::parse("x86_64-unknown-macos").expect("macos quad");
-    let error = lower_fragment_to_native_image(&submission, macos).expect_err("Mach-O 容器未实现必须失败");
+    let error = lower_fragment_to_machine_image(&submission, macos).expect_err("Mach-O 容器未实现必须失败");
     assert!(error.contains("容器实现"), "错误必须点名缺失的容器实现: {error}");
 
     let aarch64 = CanonicalTarget::parse("aarch64-unknown-linux-gnu").expect("aarch64 quad");
-    let error = lower_fragment_to_native_image(&submission, aarch64).expect_err("aarch64 未实现必须失败");
+    let error = lower_fragment_to_machine_image(&submission, aarch64).expect_err("aarch64 未实现必须失败");
     assert!(error.contains("尚未实现架构 `aarch64`"), "错误必须点名未实现的 ISA: {error}");
 }
 
@@ -564,6 +564,6 @@ fn linux_with_unsupported_abi_is_rejected() {
         CanonicalSpecification::Linux,
         Some(CanonicalAbi::Msvc),
     );
-    let error = lower_fragment_to_native_image(&submission, msvc_linux).expect_err("linux + msvc 必须失败");
+    let error = lower_fragment_to_machine_image(&submission, msvc_linux).expect_err("linux + msvc 必须失败");
     assert!(error.contains("SysV64"), "错误必须点名只闭合的调用约定: {error}");
 }

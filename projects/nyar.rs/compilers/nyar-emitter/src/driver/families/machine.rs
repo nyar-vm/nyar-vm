@@ -1,11 +1,11 @@
-//! `native` 家族后端编译器：唯一宿主边界是 [`HostProjectionBoundary::MachineCode`]。
+//! `machine-code` 家族后端编译器：唯一宿主边界是 [`HostProjectionBoundary::MachineCode`]。
 //!
 //! 输入是语言 × 目标适配器已经编码好的原生镜像；本家族只负责按冻结的目标四元组
 //! 选择容器并写出产物，不重新生成机器码，也不解释语言语义。
 
 use crate::{
     DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverRunContract, Result, bundled_backend_capability_descriptor,
-    nyar_backend_native::NativeBinaryBackend,
+    nyar_backend_machine::MachineImageBackend,
 };
 use nyar::{
     BackendInputKind, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily, TargetFamily, TargetLane,
@@ -14,19 +14,19 @@ use nyar::{
 
 use super::BundledBackendCompiler;
 
-/// `native` 家族后端编译器。
-pub(super) struct NativeFamilyCompiler;
+/// `machine-code` 家族后端编译器。
+pub(super) struct MachineFamilyCompiler;
 
-/// 判断给定的后端需求是否可由 `native` 家族满足。
+/// 判断给定的后端需求是否可由 `machine-code` 家族满足。
 pub(super) fn supports_requirement(requirement: &PartitionBackendRequirement) -> bool {
     bundled_backend_capability_descriptor(TargetBackendFamily::MachineCode).is_some_and(|descriptor| descriptor.supports_requirement(requirement))
 }
 
-impl BundledBackendCompiler for NativeFamilyCompiler {
+impl BundledBackendCompiler for MachineFamilyCompiler {
     fn compile(&self, request: DriverCompileRequest<'_>) -> Result<DriverCompileReport> {
-        let DriverBackendInput::Native(input) = request.input
+        let DriverBackendInput::Machine(input) = request.input
         else {
-            return Err(format!("`machine-code` 家族请求必须携带 `NativeBinaryBackendInput`"));
+            return Err(format!("`machine-code` 家族请求必须携带 `MachineImageBackendInput`"));
         };
         let requirement = &request.requirement;
         if requirement.lane != TargetLane::MachineCode {
@@ -41,7 +41,7 @@ impl BundledBackendCompiler for NativeFamilyCompiler {
         if requirement.host_boundary != HostProjectionBoundary::MachineCode {
             return Err(format!("`machine-code` 后端输入宿主与规划需求不一致：requirement={:?}", requirement.host_boundary));
         }
-        let backend = NativeBinaryBackend::new();
+        let backend = MachineImageBackend::new();
         backend.validate(&input).map_err(|error| error.to_string())?;
         let entry_symbol = input.entry_symbol.clone();
         // 用途决定容器：输入必须已携带与用途一致的产物事实（扩展名、导出面），

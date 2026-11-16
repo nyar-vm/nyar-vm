@@ -1,11 +1,11 @@
 //! Legend VM compilers.
 //!
-//! Host-script native product path: [`native_residual`] -> x64 / Windows `PE` or Linux `ELF`.
+//! Host-script native product path: [`machine_residual`] -> x64 / Windows `PE` or Linux `ELF`.
 
-mod native_residual;
+mod machine_residual;
 
-pub use native_residual::{
-    NativeHostModule, NativePlatform, NativeProductTarget, NativeResidualFunction, NativeResidualModule, NativeResidualOp, NativeResidualSink,
-    ResidualValue, emit_native_elf_library, emit_native_node_addon, emit_native_pe_library, emit_native_python_extension, eval_native_residual,
-    eval_native_residual_with_inputs, eval_native_residual_with_trace, lower_native_residual_to_program, specialize_language,
+pub use machine_residual::{
+    HostModule, X64Platform, X64ProductTarget, MachineResidualFunction, MachineResidualModule, MachineResidualOp, MachineResidualSink,
+    ResidualValue, emit_machine_elf_library, emit_machine_node_addon, emit_machine_pe_library, emit_machine_python_extension, eval_machine_residual,
+    eval_machine_residual_with_inputs, eval_machine_residual_with_trace, lower_machine_residual_to_program, specialize_language,
 };
