@@ -20,7 +20,7 @@ if [ $x -eq 1 ]; then
 fi
 "#;
     let result = runner.run("bash", source, &mut env).expect("run");
-    assert_eq!(result.to_string_value(), "hello");
+    assert_eq!(result.to_string(), "hello");
 }
 
 #[test]
@@ -40,7 +40,7 @@ for item in hi; do
 done
 "#;
     let result = runner.run("bash", source, &mut env).expect("run");
-    assert_eq!(result.to_string_value(), "hi");
+    assert_eq!(result.to_string(), "hi");
 }
 
 #[test]
@@ -48,7 +48,7 @@ fn bash_exit_code_via_status() {
     let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let result = runner.run("bash", "false\necho $?", &mut env).expect("run");
-    assert_eq!(result.to_string_value(), "1");
+    assert_eq!(result.to_string(), "1");
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn bash_exit_builtin() {
     let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let result = runner.run("bash", "echo before\nexit 3\necho after", &mut env).expect("run");
-    assert_eq!(result.to_i64(), 3);
+    assert_eq!(result.as_i64(), Some(3));
 }
 
 #[test]
@@ -75,7 +75,7 @@ fi",
             &mut env,
         )
         .expect("run");
-    assert_eq!(result.to_string_value(), "else");
+    assert_eq!(result.to_string(), "else");
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn bash_and_or() {
     let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let result = runner.run("bash", "false || echo fallback", &mut env).expect("run");
-    assert_eq!(result.to_string_value(), "fallback");
+    assert_eq!(result.to_string(), "fallback");
 }
 
 #[test]
@@ -91,7 +91,7 @@ fn bash_legend_hello_fixture() {
     let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let result = runner.run("bash", &fixture("hello.sh"), &mut env).expect("run");
-    assert_eq!(result.to_string_value(), "legend bash fixture");
+    assert_eq!(result.to_string(), "legend bash fixture");
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn bash_legend_control_fixture() {
     let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let result = runner.run("bash", &fixture("control.sh"), &mut env).expect("run");
-    assert_eq!(result.to_string_value(), "victory");
+    assert_eq!(result.to_string(), "victory");
 }
 
 #[test]
@@ -119,5 +119,5 @@ fn sh_alias_runs_bash_evaluator() {
     let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let result = runner.run("sh", "echo alias", &mut env).expect("run");
-    assert_eq!(result.to_string_value(), "alias");
+    assert_eq!(result.to_string(), "alias");
 }

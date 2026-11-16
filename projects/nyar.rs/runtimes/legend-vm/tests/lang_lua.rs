@@ -14,7 +14,7 @@ local x = 1 + 2
 print(x)
 "#;
     let result = runner.run("lua", source, &mut env).expect("run");
-    assert_eq!(result.to_string_value(), "3");
+    assert_eq!(result.to_string(), "3");
 }
 
 #[test]
@@ -45,7 +45,7 @@ if total == 10 and t.tag == "ok" then
 end
 "#;
     let result = runner.run("lua", source, &mut env).expect("run");
-    assert_eq!(result.to_string_value(), "ok:10");
+    assert_eq!(result.to_string(), "ok:10");
 }
 
 #[test]

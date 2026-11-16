@@ -9,7 +9,7 @@ fn tcl_puts_set() {
     let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let result = runner.run("tcl", "set x 1\nputs $x", &mut env).expect("run");
-    assert_eq!(result.to_string_value(), "1");
+    assert_eq!(result.to_string(), "1");
 }
 
 #[test]
@@ -18,7 +18,7 @@ fn tcl_expr_if_while() {
     let mut env = HashMap::new();
     let source = "set n 0\nwhile {$n < 3} {\n  incr n\n}\nputs $n\n";
     let result = runner.run("tcl", source, &mut env).expect("run");
-    assert_eq!(result.to_string_value(), "3");
+    assert_eq!(result.to_string(), "3");
 }
 
 #[test]
@@ -39,7 +39,7 @@ foreach x {10 20} {
 puts $total
 "#;
     let result = runner.run("tcl", source, &mut env).expect("run");
-    assert_eq!(result.to_string_value(), "33");
+    assert_eq!(result.to_string(), "33");
 }
 
 #[test]
@@ -48,7 +48,7 @@ fn tcl_list_helpers() {
     let mut env = HashMap::new();
     let source = "set xs [list a b c]\nputs [lindex $xs 1]\n";
     let result = runner.run("tcl", source, &mut env).expect("run");
-    assert_eq!(result.to_string_value(), "b");
+    assert_eq!(result.to_string(), "b");
 }
 
 #[test]

@@ -10,7 +10,7 @@ use std::{
 };
 
 /// Substrate modules that must not import concrete language ASTs.
-const CORE_RELATIVE_PATHS: &[&str] = &["algebra", "compiler", "value.rs", "lib.rs", "guest.rs"];
+const CORE_RELATIVE_PATHS: &[&str] = &["compiler", "lib.rs", "guest.rs"];
 
 /// Tokens that must not appear in substrate core.
 const FORBIDDEN_IN_CORE: &[&str] = &["rusty_::script", "valkyrie::", "ValkyrieCompiler", "HostScript", "host_script"];

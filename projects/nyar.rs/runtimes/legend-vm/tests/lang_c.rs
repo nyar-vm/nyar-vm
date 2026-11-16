@@ -21,7 +21,7 @@ int main(void) {
 }
 "#;
     let result = runner.run("c", source, &mut env).expect("run");
-    assert_eq!(result.to_string_value(), "42");
+    assert_eq!(result.to_string(), "42");
 }
 
 #[test]

@@ -111,7 +111,7 @@ pub fn run_host_script(options: JsHostScriptOptions) -> Result<JsHostScriptResul
     let runner = legend_vm::LegendVmRunner::new();
     let mut env = HashMap::new();
     let value = runner.run(&options.language, &options.source, &mut env).map_err(|error| Error::from_reason(error.to_string()))?;
-    Ok(JsHostScriptResult { value: value.to_string_value() })
+    Ok(JsHostScriptResult { value: value.to_string() })
 }
 
 /// 在指定工作目录执行已准备好的命令并返回退出码。

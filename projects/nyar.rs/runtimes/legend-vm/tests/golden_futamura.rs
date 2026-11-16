@@ -6,9 +6,28 @@
 use std::collections::HashMap;
 
 use legend_vm::{
-    LegacyValue, LegendVmRunner,
+    GuestValueHandle, LegendVmRunner,
     compiler::{ResidualValue, eval_native_residual, eval_native_residual_with_inputs, eval_native_residual_with_trace},
+    evaluator::lua_host_value,
 };
+use rusty_lua::LuaValue;
+
+#[test]
+fn guest_interpret_failure_is_reported_instead_of_nulled() {
+    let runner = LegendVmRunner::new();
+    let mut env = legend_vm::GuestEnv::new();
+    let error = runner.run("lua", "return (", &mut env).expect_err("syntax error must surface");
+    assert!(error.to_string().contains("lua"), "unexpected error: {error}");
+}
+
+#[test]
+fn foreign_env_value_is_rejected_instead_of_stringified() {
+    let runner = LegendVmRunner::new();
+    let mut env = legend_vm::GuestEnv::new();
+    env.insert("x".to_string(), legend_vm::evaluator::bash_host_value(rusty_bash::BashValue::Int(1)));
+    let error = runner.run("lua", "return x", &mut env).expect_err("a bash handle is not a lua value");
+    assert!(error.to_string().contains("bash"), "unexpected error: {error}");
+}
 
 #[test]
 fn languages_without_a_compiled_lane_report_unsupported() {
@@ -119,7 +138,7 @@ fn assert_native_pe_matches_interpret(source: &str, residual_ok: impl FnOnce(&Re
 
     let specialized = eval_native_residual(&residual).expect("eval native residual");
     assert!(residual_ok(&specialized), "residual result unexpected: {specialized:?}; interpret={interpreted:?}");
-    assert_eq!(specialized.to_key(), legacy_key(&interpreted), "residual={specialized:?} interpret={interpreted:?}");
+    assert_eq!(specialized.to_key(), legacy_key(&interpreted), "residual={specialized:?} interpret={interpreted}");
 
     if matches!(specialized, ResidualValue::Int(_)) {
         let pe = legend_vm::compiler::emit_native_pe(&residual, None).expect("emit PE bytes");
@@ -147,12 +166,12 @@ end
 "#;
     assert_unknown_input_matches_interpret(
         source,
-        &[("x", LegacyValue::Int(3)), ("y", LegacyValue::Int(4))],
+        &[("x", LuaValue::Int(3)), ("y", LuaValue::Int(4))],
         |value| matches!(value, ResidualValue::Int(14)),
     );
     assert_unknown_input_matches_interpret(
         source,
-        &[("x", LegacyValue::Int(7)), ("y", LegacyValue::Int(9))],
+        &[("x", LuaValue::Int(7)), ("y", LuaValue::Int(9))],
         |value| matches!(value, ResidualValue::Int(16)),
     );
 }
@@ -164,7 +183,7 @@ fn lua_pe_unknown_input_type_mismatch_matches_interpret() {
     let source = "return x + y\n";
     assert_unknown_input_matches_interpret(
         source,
-        &[("x", LegacyValue::String("abc".to_string())), ("y", LegacyValue::Int(5))],
+        &[("x", LuaValue::String("abc".to_string())), ("y", LuaValue::Int(5))],
         // 字符串无法解析为数值时按 guest 规则取 0；结果可能是 Float(5)，键仍是 "5"。
         |value| value.to_key() == "5",
     );
@@ -180,7 +199,7 @@ while s < n do
 end
 return s
 "#;
-    assert_unknown_input_matches_interpret(source, &[("n", LegacyValue::Int(3))], |value| matches!(value, ResidualValue::Int(3)));
+    assert_unknown_input_matches_interpret(source, &[("n", LuaValue::Int(3))], |value| matches!(value, ResidualValue::Int(3)));
 }
 
 /// 参数化残差没有编译期常量可折叠：产品 PE 路径必须显式失败，禁止固定答案。
@@ -256,7 +275,7 @@ fn lua_pe_resolves_unknown_call_at_runtime() {
 #[test]
 fn lua_pe_unknown_input_as_table_key_matches_interpret() {
     let source = "local t = { 10, 20, 30 }\nreturn t[k]\n";
-    assert_unknown_input_matches_interpret(source, &[("k", LegacyValue::Int(2))], |value| value.to_key() == "20");
+    assert_unknown_input_matches_interpret(source, &[("k", LuaValue::Int(2))], |value| value.to_key() == "20");
 }
 
 /// 对象残差没有编译期常量可折叠：PE 产品路径必须显式失败。
@@ -274,17 +293,18 @@ fn assert_residual_matches_interpret(source: &str, expected: &str) {
     let interpreted = runner.run("lua", source, &mut env).expect("interpret");
     let residual = runner.specialize_native("lua", source, "lua_pe").expect("specialize → native");
     let specialized = eval_native_residual(&residual).expect("eval native residual");
-    assert_eq!(specialized.to_key(), legacy_key(&interpreted), "residual={specialized:?} interpret={interpreted:?}");
+    assert_eq!(specialized.to_key(), legacy_key(&interpreted), "residual={specialized:?} interpret={interpreted}");
     assert_eq!(specialized.to_key(), expected, "source: {source}; residual={specialized:?}");
 }
 
 fn assert_unknown_input_matches_interpret(
     source: &str,
-    inputs: &[(&str, LegacyValue)],
+    inputs: &[(&str, LuaValue)],
     residual_ok: impl FnOnce(&ResidualValue) -> bool,
 ) {
     let runner = LegendVmRunner::new();
-    let mut env: HashMap<String, LegacyValue> = inputs.iter().map(|(name, value)| (name.to_string(), value.clone())).collect();
+    let mut env: legend_vm::GuestEnv =
+        inputs.iter().map(|(name, value)| (name.to_string(), lua_host_value(value.clone()))).collect();
     let interpreted = runner.run("lua", source, &mut env).expect("interpret");
 
     let residual = runner.specialize_native("lua", source, "lua_pe").expect("specialize → native");
@@ -293,30 +313,27 @@ fn assert_unknown_input_matches_interpret(
     assert_eq!(main.parameters, expected_names, "顶层自由变量必须成为残差 `main` 的未知输入形参");
 
     let residual_inputs: HashMap<String, ResidualValue> =
-        inputs.iter().map(|(name, value)| (name.to_string(), residual_input(value))).collect();
+        inputs.iter().map(|(name, value)| (name.to_string(), residual_input_value(value))).collect();
     let specialized = eval_native_residual_with_inputs(&residual, &residual_inputs).expect("eval native residual");
-    assert!(residual_ok(&specialized), "residual result unexpected: {specialized:?}; interpret={interpreted:?}");
-    assert_eq!(specialized.to_key(), legacy_key(&interpreted), "residual={specialized:?} interpret={interpreted:?}");
+    assert!(residual_ok(&specialized), "residual result unexpected: {specialized:?}; interpret={interpreted}");
+    assert_eq!(specialized.to_key(), interpreted.to_string(), "residual={specialized:?} interpret={interpreted}");
 }
 
-/// guest `LegacyValue` → 残差值的唯一转换点（夹具不复制数值规则）。
-fn residual_input(value: &LegacyValue) -> ResidualValue {
+/// 夹具有限的输入构造只覆盖它实际使用的 Lua 形状；其他语言值必须显式失败。
+fn residual_input_value(value: &LuaValue) -> ResidualValue {
     match value {
-        LegacyValue::Null => ResidualValue::Nil,
-        LegacyValue::Bool(value) => ResidualValue::Bool(*value),
-        LegacyValue::Int(value) => ResidualValue::Int(*value),
-        LegacyValue::String(value) => ResidualValue::String(value.clone()),
-        other => ResidualValue::String(other.to_string_value()),
+        LuaValue::Null => ResidualValue::Nil,
+        LuaValue::Bool(value) => ResidualValue::Bool(*value),
+        LuaValue::Int(value) => ResidualValue::Int(*value),
+        LuaValue::Float(value) => ResidualValue::Float(*value),
+        LuaValue::String(value) => ResidualValue::String(value.clone()),
+        LuaValue::Table(_) => panic!("table 输入没有残差形态"),
     }
 }
 
-/// 解释器结果经 `LegacyValue` 适配层返回；`Null` 的宿主显示是 `null`，
-/// 而残差的 `Nil` 与 guest `nil` 同为空串——差分比较统一到 guest 语义。
-fn legacy_key(value: &LegacyValue) -> String {
-    match value {
-        LegacyValue::Null => String::new(),
-        other => other.to_string_value(),
-    }
+/// guest 值的宿主显示：`nil` 与残差 `Nil` 同为空串——差分比较统一到 guest 语义。
+fn legacy_key(value: &GuestValueHandle) -> String {
+    value.to_string()
 }
 
 /// 导出函数 ABI：残差产品是 `PE` DLL，未知输入由宿主按 Win64 调用约定传入。

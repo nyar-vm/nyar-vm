@@ -7,8 +7,7 @@ use miette::{Result, miette};
 use crate::{
     compiler::{NativeResidualModule, PeCompiler, emit_native_pe},
     evaluator::{evaluate_bash_script, evaluate_c_script, evaluate_lua_script, evaluate_powershell_script, evaluate_tcl_script},
-    guest::{FnGuestInterpret, GuestInterpretFn},
-    value::LegacyValue,
+    guest::{FnGuestInterpret, GuestEnv, GuestInterpretFn, GuestValueHandle},
 };
 
 /// Language metadata for `list` output.
@@ -71,10 +70,13 @@ impl LegendVmRunner {
     }
 
     /// Run source for a language.
-    pub fn run(&self, language: &str, source: &str, env: &mut HashMap<String, LegacyValue>) -> Result<LegacyValue> {
+    ///
+    /// The returned handle keeps the language-owned value; interpreter failures are reported
+    /// as structured [`crate::guest::GuestError`] descriptions instead of a null result.
+    pub fn run(&self, language: &str, source: &str, env: &mut GuestEnv) -> Result<GuestValueHandle> {
         let language = language.to_ascii_lowercase();
         let evaluator = self.evaluators.get(&language).copied().ok_or_else(|| miette!("language '{language}' is not supported"))?;
-        Ok(evaluator(source, env))
+        evaluator(source, env).map_err(|error| miette!("{error}"))
     }
 
     /// Compile source for the language's native specialization lane.

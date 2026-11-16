@@ -14,7 +14,7 @@ fn powershell_write_output() {
     let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let result = runner.run("powershell", r#"Write-Output "hello""#, &mut env).expect("run");
-    assert_eq!(result.to_string_value(), "hello");
+    assert_eq!(result.to_string(), "hello");
 }
 
 #[test]
@@ -29,7 +29,7 @@ function Add($a, $b) { return $a + $b }
 Write-Output (Add $x 2)
 "#;
     let result = runner.run("powershell", source, &mut env).expect("run");
-    assert_eq!(result.to_string_value(), "7");
+    assert_eq!(result.to_string(), "7");
 }
 
 #[test]
@@ -42,7 +42,7 @@ for ($i = 1; $i -le 3; $i = $i + 1) { $sum = $sum + $i }
 $sum | Write-Output
 "#;
     let result = runner.run("ps1", source, &mut env).expect("run");
-    assert_eq!(result.to_string_value(), "6");
+    assert_eq!(result.to_string(), "6");
 }
 
 #[test]
@@ -50,7 +50,7 @@ fn powershell_legend_hello_fixture() {
     let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let result = runner.run("powershell", &fixture("hello.ps1"), &mut env).expect("run");
-    assert_eq!(result.to_string_value(), "legend powershell fixture");
+    assert_eq!(result.to_string(), "legend powershell fixture");
 }
 
 #[test]
@@ -58,7 +58,7 @@ fn powershell_legend_control_fixture() {
     let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let result = runner.run("powershell", &fixture("control.ps1"), &mut env).expect("run");
-    assert_eq!(result.to_string_value(), "victory");
+    assert_eq!(result.to_string(), "victory");
 }
 
 #[test]
