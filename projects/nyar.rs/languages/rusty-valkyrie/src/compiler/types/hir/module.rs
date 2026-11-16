@@ -10,7 +10,7 @@ use crate::compiler::types::{Identifier, NamePath, SourceSpan};
 ///
 /// 新增字段必须递增本版本：反序列化的旧报文缺少版本字段（缺省为 `0`）或版本
 /// 与本常量不符时，必须在语义合同校验处结构化拒绝，不许静默接收。
-pub const HIR_WIRE_VERSION: u32 = 4;
+pub const HIR_WIRE_VERSION: u32 = 5;
 
 /// A module in HIR.
 ///
@@ -59,11 +59,6 @@ pub struct HirModule {
     pub structs: Vec<HirStruct>,
     /// Enums defined in this module.
     pub enums: Vec<HirEnum>,
-    /// Nominal sum definitions exported by resolved dependencies.  This is
-    /// legacy migration storage. Formal compilation must use
-    /// `imported_nominal_exports`, which retains exporter provenance.
-    #[cfg_attr(feature = "serde", serde(default))]
-    pub imported_enums: Vec<HirEnum>,
     /// Complete nominal metadata explicitly exported by resolved dependencies.
     /// Consumers may use an imported variant only when its exporter and layout
     /// are both available through this structured boundary.
@@ -386,7 +381,6 @@ impl Default for HirModule {
             functions: Vec::new(),
             structs: Vec::new(),
             enums: Vec::new(),
-            imported_enums: Vec::new(),
             imported_semantic_exports: Vec::new(),
             flags: Vec::new(),
             traits: Vec::new(),
@@ -445,8 +439,7 @@ pub struct HirDependencySemanticExport {
 }
 
 impl HirModule {
-    /// Iterates nominal sums available through the formal dependency-export
-    /// boundary. The legacy `imported_enums` field is intentionally excluded.
+    /// Iterates nominal sums available through the formal dependency-export boundary.
     pub fn imported_nominal_enums(&self) -> impl Iterator<Item = &HirEnum> {
         self.imported_semantic_exports.iter().flat_map(|export| export.enums.iter())
     }

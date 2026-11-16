@@ -99,10 +99,10 @@ pub struct EnumRegistry {
 }
 
 impl EnumRegistry {
-    /// 从模块的 enum 与导入 enum 构建注册表。
+    /// 从模块的 enum 与正式导入 enum 构建注册表。
     pub fn from_module(module: &HirModule) -> Self {
         let mut registry = Self::default();
-        for enum_def in module.enums.iter().chain(module.imported_enums.iter()).chain(module.imported_nominal_enums()) {
+        for enum_def in module.enums.iter().chain(module.imported_nominal_enums()) {
             registry.sum_types.insert(enum_def.name.clone(), enum_def.variants.iter().map(|variant| variant.name.clone()).collect());
             if let Some(declaration) = enum_def.declaration {
                 registry.sum_declarations.insert(declaration, enum_def.name.clone());

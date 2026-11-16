@@ -299,7 +299,6 @@ impl AstToHir {
             functions,
             structs,
             enums,
-            imported_enums: Vec::new(),
             imported_semantic_exports: imported_semantic_exports.to_vec(),
             flags,
             traits,

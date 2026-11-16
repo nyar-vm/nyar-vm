@@ -13,6 +13,20 @@ fn parses_a_minimal_function() {
     assert_eq!(root.items.len(), 1, "one function declaration must survive parsing");
 }
 
+/// 旧 HIR 报文（缺少 `wire_version` 时缺省为 `0`）必须结构化拒绝，不因字段收缩而静默接收。
+#[test]
+fn legacy_hir_wire_payload_is_rejected() {
+    use rusty_valkyrie::compiler::hir::HirError;
+
+    let compiler = ValkyrieCompiler::default();
+    let mut hir = compiler.compile_source("[main] micro main() { }").expect("current source must lower");
+    compiler.validate_hir_semantic_contract(&hir).expect("current HIR must validate");
+
+    hir.wire_version = 0;
+    let error = compiler.validate_hir_semantic_contract(&hir).expect_err("legacy HIR must be rejected");
+    assert!(matches!(error, HirError::HirWireVersionRejected { .. }), "unexpected error: {error:?}");
+}
+
 #[test]
 fn minimal_entry_compiles() {
     let source = "[main] micro main() { }";

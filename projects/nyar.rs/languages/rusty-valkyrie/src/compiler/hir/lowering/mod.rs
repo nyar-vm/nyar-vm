@@ -578,7 +578,6 @@ impl ValkyrieCompiler {
                 target.functions.extend(module.functions);
                 target.structs.extend(module.structs);
                 target.enums.extend(module.enums);
-                target.imported_enums.extend(module.imported_enums);
                 target.flags.extend(module.flags);
                 target.traits.extend(module.traits);
                 target.impls.extend(module.impls);
