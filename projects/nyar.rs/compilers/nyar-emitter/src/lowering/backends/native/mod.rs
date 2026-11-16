@@ -19,10 +19,13 @@
 //! 指令集；宿主调用属于导入合同，不属于算子编码。
 
 mod carrier;
+mod container;
 mod host;
 mod x64_lir;
 mod x64_program;
 pub mod x86_64;
+
+pub use container::compile_shared_container;
 
 pub use carrier::{
     HostMethod, HostProperty, HostValueKind, NATIVE_TEXT_ARENA_CAPACITY, PYTHON_EXEC_NAME, any_returns_bool, any_returns_utf8, append_text_arena,

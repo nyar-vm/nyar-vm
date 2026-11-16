@@ -48,8 +48,13 @@ pub struct HostProperty {
 /// 一个可暴露给宿主扩展模块的方法（适配器提交的冻结导出事实）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostMethod {
-    /// 宿主可见方法名，同时是镜像内被调用符号名。
+    /// 宿主可见方法名（注册字符串与长度按本字段编组）。
     pub name: String,
+    /// 镜像内被调用符号名：包装体 `call` 的目标。
+    ///
+    /// 与 [`Self::name`] 分离，使语言适配器可以暴露任意导出名（例如限定名），
+    /// 由适配器自己给出已冻结的镜像符号，承载服务不再假设两者同名。
+    pub symbol: String,
     /// 整数形参个数。
     pub parameters: usize,
     /// 返回载体。
@@ -205,7 +210,7 @@ pub fn python_module_data(
             let entry = data.len() as u32;
             data.extend_from_slice(&[0u8; PY_METHOD_DEF_LEN as usize]);
             relocations.push((entry, NativeDataTarget::Data(method_name_offsets[index])));
-            relocations.push((entry + 8, NativeDataTarget::Function(python_wrapper_name(&method.name))));
+            relocations.push((entry + 8, NativeDataTarget::Function(python_wrapper_name(&method.symbol))));
             data[entry as usize + 16..entry as usize + 20].copy_from_slice(&PY_METH_VARARGS.to_le_bytes());
         }
         data.extend_from_slice(&[0u8; PY_METHOD_DEF_LEN as usize]); // 空终止项
@@ -272,7 +277,7 @@ pub fn python_method_wrapper(
     for index in 0..method.parameters {
         instructions.push(Lir::LoadSlotToArg { slot: argument_slot(index), index: index as u8 });
     }
-    instructions.push(Lir::Call(method.name.clone()));
+    instructions.push(Lir::Call(method.symbol.clone()));
     match method.returns {
         HostValueKind::Utf8 => {
             // 符号返回的是镜像内字符串描述符地址；宿主侧复制成 `str`，描述符本身
@@ -308,7 +313,7 @@ pub fn python_method_wrapper(
     instructions.push(Lir::LoadI64(0));
     instructions.push(Lir::Return);
 
-    NativeTextProgramFunction { name: python_wrapper_name(&method.name), slot_count: length_slot + 1, instructions }
+    NativeTextProgramFunction { name: python_wrapper_name(&method.symbol), slot_count: length_slot + 1, instructions }
 }
 
 /// `PyInit_<module>` 入口：多阶段初始化返回经 `PyModuleDef_Init` 初始化的定义地址。
@@ -481,7 +486,7 @@ pub fn node_addon_registration(
             Lir::LoadI64(method.name.len() as i64),
             Lir::StoreSlot(TEMP_SLOT),
             Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
-            Lir::LoadFunctionAddress(node_wrapper_name(&method.name)),
+            Lir::LoadFunctionAddress(node_wrapper_name(&method.symbol)),
             Lir::StoreSlot(TEMP_SLOT),
             Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 3 },
         ]);
@@ -606,7 +611,7 @@ pub fn node_method_wrapper(method: &HostMethod, error_message_offset: u32, platf
     for index in 0..parameters {
         instructions.push(Lir::LoadSlotToArg { slot: out_slot(index), index: index as u8 });
     }
-    instructions.push(Lir::Call(method.name.clone()));
+    instructions.push(Lir::Call(method.symbol.clone()));
     match method.returns {
         HostValueKind::Utf8 => {
             // 镜像内字符串描述符 → Node 字符串；描述符永不释放，无需所有权转移。
@@ -663,5 +668,5 @@ pub fn node_method_wrapper(method: &HostMethod, error_message_offset: u32, platf
         Lir::Return,
     ]);
 
-    NativeTextProgramFunction { name: node_wrapper_name(&method.name), slot_count: STRING_SLOT + 1, instructions }
+    NativeTextProgramFunction { name: node_wrapper_name(&method.symbol), slot_count: STRING_SLOT + 1, instructions }
 }

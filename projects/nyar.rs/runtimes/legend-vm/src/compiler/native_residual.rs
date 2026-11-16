@@ -13,17 +13,15 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use miette::{Result, miette};
+use miette::Result;
 use nyar_analyzer::residual::ResidualSink;
 pub use nyar_emitter::nyar_backend_native::{NativeHostModule, NativePlatform, NativeProductTarget};
 use nyar_emitter::nyar_backend_native::{
     HostMethod, HostProperty, HostValueKind, NATIVE_TEXT_ARENA_CAPACITY, NativeDataTarget, NativeTextInstruction, NativeTextProgramFunction,
-    NativeTextProgramImage, any_returns_bool, any_returns_utf8, append_text_arena, encode_native_text_program_with_dependencies, is_c_identifier,
-    node_addon_registration, node_method_wrapper, node_module_data, python_method_wrapper, python_module_data, python_module_exec,
-    python_module_registration,
+    NativeTextProgramImage, any_returns_bool, any_returns_utf8, append_text_arena, compile_shared_container,
+    encode_native_text_program_with_dependencies, is_c_identifier, node_addon_registration, node_method_wrapper, node_module_data,
+    python_method_wrapper, python_module_data, python_module_exec, python_module_registration,
 };
-
-use super::PeCompiler;
 
 /// One residual operation (language-neutral; mirrors [`ResidualSink`]).
 #[derive(Debug, Clone, PartialEq)]
@@ -1101,7 +1099,7 @@ fn extension_methods(
                 function.name
             ));
         }
-        methods.push(HostMethod { name: function.name.clone(), parameters, returns });
+        methods.push(HostMethod { name: function.name.clone(), symbol: function.name.clone(), parameters, returns });
     }
     Ok(methods)
 }
@@ -1109,7 +1107,7 @@ fn extension_methods(
 /// 以导出函数 ABI 发射 `PE` DLL（宿主按 Win64 调用约定调用残差函数）。
 pub fn emit_native_pe_library(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
     let image = lower_native_residual_to_program(module, NativeProductTarget::Library(NativePlatform::windows_x64()))?;
-    PeCompiler.compile_library(&image).map_err(|error| error.to_string())
+    compile_shared_container(NativePlatform::windows_x64(), &image).map_err(|error| error.to_string())
 }
 
 /// 以导出函数 ABI 发射 x86-64 `ELF` 共享库 `.so`（宿主 `dlopen` + `dlsym`）。
@@ -1118,7 +1116,7 @@ pub fn emit_native_pe_library(module: &NativeResidualModule) -> Result<Vec<u8>, 
 /// 的模块用隐藏的首个整数形参作为 fd，调用 `write(2)`。
 pub fn emit_native_elf_library(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
     let image = lower_native_residual_to_program(module, NativeProductTarget::Library(NativePlatform::linux_x64()))?;
-    super::ElfCompiler.compile_library(&image).map_err(|error| error.to_string())
+    compile_shared_container(NativePlatform::linux_x64(), &image).map_err(|error| error.to_string())
 }
 
 /// 发射 Node-API 扩展（`.node` / `.dll`）。
@@ -1151,8 +1149,10 @@ pub fn emit_native_python_extension(
 }
 
 /// 按已冻结的平台身份选择容器：Windows 写 `PE32+` DLL，Linux 写 `ET_DYN`。
+///
+/// 容器装配归 native 目标 lane 的共享服务；残差产品与正式编译 lane 复用同一条链。
 fn compile_extension_container(platform: NativePlatform, image: &NativeTextProgramImage) -> Result<Vec<u8>, String> {
-    if platform.is_windows() { PeCompiler.compile_library(image).map_err(|error| error.to_string()) } else { super::ElfCompiler.compile_library(image).map_err(|error| error.to_string()) }
+    compile_shared_container(platform, image).map_err(|error| error.to_string())
 }
 
 struct ResidualFunctionLowering<'a> {
