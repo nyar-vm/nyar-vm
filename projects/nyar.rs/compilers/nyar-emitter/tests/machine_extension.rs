@@ -274,6 +274,27 @@ fn host_extension_rejects_parameters_beyond_the_abi_window() {
     assert!(error.contains("上限") || error.contains("形参"), "{error}");
 }
 
+/// 无符号 `u64` 返回没有有符号 `i64` 无损载体：与实参合同对齐，写出前拒绝。
+#[test]
+fn host_extension_rejects_unsigned_return_without_bigint_carrier() {
+    let unsigned = NyarType::Integer64 { signed: false };
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(
+        nyar::QualifiedName::new(vec![Identifier::new("bits")]),
+        function("bits", unsigned, Vec::new()),
+    )]));
+    plan.testing_module_name("native_extension");
+    with_function_mut(&mut plan, "bits", |function| {
+        function.blocks[0].terminator = Terminator::Return { value: Some(Operand::Constant(Constant::Int(-1))) };
+    });
+    let instance = instance_of(&plan, "bits");
+    plan.testing_export_names_mut().insert(instance, "bits".to_string());
+    plan.testing_exported_operations_mut().push(instance);
+    let submission = FragmentSubmission::from_backend_plan(plan);
+    let error = lower_fragment_to_machine_extension(&submission, &node(X64Platform::windows_x64()), "demo")
+        .expect_err("u64 返回在 BigInt 载体前必须拒绝");
+    assert!(error.contains("BigInt") || error.contains("有符号"), "{error}");
+}
+
 /// 正式 lane 尚未降低字符串常量：字符串返回在写出前拒绝，不伪造空字符串。
 #[test]
 fn host_extension_rejects_string_return() {
