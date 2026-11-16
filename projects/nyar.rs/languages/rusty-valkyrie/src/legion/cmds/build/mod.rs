@@ -387,6 +387,56 @@ fn commit_staged_delivery(staging_dir: &Path, output_dir: &Path) -> LegionResult
     Ok(())
 }
 
+#[cfg(test)]
+mod artifact_transaction_tests {
+    use super::*;
+
+    /// 提交整组暂存产物：新文件进入交付、同名旧文件被替换、暂存目录清空。
+    #[test]
+    fn commit_moves_whole_staged_set_and_replaces_old_delivery() {
+        let root = tempfile::tempdir().expect("temp dir");
+        let output = root.path().join("dist");
+        fs::create_dir_all(&output).expect("output dir");
+        fs::write(output.join("stale-only.txt"), b"previous delivery").expect("write stale");
+        fs::write(output.join("app.wasm"), b"old bytes").expect("write old artifact");
+
+        let staging = staging_dir_for(&output);
+        fs::create_dir_all(&staging).expect("staging dir");
+        fs::write(staging.join("app.wasm"), b"new bytes").expect("write new artifact");
+        fs::write(staging.join("compile-evidence.txt"), b"evidence").expect("write sidecar");
+
+        commit_staged_delivery(&staging, &output).expect("提交整组暂存产物");
+
+        assert_eq!(fs::read(output.join("app.wasm")).expect("read artifact"), b"new bytes", "同名旧产物必须被整组替换");
+        assert!(output.join("compile-evidence.txt").is_file(), "sidecar 与产物同批提交");
+        assert!(output.join("stale-only.txt").is_file(), "本次交付未声明的既有文件不被事务破坏");
+        assert!(!staging.exists(), "提交成功后暂存目录必须清空");
+    }
+
+    /// 暂存集合出现子目录说明装配违约：提交拒绝，不部分移动。
+    #[test]
+    fn commit_rejects_unexpected_subdirectory() {
+        let root = tempfile::tempdir().expect("temp dir");
+        let output = root.path().join("dist");
+        fs::create_dir_all(&output).expect("output dir");
+        let staging = staging_dir_for(&output);
+        fs::create_dir_all(staging.join("nested")).expect("staging with subdirectory");
+
+        let error = commit_staged_delivery(&staging, &output).expect_err("子目录必须被拒绝");
+        assert!(error.to_string().contains("子目录"), "{error}");
+    }
+
+    /// 并发构建的暂存目录互不覆盖。
+    #[test]
+    fn staging_directories_are_unique() {
+        let root = tempfile::tempdir().expect("temp dir");
+        let first = staging_dir_for(root.path());
+        let second = staging_dir_for(root.path());
+        assert_ne!(first, second);
+        assert!(first.file_name().expect("name").to_string_lossy().starts_with(".nyar-staging-"));
+    }
+}
+
 /// 编译失败时取出本编译单元暂存的全部可恢复诊断，渲染成多诊断报告。
 ///
 /// 没有暂存诊断（例如规划、后端或装配阶段的失败）保持原有单错误文本不变；

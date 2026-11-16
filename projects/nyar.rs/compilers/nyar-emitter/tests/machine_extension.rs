@@ -232,6 +232,28 @@ fn host_extension_rejects_narrow_integer_parameters() {
     assert!(error.contains("无损宿主载体"), "{error}");
 }
 
+/// 形参数量超出宿主 ABI 窗口：写出前拒绝，不静默丢参。
+#[test]
+fn host_extension_rejects_parameters_beyond_the_abi_window() {
+    let params = vec![LONG; 5];
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(
+        nyar::QualifiedName::new(vec![Identifier::new("wide")]),
+        function("wide", LONG, params),
+    )]));
+    plan.testing_module_name("native_extension");
+    with_function_mut(&mut plan, "wide", |function| {
+        function.blocks[0].terminator = Terminator::Return { value: Some(Operand::Constant(Constant::Int(1))) };
+    });
+    let instance = instance_of(&plan, "wide");
+    plan.testing_export_names_mut().insert(instance, "wide".to_string());
+    plan.testing_exported_operations_mut().push(instance);
+    let submission = FragmentSubmission::from_backend_plan(plan);
+    // Win64 只有 4 个整数实参寄存器；第 5 个形参超出 Node-API 回调窗口。
+    let error = lower_fragment_to_machine_extension(&submission, &node(X64Platform::windows_x64()), "demo")
+        .expect_err("超出寄存器传参上限的导出必须拒绝");
+    assert!(error.contains("上限") || error.contains("形参"), "{error}");
+}
+
 /// 正式 lane 尚未降低字符串常量：字符串返回在写出前拒绝，不伪造空字符串。
 #[test]
 fn host_extension_rejects_string_return() {

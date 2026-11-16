@@ -52,9 +52,10 @@ pub(crate) fn testing_lower_fragment_to_jvm_class(submission: &FragmentSubmissio
 
 pub(crate) fn testing_lower_fragment_to_jvm_managed_surface(
     submission: &FragmentSubmission,
-) -> Result<(crate::nyar_backend_jvm::JvmClassFile, Vec<crate::nyar_backend_jvm::JvmClassFile>, Option<crate::ManagedAbiContract>)> {
+) -> Result<(crate::nyar_backend_jvm::JvmClassFile, Vec<crate::nyar_backend_jvm::JvmClassFile>, Option<crate::ManagedAbiContract>, Option<String>)>
+{
     let lowered = jvm::emit::lower_fragment_to_jvm_class(submission)?;
-    Ok((lowered.class_file, lowered.companion_classes, lowered.managed_abi))
+    Ok((lowered.class_file, lowered.companion_classes, lowered.managed_abi, lowered.entry_launcher))
 }
 
 pub(crate) fn testing_lower_fragment_to_clr_module(submission: &FragmentSubmission) -> Result<crate::nyar_backend_clr::MsilModule> {

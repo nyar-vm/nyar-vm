@@ -125,7 +125,7 @@ fn lowers_array_list_construction_length_and_index_with_primitive_elements() {
     plan.testing_register_field(field_items, 0, 0);
     plan.testing_register_field(field_length, 0, 1);
 
-    let (class_file, companions, _) = lower_fragment_to_jvm_managed_surface(&FragmentSubmission::from_backend_plan(plan)).expect("array list must lower");
+    let (class_file, companions, _, _) = lower_fragment_to_jvm_managed_surface(&FragmentSubmission::from_backend_plan(plan)).expect("array list must lower");
     let layout_class = companions.iter().find(|class| class.internal_name == "nyar/layout/ArrayList$0").expect("layout companion class");
     assert_eq!(layout_class.fields.len(), 2, "{layout_class:?}");
     assert_eq!(layout_class.fields[0].descriptor, JvmTypeDescriptor::array(JvmTypeDescriptor::Long));
@@ -175,7 +175,7 @@ fn zero_field_reference_aggregate_copy_does_not_allocate() {
     plan.testing_module_name("jvm_container").testing_entry_operation(main);
     plan.testing_aggregate_layouts(AggregateLayoutPlan { layouts: vec![layout], ..AggregateLayoutPlan::default() });
 
-    let (class_file, _companions, _) =
+    let (class_file, _companions, _, _) =
         lower_fragment_to_jvm_managed_surface(&FragmentSubmission::from_backend_plan(plan)).expect("zero-field reference copy must lower");
     let instructions = method_code(&class_file, "main");
     assert!(instructions.iter().all(|instruction| !matches!(instruction, JvmInstruction::New(_))), "{instructions:?}");

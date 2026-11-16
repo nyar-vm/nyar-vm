@@ -12,7 +12,7 @@ use nyar_emitter::{
     nyar_backend_jvm::{JvmInstruction, JvmMethodDescriptor, JvmTypeDescriptor},
     testing::lower_fragment_to_jvm_managed_surface,
 };
-use nyar_emitter::contracts::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef};
+use nyar_emitter::contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef};
 use nyar_types::{ItemInstanceId, NyarType};
 
 const LONG: NyarType = NyarType::Integer64 { signed: true };
@@ -67,7 +67,7 @@ fn main_descriptor() -> JvmMethodDescriptor {
 #[test]
 fn exported_long_identity_produces_managed_entry_and_argv_launcher() {
     let submission = identity_plan("managed.abi.add", "add");
-    let (class_file, companion_classes, managed_abi) =
+    let (class_file, companion_classes, managed_abi, _) =
         lower_fragment_to_jvm_managed_surface(&submission).expect("managed ABI lowering must succeed");
 
     let method = class_file.methods.iter().find(|method| method.name == "add").expect("lowered add method");
@@ -112,14 +112,14 @@ fn exported_long_identity_produces_managed_entry_and_argv_launcher() {
     assert!(contract.contract_digest.chars().all(|character| character.is_ascii_hexdigit()), "{}", contract.contract_digest);
 
     let rerun = identity_plan("managed.abi.add", "add");
-    let (_, _, rerun_contract) = lower_fragment_to_jvm_managed_surface(&rerun).expect("rerun lowering");
+    let (_, _, rerun_contract, _) = lower_fragment_to_jvm_managed_surface(&rerun).expect("rerun lowering");
     assert_eq!(rerun_contract.expect("rerun contract").contract_digest, contract.contract_digest);
 }
 
 #[test]
 fn different_export_names_produce_different_contract_digests() {
-    let (_, _, first) = lower_fragment_to_jvm_managed_surface(&identity_plan("managed.abi.add", "add")).expect("first lowering");
-    let (_, _, second) = lower_fragment_to_jvm_managed_surface(&identity_plan("managed.abi.sum", "sum")).expect("second lowering");
+    let (_, _, first, _) = lower_fragment_to_jvm_managed_surface(&identity_plan("managed.abi.add", "add")).expect("first lowering");
+    let (_, _, second, _) = lower_fragment_to_jvm_managed_surface(&identity_plan("managed.abi.sum", "sum")).expect("second lowering");
     let first = first.expect("first contract");
     let second = second.expect("second contract");
     assert_eq!(first.entries[0].logical_entry, "add");
@@ -164,6 +164,87 @@ fn unsigned_logical_entry_is_rejected_instead_of_signed_remap() {
     assert!(error.contains("unsigned"), "错误必须说明缺少 unsigned 编组能力: {error}");
 }
 
+/// 从已构造的计划中按符号名解析函数实例身份。
+fn instance_of(plan: &TargetExecutionPlan, symbol: &str) -> ItemInstanceId {
+    plan.testing_functions()
+        .iter()
+        .find(|(_, function)| function.symbol == symbol)
+        .map(|(instance, _)| *instance)
+        .unwrap_or_else(|| panic!("fixture function `{symbol}` 不在计划中"))
+}
+
+/// `f(x: i64) -> i64 = x` 的冻结函数体。
+fn identity_function(symbol: &str) -> ExecutableFunction {
+    let mut fixture = function(symbol, LONG, vec![LONG]);
+    fixture.value_types.insert(ValueRef(1), LONG);
+    fixture.blocks[0].instructions.push(instruction(InstructionKind::Copy { source: Operand::Value(ValueRef(0)) }, vec![ValueRef(1)]));
+    fixture.blocks[0].terminator = Terminator::Return { value: Some(Operand::Value(ValueRef(1))) };
+    fixture
+}
+
+/// 重命名入口：launcher 身份只来自计划冻结的 `entry_operation`，不按方法名扫描。
+#[test]
+fn renamed_entry_freezes_launcher_from_frozen_entry_identity() {
+    let mut fixture = function("app.start", LONG, Vec::new());
+    fixture.blocks[0].terminator = Terminator::Return { value: Some(Operand::Constant(Constant::Int(7))) };
+
+    let start = QualifiedName::new(vec![Identifier::new("start")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(start.clone(), fixture)]));
+    plan.testing_module_name("managed_abi_jvm").testing_entry_operation(start);
+    let (_, companions, managed_abi, entry_launcher) =
+        lower_fragment_to_jvm_managed_surface(&FragmentSubmission::from_backend_plan(plan)).expect("重命名入口必须降低");
+
+    assert!(managed_abi.is_none(), "无导出面不产 managed ABI 契约");
+    assert_eq!(entry_launcher.as_deref(), Some("nyar/invoke/start"), "launcher 必须来自冻结入口身份，不按方法名扫描补造");
+    let launcher = companions.iter().find(|class| class.internal_name == "nyar/invoke/start").expect("冻结 launcher 类必须存在");
+    assert!(launcher.methods.iter().any(|method| method.name == "main"), "launcher 类持有 argv main 分发");
+}
+
+/// 入口与导出并存：入口同时被导出时，ABI 契约与程序入口复用同一个 launcher。
+#[test]
+fn entry_coexisting_with_exports_reuses_single_frozen_launcher() {
+    let run = identity_function("app.run");
+    let helper = identity_function("app.helper");
+    let run_name = QualifiedName::new(vec![Identifier::new("run")]);
+    let helper_name = QualifiedName::new(vec![Identifier::new("helper")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(run_name.clone(), run), (helper_name, helper)]));
+    plan.testing_module_name("managed_abi_jvm").testing_entry_operation(run_name);
+    let run_instance = instance_of(&plan, "app.run");
+    let helper_instance = instance_of(&plan, "app.helper");
+    plan.testing_export_names_mut().insert(run_instance, "run".to_string());
+    plan.testing_export_names_mut().insert(helper_instance, "helper".to_string());
+    let (_, companions, managed_abi, entry_launcher) =
+        lower_fragment_to_jvm_managed_surface(&FragmentSubmission::from_backend_plan(plan)).expect("入口与导出并存必须降低");
+
+    let contract = managed_abi.expect("导出面必须冻结 managed ABI 契约");
+    assert_eq!(contract.entries.len(), 2, "两个导出入口都进入契约: {:?}", contract.entries);
+    assert_eq!(entry_launcher.as_deref(), Some("nyar/invoke/run"), "程序入口复用导出 `run` 的 launcher 身份");
+    let launcher_names = companions.iter().map(|class| class.internal_name.clone()).collect::<Vec<_>>();
+    assert_eq!(
+        launcher_names.iter().filter(|name| **name == "nyar/invoke/run").count(),
+        1,
+        "同一入口的 launcher 不得构建两份: {launcher_names:?}"
+    );
+    assert!(launcher_names.contains(&"nyar/invoke/helper".to_string()), "{launcher_names:?}");
+}
+
+/// 无入口的库交付：只有导出 launcher，不伪造程序入口。
+#[test]
+fn library_without_entry_freezes_exports_without_application_launcher() {
+    let add = identity_function("app.add");
+    let add_name = QualifiedName::new(vec![Identifier::new("add")]);
+    let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(add_name, add)]));
+    plan.testing_module_name("managed_abi_jvm");
+    let add_instance = instance_of(&plan, "app.add");
+    plan.testing_export_names_mut().insert(add_instance, "add".to_string());
+    let (_, _, managed_abi, entry_launcher) =
+        lower_fragment_to_jvm_managed_surface(&FragmentSubmission::from_backend_plan(plan)).expect("无入口库必须按导出面降低");
+
+    let contract = managed_abi.expect("库导出面必须冻结 managed ABI 契约");
+    assert_eq!(contract.entries.len(), 1);
+    assert!(entry_launcher.is_none(), "无 `entry_operation` 的库不得伪造程序 launcher");
+}
+
 #[test]
 fn unsupported_return_type_does_not_fabricate_entry() {
     let fixture = function("managed.abi.aggregate", NyarType::Tuple(vec![LONG]), Vec::new());
@@ -175,7 +256,7 @@ fn unsupported_return_type_does_not_fabricate_entry() {
     let submission = FragmentSubmission::from_backend_plan(plan);
 
     let error = match lower_fragment_to_jvm_managed_surface(&submission) {
-        Ok((_, companions, managed_abi)) => panic!("unsupported return type must fail: companions={companions:?} abi={managed_abi:?}"),
+        Ok((_, companions, managed_abi, _)) => panic!("unsupported return type must fail: companions={companions:?} abi={managed_abi:?}"),
         Err(error) => error,
     };
     assert!(error.contains("裸 tuple") || error.contains("不支持类型"), "{error}");

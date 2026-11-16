@@ -264,7 +264,7 @@ fn managed_launcher_for(
         },
     );
 
-    let (class_file, companions, _) =
+    let (class_file, companions, _, _) =
         lower_fragment_to_jvm_managed_surface(&FragmentSubmission::from_backend_plan(plan)).expect("managed surface must lower");
     write_class(directory, &class_file);
     for companion in &companions {

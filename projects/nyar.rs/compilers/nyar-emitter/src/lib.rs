@@ -175,7 +175,8 @@ pub mod testing {
     /// and the managed ABI contract.
     pub fn lower_fragment_to_jvm_managed_surface(
         submission: &FragmentSubmission,
-    ) -> Result<(super::nyar_backend_jvm::JvmClassFile, Vec<super::nyar_backend_jvm::JvmClassFile>, Option<super::ManagedAbiContract>)> {
+    ) -> Result<(super::nyar_backend_jvm::JvmClassFile, Vec<super::nyar_backend_jvm::JvmClassFile>, Option<super::ManagedAbiContract>, Option<String>)>
+    {
         super::lowering::testing_lower_fragment_to_jvm_managed_surface(submission)
     }
 
