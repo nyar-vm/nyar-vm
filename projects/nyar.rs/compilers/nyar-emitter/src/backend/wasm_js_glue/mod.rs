@@ -207,18 +207,16 @@ fn read_library_invoke_spec(wasm_path: &Path) -> Option<String> {
 }
 
 fn library_invoke_marshaler_js(spec_json: &str) -> String {
-    // LIBRARY_INVOKE 的 `returns` 与 marshal 目标消费结构化的 WasmAbiType JSON schema：
-    // 要么是 string (旧格式 "i64")，要么是 object (新格式 {"kind": "I64", ...})。
-    // `exports[*].params` 自 v2 起是参数身份对象 {index, name, type, carrier}，
-    // 通过 `paramType` 取其中的 `type` 后再 marshal。
+    // LIBRARY_INVOKE 的 `returns` 与 marshal 目标只消费结构化 WasmAbiType JSON schema
+    // （{{"kind": "I64", ...}}）。旧字符串形状、缺 kind 透传与裸参数条目一律拒绝：
+    // 缺失的上游合同必须由 producer 修复，不能由 glue 的"容错"隐藏。
+    // `exports[*].params` 是参数身份对象 {{index, name, type, carrier}}。
     format!(
         r#"const LIBRARY_INVOKE = {spec_json};
 
 // ── Schema helpers ────────────────────────────────────────────────────────
-// 从 param/return schema 提取 ABI kind 字符串。
-// 同时兼容旧格式（直接是 "i64"）和新结构化格式（{{"kind": "I64"}}）。
+// 从 param/return schema 提取 ABI kind；只接受结构化 {{"kind": ...}} 合同。
 function abiKind(schema) {{
-    if (typeof schema === "string") return schema;
     if (schema && typeof schema.kind === "string") return schema.kind;
     return null;
 }}
@@ -258,10 +256,10 @@ function unwrapInstanceHandle(schema, value, path) {{
 }}
 
 // 从 param 条目提取 marshal 用的类型 schema。
-// v2 合同是 {{index, name, type, carrier}}；兼容旧的裸 schema / 字符串条目。
+// 合同是 {{index, name, type, carrier}}；裸 schema / 缺 type 条目是 schema 违约，拒绝。
 function paramType(param) {{
     if (param && typeof param === "object" && param.type !== undefined) return param.type;
-    return param;
+    throw new Error(`[wasm-js-glue]: ABI schema param entry is malformed (expected {{index, name, type, carrier}}): ${{JSON.stringify(param)}}`);
 }}
 
 function describePath(path) {{
@@ -301,7 +299,11 @@ function bridgeExport(name, role, path) {{
 
 function marshalLibraryArg(schema, value, path) {{
     const kind = abiKind(schema);
-    if (kind == null) return value;
+    if (kind == null) {{
+        throw new Error(
+            `[wasm-js-glue]${{describePath(path)}}: ABI schema arg is missing a structured "kind"; the producer must emit the current contract. Schema: ${{JSON.stringify(schema)}}`
+        );
+    }}
 
     // ── Primitive carriers ──────────────────────────────────────────────
     // I64：Wasm JS API 只接受 BigInt。Number 一律拒绝——即使落在安全整数
@@ -454,7 +456,11 @@ function marshalLibraryArg(schema, value, path) {{
 
 function demarshalLibraryReturn(schema, raw, path) {{
     const kind = abiKind(schema);
-    if (kind == null) return raw;
+    if (kind == null) {{
+        throw new Error(
+            `[wasm-js-glue]${{describePath(path)}}: ABI schema return is missing a structured "kind"; the producer must emit the current contract. Schema: ${{JSON.stringify(schema)}}`
+        );
+    }}
 
     // ── Unit：无返回值 ──────────────────────────────────────────────────
     if (kind === "Unit") return undefined;
