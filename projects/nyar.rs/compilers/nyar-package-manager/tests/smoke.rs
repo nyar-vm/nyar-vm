@@ -34,7 +34,7 @@ fn write_package_fixture(dir: &Path, name: &str, version: &str) {
     std::fs::write(
         dir.join("package.von"),
         format!(
-            "{{\n    name: \"{name}\",\n    version: \"{version}\",\n    publishConfig: {{\n        registry: \"npm\",\n        access: \"public\",\n        tag: \"latest\",\n    }},\n}}\n"
+            "{{\n    name: \"{name}\",\n    version: \"{version}\",\n    publishConfig: {{\n        access: \"public\",\n        tag: \"latest\",\n    }},\n    publish: [\n        {{\n            type: \"npm\",\n            package_id: \"{name}\",\n        }},\n    ],\n}}\n"
         ),
     )
     .expect("write package.von");

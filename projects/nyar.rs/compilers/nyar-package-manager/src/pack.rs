@@ -120,9 +120,8 @@ fn match_pattern(pattern: &str, relative: &str) -> bool {
 
 /// Pack a built `dist/{canonical}` directory for npm/jsr publish.
 pub fn pack_registry_artifact(options: &RegistryPackOptions) -> Result<PackResult> {
-    let artifact_files = list_artifact_files(&options.artifact_dir)?;
     let contracts = load_run_contracts(&options.artifact_dir)?;
-    let bin_entries = registry_bin_entries(&contracts, &options.artifact_dir, &artifact_files, options.layout)?;
+    let bin_entries = registry_bin_entries(&contracts, &options.artifact_dir, options.layout)?;
 
     let mut entries: BTreeMap<String, PathBuf> = BTreeMap::new();
     for entry in &bin_entries {
@@ -380,7 +379,7 @@ fn artifact_envelope_entry(relative: &str) -> Result<serde_json::Value> {
         "mjs" | "js" => ("host-module", "ecmascript", None),
         "nyar" => {
             return Err(crate::PackageManagerError::message(format!(
-                "拒绝打包：`{relative}` 是旧 `.nyar` 执行产物；执行产物必须重建为 `.odin`，程序集包必须声明为 `assembly`"
+                "拒绝打包：`{relative}` 是语义程序集（Assembly），不能作为可执行入口发布；执行入口必须是 `.odin` 或宿主模块"
             )));
         }
         _ => ("data", "raw", None),
@@ -443,42 +442,21 @@ fn build_jsr_json(meta: &PackMeta, bins: &[RegistryBinEntry]) -> String {
 fn registry_bin_entries(
     contracts: &[RunContract],
     artifact_dir: &Path,
-    files: &[PathBuf],
     layout: crate::ProjectLayout,
 ) -> Result<Vec<RegistryBinEntry>> {
-    if contracts.is_empty() {
-        return Ok(fallback_bin_entries_from_mjs(files, artifact_dir));
-    }
-
     let mut entries = Vec::new();
     for contract in contracts {
-        let Some(path) = resolve_contract_artifact(artifact_dir, files, &contract.physical_entry, layout)
-        else {
-            continue;
-        };
+        let path = resolve_contract_artifact(artifact_dir, contract, layout)?;
         let relative = path.strip_prefix(artifact_dir).unwrap_or(&path).to_string_lossy().replace('\\', "/");
         if !is_publishable_artifact(&relative) {
-            continue;
+            return Err(crate::PackageManagerError::message(format!(
+                "run contract `{}` 指向不可发布的产物 `{relative}`",
+                contract.logical_entry
+            )));
         }
         entries.push(RegistryBinEntry { bin_name: bin_name_from_logical(&contract.logical_entry), relative_path: relative });
     }
-    if entries.is_empty() {
-        return Ok(fallback_bin_entries_from_mjs(files, artifact_dir));
-    }
     Ok(entries)
-}
-
-fn fallback_bin_entries_from_mjs(files: &[PathBuf], artifact_dir: &Path) -> Vec<RegistryBinEntry> {
-    files
-        .iter()
-        .filter(|path| path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| ext.eq_ignore_ascii_case("mjs")))
-        .filter_map(|path| {
-            let relative = path.strip_prefix(artifact_dir).ok()?.to_string_lossy().replace('\\', "/");
-            let stem = path.file_stem()?.to_str()?;
-            let bin_name = stem.rsplit('_').next().unwrap_or(stem).to_string();
-            Some(RegistryBinEntry { bin_name, relative_path: relative })
-        })
-        .collect()
 }
 
 /// 从 `logical_entry` 提取 bin 短名（取 `::` 分隔后的最后一段；供集成测试）。
@@ -539,33 +517,25 @@ fn collect_files_flat(root: &Path, current: &Path, files: &mut Vec<PathBuf>) -> 
     Ok(())
 }
 
-fn resolve_contract_artifact(artifact_dir: &Path, files: &[PathBuf], physical_entry: &str, layout: crate::ProjectLayout) -> Option<PathBuf> {
+fn resolve_contract_artifact(artifact_dir: &Path, contract: &RunContract, layout: crate::ProjectLayout) -> Result<PathBuf> {
+    let physical_entry = contract.physical_entry.trim();
     if physical_entry.is_empty() {
-        return None;
+        return Err(crate::PackageManagerError::message(format!(
+            "run contract `{}` 缺少 physical_entry",
+            contract.logical_entry
+        )));
     }
-    for candidate in (layout.entry_aliases)(physical_entry).iter().chain(std::iter::once(&physical_entry)) {
+    for candidate in (layout.entry_aliases)(physical_entry).iter().copied().chain(std::iter::once(physical_entry)) {
         let direct = artifact_dir.join(candidate);
         if direct.is_file() {
-            return Some(direct);
-        }
-        if let Some(found) = find_contract_artifact(files, candidate) {
-            return Some(found);
+            return Ok(direct);
         }
     }
-    let normalized = normalize_entry_name(physical_entry);
-    find_contract_artifact(files, &normalized)
-}
-
-fn find_contract_artifact(files: &[PathBuf], physical_entry: &str) -> Option<PathBuf> {
-    files.iter().find_map(|path| {
-        let file_name = path.file_name()?.to_str()?;
-        let stem = path.file_stem()?.to_str()?;
-        if file_name.eq_ignore_ascii_case(physical_entry) || stem.eq_ignore_ascii_case(physical_entry) { Some(path.clone()) } else { None }
-    })
-}
-
-fn normalize_entry_name(entry: &str) -> String {
-    entry.replace('\u{2237}', "_").replace("::", "_").replace('.', "_")
+    Err(crate::PackageManagerError::message(format!(
+        "run contract `{}` 指向的产物 `{physical_entry}` 不存在于 {}",
+        contract.logical_entry,
+        artifact_dir.display()
+    )))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -582,22 +552,12 @@ struct RunContract {
 
 fn load_run_contracts(artifact_dir: &Path) -> Result<Vec<RunContract>> {
     let contracts_path = artifact_dir.join("run-contracts.txt");
-    if contracts_path.is_file() {
-        let source = std::fs::read_to_string(&contracts_path)?;
-        let manifest: ExecutionManifest = from_str(&source)?;
-        if !manifest.run_contracts.is_empty() {
-            return Ok(manifest.run_contracts);
-        }
+    if !contracts_path.is_file() {
+        return Ok(Vec::new());
     }
-
-    let legacy_path = artifact_dir.join("run-contract.txt");
-    if legacy_path.is_file() {
-        let source = std::fs::read_to_string(&legacy_path)?;
-        let contract: RunContract = from_str(&source)?;
-        return Ok(vec![contract]);
-    }
-
-    Ok(Vec::new())
+    let source = std::fs::read_to_string(&contracts_path)?;
+    let manifest: ExecutionManifest = from_str(&source)?;
+    Ok(manifest.run_contracts)
 }
 
 fn collect_files(package_directory: &Path, ignore: &PackageIgnore) -> Result<Vec<PathBuf>> {

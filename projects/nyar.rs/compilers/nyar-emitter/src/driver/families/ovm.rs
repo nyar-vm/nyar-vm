@@ -98,19 +98,11 @@ pub fn resolve_entry_symbols(module: &OdinModuleData, library_public_exports: &[
     Ok(entries)
 }
 
-/// 拒绝在旧产物之上静默重建：旧 `.nyar` 执行产物与不兼容的既有 `.odin` 都必须先移除。
+/// 拒绝覆盖格式不兼容的既有 `.odin` 产物。
+///
+/// 不以扩展名判定旧产物：`.nyar` 已是正式语义程序集身份，与 `.odin` 执行字节码互不覆盖，
+/// 输出目录里同时存在程序集不影响本次重建。
 fn reject_legacy_output(output_dir: &Path, artifact_name: &str) -> Result<()> {
-    if let Ok(entries) = fs::read_dir(output_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|ext| ext.to_str()) == Some("nyar") && path.is_file() {
-                return Err(format!(
-                    "拒绝重建：输出目录存在旧 `.nyar` 执行产物 `{}`；`.odin` 是不同产物身份，请删除旧产物后重建",
-                    path.display()
-                ));
-            }
-        }
-    }
     let target = output_dir.join(format!("{artifact_name}.odin"));
     if target.is_file() {
         let bytes = fs::read(&target).map_err(|error| format!("读取既有 `.odin` 产物失败：{}: {error}", target.display()))?;

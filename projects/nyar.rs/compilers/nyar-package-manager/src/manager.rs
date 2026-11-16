@@ -507,22 +507,10 @@ impl PackageManager {
             let registry_targets: Vec<_> = manifest.publish.iter().filter(|target| target.is_registry_target()).cloned().collect();
 
             if registry_targets.is_empty() {
-                let registry = resolve_legacy_registry(options, &manifest);
-                let version = resolve_publish_version("", &manifest.version, workspace_version.as_deref())?;
-                jobs.push(PublishJob {
-                    package_path: path,
-                    manifest: manifest.clone(),
-                    package_id: if options.package_name.is_empty() { manifest.name.clone() } else { options.package_name.clone() },
-                    version: if options.version.is_empty() { version } else { options.version.clone() },
-                    registry,
-                    build_target: String::new(),
-                    description: manifest.description.clone().unwrap_or_default(),
-                    homepage: manifest.homepage.clone(),
-                    license: manifest.license.clone(),
-                    tag: manifest.publish_config.tag.clone(),
-                    access: manifest.publish_config.access.clone(),
-                });
-                continue;
+                return Err(PackageManagerError::message(format!(
+                    "包 `{}` 的清单缺少 publish 目标；请在 publish 数组中声明 type/package_id/version",
+                    manifest.name
+                )));
             }
 
             for target in registry_targets {
@@ -839,8 +827,7 @@ impl PackageManager {
         self.vendors_directory().join(format!("{registry_name}/{name}@{version}"))
     }
 
-    /// Delete vendor dirs for `package_name`: registry layout `vendors/{registry}/{name}@{version}`,
-    /// plus legacy / workspace flat `vendors/{name}` so remove matches install without breaking older trees.
+    /// Delete vendor dirs for `package_name` recorded in the lock file.
     fn remove_vendor_installs(&self, package_name: &str) {
         let vendors = self.vendors_directory();
         let mut paths: Vec<PathBuf> = self
@@ -865,8 +852,6 @@ impl PackageManager {
                 }
             })
             .collect();
-        // Always try the flat name (workspace members + pre-layout installs).
-        paths.push(vendors.join(package_name));
         paths.sort();
         paths.dedup();
         for path in paths {
@@ -905,8 +890,8 @@ impl PackageManager {
             return name.to_string();
         }
         if let Some(manifest) = self.mode.package_manifest() {
-            if !manifest.publish_config.registry.is_empty() {
-                return manifest.publish_config.registry.clone();
+            if let Some(target) = manifest.publish.iter().find(|target| target.is_registry_target()) {
+                return target.format_type.trim().to_ascii_lowercase();
             }
         }
         String::new()
@@ -925,13 +910,6 @@ struct PublishJob {
     license: Option<String>,
     tag: String,
     access: String,
-}
-
-fn resolve_legacy_registry(options: &PublishOptions, manifest: &PackageManifest) -> String {
-    if !options.registry_name.is_empty() {
-        return options.registry_name.clone();
-    }
-    if manifest.publish_config.registry.is_empty() { options.registry_name.clone() } else { manifest.publish_config.registry.clone() }
 }
 
 fn resolve_publish_version(target_version: &str, manifest_version: &str, workspace_version: Option<&str>) -> Result<String> {
