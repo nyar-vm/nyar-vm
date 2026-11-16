@@ -24,7 +24,7 @@ use super::SpyOptions;
 /// 反序列化由本模块完成。字段命名与 `X64Instruction` 变体一一对应，便于
 /// 手工核对。
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct NativeDump {
+pub struct MachineImageDump {
     /// 产生该 dump 的目标三元式 / host flavor。
     pub host_flavor: String,
     /// 入口符号名。
@@ -56,7 +56,7 @@ pub fn run(options: &SpyOptions) -> LegionResult<ExitCode> {
     }
 
     let content = fs::read_to_string(input)?;
-    let dump: NativeDump = serde_json::from_str(&content).map_err(|e| report!("JSON 解析失败：{e}"))?;
+    let dump: MachineImageDump = serde_json::from_str(&content).map_err(|e| report!("JSON 解析失败：{e}"))?;
 
     if opts.list {
         list_labels(&dump);
@@ -75,7 +75,7 @@ pub fn run(options: &SpyOptions) -> LegionResult<ExitCode> {
 }
 
 /// 列出所有 label 及其在指令序列中的索引。
-fn list_labels(dump: &NativeDump) {
+fn list_labels(dump: &MachineImageDump) {
     println!("=== Labels (entry={})", dump.entry_symbol);
     println!("  stack_reserve = {} (0x{:X})", dump.stack_reserve, dump.stack_reserve);
     println!("  host_flavor   = {}", dump.host_flavor);
@@ -91,7 +91,7 @@ fn list_labels(dump: &NativeDump) {
 }
 
 /// 反汇编指令序列，可选地按 label 名过滤区段。
-fn disassemble(dump: &NativeDump, filter: Option<&str>) {
+fn disassemble(dump: &MachineImageDump, filter: Option<&str>) {
     println!("=== Native Disassembly (entry={}, host={})", dump.entry_symbol, dump.host_flavor);
     println!("  stack_reserve = {} (0x{:X})", dump.stack_reserve, dump.stack_reserve);
     println!();

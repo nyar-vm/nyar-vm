@@ -27,8 +27,8 @@ pub enum HostArtifactKind {
     Wasm,
     /// JVM `.class`.
     JvmClass,
-    /// Native executable.
-    NativeExecutable,
+    /// Machine-code executable（`PE` / `ELF`）。
+    MachineCodeExecutable,
 }
 /// Host compile report.
 #[derive(Debug, Clone)]
@@ -242,13 +242,13 @@ pub fn compile_v_bundle(
             let native_path = output_dir.join(format!("{artifact_name}.so"));
             let bytes = fs::read(&native_path).map_err(|e| AsgardError::msg(format!("{e}: {}", "Android .so artifact not found")))?;
             validate_elf_shared_object(&bytes)?;
-            Ok(HostCompileReport { artifact_bytes: bytes, kind: HostArtifactKind::NativeExecutable, wasm: None })
+            Ok(HostCompileReport { artifact_bytes: bytes, kind: HostArtifactKind::MachineCodeExecutable, wasm: None })
         }
         HostBackend::IosSwiftUi => {
             let artifact_name = primary_artifact_name(&report, ArtifactKind::Executable)?;
             let native_path = output_dir.join(artifact_name);
             let bytes = fs::read(&native_path)?;
-            Ok(HostCompileReport { artifact_bytes: bytes, kind: HostArtifactKind::NativeExecutable, wasm: None })
+            Ok(HostCompileReport { artifact_bytes: bytes, kind: HostArtifactKind::MachineCodeExecutable, wasm: None })
         }
         HostBackend::WindowsNative | HostBackend::LinuxNative | HostBackend::MacOsNative => {
             let artifact_name = primary_artifact_name(&report, ArtifactKind::Executable)?;
@@ -259,7 +259,7 @@ pub fn compile_v_bundle(
                 output_dir.join(artifact_name)
             };
             let bytes = fs::read(&native_path)?;
-            Ok(HostCompileReport { artifact_bytes: bytes, kind: HostArtifactKind::NativeExecutable, wasm: None })
+            Ok(HostCompileReport { artifact_bytes: bytes, kind: HostArtifactKind::MachineCodeExecutable, wasm: None })
         }
         HostBackend::WechatMiniProgram => {
             let artifact_name = primary_artifact_name(&report, ArtifactKind::Executable)?;
@@ -274,7 +274,7 @@ pub fn compile_v_bundle(
             let artifact_name = primary_artifact_name(&report, ArtifactKind::Executable)?;
             let native_path = output_dir.join(artifact_name);
             let bytes = fs::read(&native_path)?;
-            Ok(HostCompileReport { artifact_bytes: bytes, kind: HostArtifactKind::NativeExecutable, wasm: None })
+            Ok(HostCompileReport { artifact_bytes: bytes, kind: HostArtifactKind::MachineCodeExecutable, wasm: None })
         }
     }
 }
