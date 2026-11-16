@@ -1,13 +1,13 @@
 //! Native-bound PE residual (Futamura 1st projection product for `legend-vm`).
 //!
 //! Guests residualize into [`nyar_analyzer::residual::ResidualSink`]; this crate's **product**
-//! sink records ops for **native / x64 → Windows PE**, not NyarVM bytecode.
+//! sink records ops for the **native / x64** target lane, not NyarVM bytecode.
 //!
-//! Full x64 lowering is still incomplete; specialization always produces a
-//! [`NativeResidualModule`], and [`emit_native_pe`] wraps a minimal PE whose exit
-//! code comes from a residual `main` that evaluates to an integer. Anything the
-//! lowering cannot honestly represent — evaluation failure or a non-integer
-//! result — is an explicit error, never a success-shaped empty body.
+//! 产品路径只有一条：specialization 产出 [`NativeResidualModule`]，多函数 residual lowering
+//! 提交本 lane 的文本 LIR，由 native 平台编码器产出共享库 / 宿主扩展镜像（`PE32+` DLL、
+//! `ELF64 ET_DYN`）。不存在「纯度检查 → 求值 → 固定整数返回」的独立 exe 出口；常量折叠
+//! 属于优化/参考求值阶段（[`eval_native_residual`]），不得冒充产品。无法真实表示的残差
+//! 一律结构化失败，不产出成功形状的空体或固定答案。
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -18,7 +18,7 @@ use nyar::abstractions::{CanonicalAbi, CanonicalArch, CanonicalSpecification, Ca
 use nyar::target_resolution::{ArtifactContract, ResolvedTarget};
 use nyar_analyzer::residual::ResidualSink;
 use nyar_emitter::nyar_backend_native::{
-    NativeAbi, NativeDataTarget, NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage, encode_native_text_function,
+    NativeAbi, NativeDataTarget, NativeTextInstruction, NativeTextProgramFunction, NativeTextProgramImage,
     encode_native_text_program_with_dependencies, encode_native_text_program_with_imports,
 };
 
@@ -2765,97 +2765,6 @@ fn lower_residual_function(
     Ok((NativeTextProgramFunction { name: function.name.clone(), slot_count: lowering.next_slot, instructions: lowering.instructions }, return_kind))
 }
 
-/// Lower a native residual to raw x64 bytes suitable for [`PeCompiler`].
-///
-/// 常量折叠只允许用于**已证明无副作用**的残差：任何 `Print` 或未知调用都会
-/// 失败闭合，不得先执行原程序再把结果替成 `mov rax, imm`，否则运行期 effect
-/// 会被编译器静默吞掉。纯度门通过后才在步数预算内折叠常量；非整数结果仍是
-/// 明确的 not-implemented 错误，空函数体不会伪装成可运行的 exit-0 产品。
-///
-/// 机器码不在这里手写：residual 适配器只提交本 lane 的文本 LIR，帧序言/尾声、
-/// 指令编码与重定位统一由 native 平台服务产出。
-pub fn lower_native_residual_to_x64(module: &NativeResidualModule) -> Result<Vec<u8>, String> {
-    // 编译时未知输入无法常量折叠：参数化残差必须走真实代码生成，该 lowering
-    // 尚未接入，禁止用任何固定答案或空函数体冒充产品。
-    let main = module.function("main").ok_or_else(|| "native residual has no `main` function".to_string())?;
-    if !main.parameters.is_empty() {
-        return Err(format!(
-            "native x64 lowering for parameterized residuals is not implemented (unknown inputs: `{}`)",
-            main.parameters.join("`, `")
-        ));
-    }
-    ensure_effect_free_for_constant_folding(module)?;
-    match eval_native_residual(module) {
-        Ok(ResidualValue::Int(value)) => {
-            let encoded = encode_native_text_function(&[NativeTextInstruction::LoadI64(value), NativeTextInstruction::Return])
-                .map_err(|error| format!("native 平台 LIR 编码失败: {error}"))?;
-            if !encoded.relocations.is_empty() {
-                return Err("常量折叠残差不应产生直接调用重定位".into());
-            }
-            Ok(encoded.text)
-        }
-        Ok(other) => Err(format!("full x64 lowering is not implemented for non-integer residual results (got {other:?})")),
-        Err(error) => Err(format!("native residual evaluation failed: {error}")),
-    }
-}
-
-/// 残差纯度门：只允许无运行时副作用的常量折叠。
-fn ensure_effect_free_for_constant_folding(module: &NativeResidualModule) -> Result<(), String> {
-    for function in &module.functions {
-        for op in &function.ops {
-            match op {
-                NativeResidualOp::PushString(text) => {
-                    return Err(format!(
-                        "residual function `{}` pushes string `{text}`; non-integer constant folding is not implemented",
-                        function.name
-                    ));
-                }
-                NativeResidualOp::Print(_) => {
-                    return Err(format!(
-                        "residual function `{}` contains `Print`; effects must be preserved at runtime, not consumed by compile-time folding",
-                        function.name
-                    ));
-                }
-                NativeResidualOp::Call { name, .. } if module.function(name).is_none() => {
-                    return Err(format!("residual function `{}` calls unknown `{name}`", function.name));
-                }
-                // 运行时对象与运行时解析的调用属于保留的动态操作：不能把程序在
-                // 编译期执行完再输出常量。
-                NativeResidualOp::DynamicCall { name, .. } => {
-                    return Err(format!(
-                        "residual function `{}` contains runtime-resolved call `{name}`; dynamic calls must stay in the product",
-                        function.name
-                    ));
-                }
-                NativeResidualOp::TableNew
-                | NativeResidualOp::TableArrayPush
-                | NativeResidualOp::TableRecordSet(_)
-                | NativeResidualOp::TableIndexSet
-                | NativeResidualOp::TableFieldSet(_)
-                | NativeResidualOp::TableFieldGet(_)
-                | NativeResidualOp::TableIndexGet => {
-                    return Err(format!(
-                        "residual function `{}` builds or reads runtime objects; object shape must be preserved at runtime",
-                        function.name
-                    ));
-                }
-                _ => {}
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Specialize → lower → Windows PE bytes (and optionally write to `output_path`).
-pub fn emit_native_pe(module: &NativeResidualModule, output_path: Option<&std::path::Path>) -> Result<Vec<u8>> {
-    let x64 = lower_native_residual_to_x64(module).map_err(|error| miette!("{error}"))?;
-    let compiler = PeCompiler;
-    match output_path {
-        Some(path) => compiler.compile("main", &x64, path),
-        None => compiler.compile_to_bytes(&x64),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2865,48 +2774,6 @@ mod tests {
             name: "t".into(),
             functions: vec![NativeResidualFunction { name: "main".into(), parameters: Vec::new(), ops }],
         }
-    }
-
-    /// 整数残差经 native 平台 LIR 编码：包含 `mov rax, imm64` 与完整返回尾声，
-    /// residual 适配器不再手写任何机器码。
-    #[test]
-    fn integer_result_lowers_through_native_platform_lir() {
-        let module = residual_main(vec![NativeResidualOp::PushI64(42), NativeResidualOp::Ret]);
-        let text = lower_native_residual_to_x64(&module).expect("integer residual must lower");
-        let mut expected_load = vec![0x48, 0xB8];
-        expected_load.extend_from_slice(&42u64.to_le_bytes());
-        assert!(text.windows(expected_load.len()).any(|window| window == expected_load.as_slice()), "编码必须包含 mov rax, 42: {text:02x?}");
-        assert!(text.ends_with(&[0x48, 0x89, 0xEC, 0x5D, 0xC3]), "编码必须以帧还原 + ret 结束: {text:02x?}");
-    }
-
-    #[test]
-    fn non_integer_result_fails_closed_instead_of_empty_body() {
-        let module = residual_main(vec![NativeResidualOp::PushString("n:5".into()), NativeResidualOp::Ret]);
-        let error = lower_native_residual_to_x64(&module).expect_err("non-integer residual must not report success");
-        assert!(error.contains("not implemented"), "unexpected error: {error}");
-    }
-
-    #[test]
-    fn evaluation_failure_propagates_instead_of_empty_body() {
-        // `main` calls a missing function → 纯度门明确拒绝未知调用。
-        let mut module = residual_main(vec![NativeResidualOp::Call { name: "absent".into(), argc: 0 }, NativeResidualOp::Ret]);
-        module.functions.push(NativeResidualFunction {
-            name: "other".into(),
-            parameters: Vec::new(),
-            ops: vec![NativeResidualOp::PushI64(0), NativeResidualOp::Ret],
-        });
-        let error = lower_native_residual_to_x64(&module).expect_err("evaluation failure must not report success");
-        assert!(error.contains("unknown"), "unexpected error: {error}");
-        assert!(error.contains("absent"), "evaluation message must be carried: {error}");
-    }
-
-    #[test]
-    fn print_residual_fails_closed_instead_of_being_executed_at_compile_time() {
-        let module =
-            residual_main(vec![NativeResidualOp::PushI64(7), NativeResidualOp::Print(1), NativeResidualOp::PushI64(9), NativeResidualOp::Ret]);
-        let error = lower_native_residual_to_x64(&module).expect_err("含 Print 的残差不得编译期折叠");
-        assert!(error.contains("Print"), "unexpected error: {error}");
-        assert!(error.contains("effects must be preserved at runtime"), "unexpected error: {error}");
     }
 
     /// Linux 产品 lane 产出 `ET_DYN` 共享库并按名导出残差函数。

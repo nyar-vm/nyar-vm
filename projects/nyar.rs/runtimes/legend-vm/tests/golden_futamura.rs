@@ -1,7 +1,8 @@
 //! Futamura / partial-evaluation pipeline proofs.
 //!
-//! Host-script PE product path: specialize(interpret, program) → **native residual**
-//! → Windows PE (not OVM). Languages without a compiled lane must fail closed.
+//! Host-script product path: specialize(interpret, program) → **native residual**
+//! → native lane 文本 LIR → 共享库 / 宿主扩展镜像（不是 OVM，也没有独立的固定答案
+//! exe 出口）。Languages without a compiled lane must fail closed.
 
 use std::collections::HashMap;
 
@@ -50,22 +51,7 @@ fn lua_pe_specializes_to_native_residual() {
 #[test]
 fn lua_pe_first_projection_arithmetic_matches_interpret_via_native_residual() {
     let source = "local x = 1 + 2\nreturn x\n";
-    assert_native_pe_matches_interpret(source, |value| matches!(value, ResidualValue::Int(3)));
-}
-
-#[test]
-fn lua_pe_print_residual_fails_closed_instead_of_dropping_effect() {
-    let source = r#"
-local x = 1 + 2
-print(x)
-"#;
-    let runner = LegendVmRunner::new();
-    let residual = runner.specialize_native("lua", source, "lua_pe").expect("specialize");
-    // 诊断解释可以对照语义；产品 lowering 必须失败闭合，不能执行后丢弃 effect。
-    let specialized = eval_native_residual(&residual).expect("diagnostic eval");
-    assert!(matches!(specialized, ResidualValue::Int(3)), "unexpected residual value: {specialized:?}");
-    let error = legend_vm::compiler::emit_native_pe(&residual, None).expect_err("Print 残差不得被编译期吞掉");
-    assert!(error.to_string().contains("Print"), "unexpected error: {error}");
+    assert_residual_matches_interpret(source, "3");
 }
 
 #[test]
@@ -100,7 +86,7 @@ else
   return 0
 end
 "#;
-    assert_native_pe_matches_interpret(source, |value| matches!(value, ResidualValue::Int(6)));
+    assert_residual_matches_interpret(source, "6");
 }
 
 #[test]
@@ -112,44 +98,7 @@ end
 local total = add(2, 3)
 return "n:" .. total
 "#;
-    assert_native_pe_matches_interpret(source, |value| matches!(value, ResidualValue::String(text) if text == "n:5"));
-}
-
-#[test]
-fn lua_pe_emits_windows_pe_from_native_residual() {
-    let runner = LegendVmRunner::new();
-    let residual = runner.specialize_native("lua", "return 1 + 2", "lua_pe").expect("specialize");
-
-    let dir = std::env::temp_dir().join("legend-vm-lua-pe-native");
-    let _ = std::fs::create_dir_all(&dir);
-    let out = dir.join("lua_pe.exe");
-    let pe = runner.emit_native_pe(&residual, &out).expect("emit PE");
-    assert!(pe.starts_with(b"MZ"), "native product must be a Windows PE (MZ), got {} bytes", pe.len());
-    assert_eq!(std::fs::read(&out).expect("read pe"), pe);
-}
-
-fn assert_native_pe_matches_interpret(source: &str, residual_ok: impl FnOnce(&ResidualValue) -> bool) {
-    let runner = LegendVmRunner::new();
-    let mut env = HashMap::new();
-    let interpreted = runner.run("lua", source, &mut env).expect("interpret");
-
-    let residual = runner.specialize_native("lua", source, "lua_pe").expect("specialize → native");
-    assert!(residual.op_count() > 0, "specialize must residualize ops");
-
-    let specialized = eval_native_residual(&residual).expect("eval native residual");
-    assert!(residual_ok(&specialized), "residual result unexpected: {specialized:?}; interpret={interpreted:?}");
-    assert_eq!(specialized.to_key(), legacy_key(&interpreted), "residual={specialized:?} interpret={interpreted}");
-
-    if matches!(specialized, ResidualValue::Int(_)) {
-        let pe = legend_vm::compiler::emit_native_pe(&residual, None).expect("emit PE bytes");
-        assert!(pe.starts_with(b"MZ"), "product path must emit PE, not .odin");
-    }
-    else {
-        // Non-integer residuals have no x64 lowering yet: the product path must
-        // fail closed instead of emitting a success-shaped exit-0 stub PE.
-        let error = legend_vm::compiler::emit_native_pe(&residual, None).expect_err("non-integer residual must fail closed");
-        assert!(error.to_string().contains("not implemented"), "unexpected error: {error}");
-    }
+    assert_residual_matches_interpret(source, "n:5");
 }
 
 /// 编译时未知输入：顶层自由变量成为残差 `main` 的形参，解释器与残差在多组
@@ -200,16 +149,6 @@ end
 return s
 "#;
     assert_unknown_input_matches_interpret(source, &[("n", LuaValue::Int(3))], |value| matches!(value, ResidualValue::Int(3)));
-}
-
-/// 参数化残差没有编译期常量可折叠：产品 PE 路径必须显式失败，禁止固定答案。
-#[test]
-fn lua_pe_parameterized_residual_fails_closed_for_pe_product() {
-    let runner = LegendVmRunner::new();
-    let residual = runner.specialize_native("lua", "return n + 1", "lua_pe").expect("specialize");
-    assert_eq!(residual.function("main").expect("main").parameters, vec!["n".to_string()]);
-    let error = legend_vm::compiler::emit_native_pe(&residual, None).expect_err("参数化残差不得常量折叠成产品");
-    assert!(error.to_string().contains("parameterized residuals"), "unexpected error: {error}");
 }
 
 /// 残化函数读不到 guest 的动态外层绑定：必须特化期失败，而不是运行期读成 `nil`。
@@ -276,15 +215,6 @@ fn lua_pe_resolves_unknown_call_at_runtime() {
 fn lua_pe_unknown_input_as_table_key_matches_interpret() {
     let source = "local t = { 10, 20, 30 }\nreturn t[k]\n";
     assert_unknown_input_matches_interpret(source, &[("k", LuaValue::Int(2))], |value| value.to_key() == "20");
-}
-
-/// 对象残差没有编译期常量可折叠：PE 产品路径必须显式失败。
-#[test]
-fn lua_pe_table_residual_fails_closed_for_pe_product() {
-    let runner = LegendVmRunner::new();
-    let residual = runner.specialize_native("lua", "local t = { 1 }\nreturn t[1]\n", "lua_pe").expect("specialize");
-    let error = legend_vm::compiler::emit_native_pe(&residual, None).expect_err("对象残差不得编译期折叠成产品");
-    assert!(error.to_string().contains("runtime objects"), "unexpected error: {error}");
 }
 
 fn assert_residual_matches_interpret(source: &str, expected: &str) {

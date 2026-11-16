@@ -5,7 +5,7 @@ use std::{collections::HashMap, path::Path};
 use miette::{Result, miette};
 
 use crate::{
-    compiler::{NativeResidualModule, PeCompiler, emit_native_pe},
+    compiler::NativeResidualModule,
     evaluator::{evaluate_bash_script, evaluate_c_script, evaluate_lua_script, evaluate_powershell_script, evaluate_tcl_script},
     guest::{FnGuestInterpret, GuestEnv, GuestInterpretFn, GuestValueHandle},
 };
@@ -100,16 +100,6 @@ impl LegendVmRunner {
     /// Specialize a host-script language into a native-bound residual module.
     pub fn specialize_native(&self, language: &str, source: &str, module_name: &str) -> Result<NativeResidualModule> {
         self.compile_module(language, source, module_name)
-    }
-
-    /// Emit a Windows PE from a native residual (specialize product path).
-    pub fn emit_native_pe(&self, module: &NativeResidualModule, output_path: &Path) -> Result<Vec<u8>> {
-        emit_native_pe(module, Some(output_path))
-    }
-
-    /// Compile raw x64 machine code to a PE executable.
-    pub fn compile_to_pe(&self, entry_function_name: &str, x64_code: &[u8], output_path: &Path) -> Result<Vec<u8>> {
-        PeCompiler.compile(entry_function_name, x64_code, output_path)
     }
 
     /// Detect language from a file path.
