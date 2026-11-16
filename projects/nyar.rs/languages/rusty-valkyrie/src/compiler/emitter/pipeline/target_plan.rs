@@ -804,6 +804,19 @@ fn lower_unsettled_contract_key(program: &ValkyrieMirProgram, id: nyar_types::Ty
     let kind = &program.linked.types.get(&id).ok_or_else(|| "canonical 类型事实缺失".to_string())?.kind;
     match kind {
         CanonicalTypeKind::Nominal { declaration, arguments } => {
+            // 文本载体声明（`std.text::Utf8Text`/`Utf16Text`）在 unsettled 键处必须折叠成
+            // 编码基元，与签名折叠、顶层折叠键登记同源（都消费 canonical 已冻结的
+            // `text_encoding_types`，01 §5.4：文本身份只来自唯一已冻结编码身份）。
+            // 这里若保留名义 `Nominal{layout}` 形态，语言布局计划的字段事实（已经文本
+            // 编码桥折叠成 `Utf8`/`Utf16`）与本键就是同一类型的两种键，宿主序列投影的
+            // 嵌套层查找必然 miss，投影失败闭合退化成 `InstanceHandle`。
+            if let Some(encoding) = program.linked.text_encoding_types.get(&id) {
+                return match encoding {
+                    CanonicalPrimitiveType::Utf8 => Ok(NyarType::Utf8),
+                    CanonicalPrimitiveType::Utf16 => Ok(NyarType::Utf16),
+                    other => Err(format!("文本载体 `TypeId` 登记了非文本编码身份: {other:?}")),
+                };
+            }
             let base = match program.linked.aggregate_layout_by_type.get(declaration) {
                 Some(layout) => NyarType::Nominal { layout: *layout, spelling: nyar_types::Identifier::new("") },
                 None => lower_type(program, *declaration)?.contract_key(),
@@ -1316,6 +1329,33 @@ mod tests {
         let text = error.to_string();
         assert!(text.contains("target-plan[type]"), "展示必须含阶段: {text}");
         assert!(text.contains("symbol=demo::run"), "展示必须含符号: {text}");
+    }
+
+    /// 文本载体实参在 unsettled 键处必须折叠成编码基元（`ArrayList<utf8>` 投影回归反例）：
+    /// 语言布局计划的字段事实经文本编码桥折叠为 `Utf8`，若本键保留名义
+    /// `Nominal{layout}` 形态，同一类型就有两种键，宿主序列投影的嵌套层查找必然
+    /// miss，投影失败闭合退化成 `InstanceHandle`。折叠事实只来自 canonical 已冻结的
+    /// `text_encoding_types`，与签名折叠、顶层折叠键同源。
+    #[test]
+    fn unsettled_contract_key_folds_text_carrier_arguments() {
+        let utf8_text = type_id(10);
+        let storage_declaration = type_id(11);
+        let storage_of_utf8 = type_id(12);
+        let mut program = program_with_types(vec![
+            (utf8_text, CanonicalTypeKind::Nominal { declaration: utf8_text, arguments: Vec::new() }),
+            (storage_declaration, CanonicalTypeKind::Nominal { declaration: storage_declaration, arguments: Vec::new() }),
+            (storage_of_utf8, CanonicalTypeKind::Nominal { declaration: storage_declaration, arguments: vec![utf8_text] }),
+        ]);
+        // `Utf8Text` 已登记托管布局并冻结编码身份：键必须取折叠形态，不得取名义布局形态。
+        program.linked.aggregate_layout_by_type.insert(utf8_text, 7);
+        program.linked.text_encoding_types.insert(utf8_text, CanonicalPrimitiveType::Utf8);
+        program.linked.type_surface_spellings.insert(storage_declaration, nyar_types::Identifier::new("std::collection::ArrayStorage"));
+        let key = lower_unsettled_contract_key(&program, storage_of_utf8).expect("闭合实例必须能派生 unsettled 键");
+        assert_eq!(
+            key,
+            NyarType::Apply(Box::new(NyarType::Named(nyar_types::Identifier::new("std::collection::ArrayStorage"))), vec![NyarType::Utf8]),
+            "文本载体实参必须折叠成 `Utf8`，与语言布局字段事实同键: {key:?}"
+        );
     }
 
 }
