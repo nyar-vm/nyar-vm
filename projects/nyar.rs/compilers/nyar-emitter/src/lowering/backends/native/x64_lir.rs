@@ -1,22 +1,14 @@
-//! x86-64 目标私有低层 IR（LIR）与机器码编码权威。
+//! x86-64 机器码图元权威（native lane 唯一字节表）。
 //!
-//! 所有权边界（01 §5）：`ExecutableFunction` 是语言语义事实，本模块不读取它；
-//! [`super::x86_64`] 的降低器把已冻结的计划事实转成 [`X64Function`]，编码器只把
-//! LIR 机械翻译成字节。标签、栈槽、寄存器与直接调用目标都在 LIR 内显式，编码器
-//! 不再推导 SSA、布局或调用语义。
+//! 所有权边界（01 §5）：`ExecutableFunction` 是语言语义事实，本模块不读取它。
+//! 帧序言/尾声、寄存器前缀表、算子编码、`rel32` 回填与数据/导入寻址图元在这里
+//! 唯一实现；[`super::x64_program`] 的程序装配器与 ELF 入口桩共享同一套图元，
+//! 任何其他模块不得再手写同一 ISA 的指令字节。
 //!
-//! **本模块是 native lane 唯一的 x86-64 字节权威**：帧序言/尾声、寄存器前缀表、
-//! 算子编码、`rel32` 回填与文本 LIR（[`super::x64_program`]）、ELF 入口桩共享同
-//! 一套图元；任何其他模块不得再手写同一 ISA 的指令字节。
-//!
-//! 栈槽固定为 Win64 帧内 8 字节槽（`[rbp - 8 * (slot + 1)]`），出参周转区为
-//! `[rsp + 8 * index]`；调用目标以重定位记录返回，由镜像装配在全部函数布局完成
-//! 后回填 `rel32`。
+//! 栈槽固定为帧内 8 字节槽（`[rbp - 8 * (slot + 1)]`）；调用与跳转以 `rel32`
+//! 占位记录，由程序装配器在全部函数布局完成后回填。
 
-use std::collections::BTreeMap;
-
-use crate::{Result, backend_plan_views::ExecutableBlockRef as MirBlockRef};
-use nyar_types::ItemInstanceId;
+use crate::Result;
 
 use super::{NativeAbi, x86_64::X86_64OperatorCode};
 
@@ -51,23 +43,6 @@ impl X64Reg {
             NativeAbi::Win64 => &Self::WIN64_ARGS,
             NativeAbi::SystemV64 => &Self::SYSTEM_V_ARGS,
         }
-    }
-
-    fn index(self) -> u8 {
-        match self {
-            Self::Rax => 0,
-            Self::Rcx => 1,
-            Self::Rdx => 2,
-            Self::R8 => 8,
-            Self::R9 => 9,
-            Self::Rdi => 7,
-            Self::Rsi => 6,
-        }
-    }
-
-    /// 64 位操作数的 REX 前缀（`r8`/`r9` 需要 REX.B）。
-    fn rex_w(self) -> u8 {
-        if self.index() & 0b1000 != 0 { 0x4C } else { 0x48 }
     }
 
     /// `mov [rbp + disp32], reg` 的编码前缀（含 REX 与 ModRM）。
@@ -109,126 +84,6 @@ impl X64Reg {
         }
     }
 
-    /// `mov reg, [rsp + disp8]` 的编码前缀 + SIB（`mod=01, rm=100`）。
-    fn scratch_load_prefix(self) -> [u8; 4] {
-        [self.rex_w(), 0x8B, 0x40 | ((self.index() & 0b111) << 3) | 0x04, 0x24]
-    }
-
-    /// `mov [rsp + disp8], reg` 的编码前缀 + SIB。
-    fn scratch_store_prefix(self) -> [u8; 4] {
-        [self.rex_w(), 0x89, 0x40 | ((self.index() & 0b111) << 3) | 0x04, 0x24]
-    }
-}
-
-/// LIR 可寻址位置。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum X64Location {
-    /// 帧内 8 字节局部槽：`[rbp - 8 * (slot + 1)]`。
-    Frame(u16),
-    /// 出参/块参数周转区：`[rsp + 8 * index]`。
-    Scratch(u8),
-}
-
-/// LIR 源操作数。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum X64Value {
-    /// 从帧槽或周转区读取。
-    Location(X64Location),
-    /// 已在寄存器中的值。
-    Register(X64Reg),
-    /// 64 位立即数（布尔按 0/1 位模式）。
-    Immediate(i64),
-}
-
-/// 单条 x86-64 LIR 指令。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum X64Instruction {
-    /// 函数内块标签，供跳转回填。
-    Label(MirBlockRef),
-    /// `mov <帧槽>, <寄存器>`。
-    StoreFrame { slot: u16, source: X64Reg },
-    /// `mov <寄存器>, <值>`。
-    Load { register: X64Reg, source: X64Value },
-    /// `mov [rsp + 8 * index], <寄存器>`。
-    StoreScratch { index: u8, source: X64Reg },
-    /// 按冻结 x86-64 operator 编码执行（操作数已按约定位于 `rax`/`rcx`）。
-    Operator(X86_64OperatorCode),
-    /// 同片段直接调用；`rel32` 由镜像装配回填。
-    Call(ItemInstanceId),
-    /// 无条件跳转到函数内块。
-    Jump(MirBlockRef),
-    /// `test eax, eax` 后为零跳转（条件值已在 `rax`）。
-    JumpIfZero(MirBlockRef),
-    /// 函数返回：`mov rsp, rbp; pop rbp; ret`（返回值已在 `rax`）。
-    Return,
-    /// `ud2`：到达即故障。
-    Trap,
-}
-
-/// 一个函数的完整 LIR。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct X64Function {
-    /// 对齐后的帧大小（含 32 字节 shadow space）。
-    pub(super) frame_bytes: u32,
-    pub(super) instructions: Vec<X64Instruction>,
-}
-
-/// 直接调用目标在文本节中的回填位置。
-pub(super) type X64Relocation = (usize, ItemInstanceId);
-
-/// 把函数的 LIR 编码进文本节，并记录直接调用重定位。
-///
-/// 编码器只消费 LIR：不读 `ExecutableFunction`、计划、SSA 或类型布局。
-pub(super) fn encode_x64_function(function: &X64Function, text: &mut Vec<u8>, relocations: &mut Vec<X64Relocation>) -> Result<()> {
-    let start = text.len();
-    emit_prologue(text, function.frame_bytes);
-
-    let mut labels = BTreeMap::<MirBlockRef, usize>::new();
-    let mut jumps = Vec::<(usize, MirBlockRef)>::new();
-
-    for instruction in &function.instructions {
-        match instruction {
-            X64Instruction::Label(block) => {
-                labels.insert(*block, text.len());
-            }
-            X64Instruction::StoreFrame { slot, source } => emit_mov_to_frame(text, *source, *slot),
-            X64Instruction::Load { register, source } => match source {
-                X64Value::Register(source) => {
-                    if source != register {
-                        return Err(format!("x86_64 LIR 编码：寄存器到寄存器的 `Load` 未定义（{:?} → {:?}）", source, register));
-                    }
-                }
-                X64Value::Immediate(value) => emit_mov_imm64(text, *register, *value),
-                X64Value::Location(X64Location::Frame(slot)) => emit_mov_from_frame(text, *register, *slot),
-                X64Value::Location(X64Location::Scratch(index)) => {
-                    text.extend_from_slice(&register.scratch_load_prefix());
-                    text.push(*index);
-                }
-            },
-            X64Instruction::StoreScratch { index, source } => {
-                text.extend_from_slice(&source.scratch_store_prefix());
-                text.push(*index);
-            }
-            X64Instruction::Operator(code) => encode_operator(text, *code),
-            X64Instruction::Call(instance) => {
-                // 记录 `rel32` 字段的绝对位置；相对位移在全部函数布局完成后回填。
-                relocations.push((emit_call_placeholder(text), *instance));
-            }
-            X64Instruction::Jump(target) => jumps.push((emit_jump_placeholder(text), *target)),
-            X64Instruction::JumpIfZero(target) => jumps.push((emit_jump_if_zero_placeholder(text), *target)),
-            X64Instruction::Return => emit_function_return(text),
-            X64Instruction::Trap => emit_trap(text),
-        }
-    }
-
-    for (field, target) in jumps {
-        let Some(target_offset) = labels.get(&target).copied()
-        else {
-            return Err(format!("x86_64 LIR 编码：跳转目标块 {:?} 缺少标签", target));
-        };
-        patch_rel32(text, field, target_offset, || format!("x86_64 LIR 编码：块跳转位移超出 `rel32`（函数起始 {start}）"))?;
-    }
-    Ok(())
 }
 
 /// 局部槽到 `rbp` 的负位移：`[rbp - 8 * (slot + 1)]`。
@@ -489,55 +344,4 @@ fn encode_compare_i32(text: &mut Vec<u8>, setcc: u8) {
     text.extend_from_slice(&[0x39, 0xC8]);
     text.extend_from_slice(&[0x0F, setcc, 0xC0]);
     text.extend_from_slice(&[0x0F, 0xB6, 0xC0]);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::contracts::BlockRef;
-
-    fn block(index: u32) -> MirBlockRef {
-        BlockRef(index)
-    }
-
-    /// 编码器只消费 LIR：序言按 `frame_bytes`、直接调用产出重定位、跳转在函数内回填。
-    #[test]
-    fn encoder_consumes_only_lir_and_records_call_relocations() {
-        let callee = ItemInstanceId::from_index(7).expect("callee instance");
-        let function = X64Function {
-            frame_bytes: 48,
-            instructions: vec![
-                X64Instruction::Label(block(0)),
-                X64Instruction::Load { register: X64Reg::Rax, source: X64Value::Immediate(42) },
-                X64Instruction::StoreFrame { slot: 0, source: X64Reg::Rax },
-                X64Instruction::Call(callee),
-                X64Instruction::Return,
-                X64Instruction::Label(block(1)),
-                X64Instruction::Load { register: X64Reg::Rcx, source: X64Value::Location(X64Location::Scratch(0)) },
-                X64Instruction::JumpIfZero(block(0)),
-            ],
-        };
-
-        let mut text = Vec::new();
-        let mut relocations = Vec::new();
-        encode_x64_function(&function, &mut text, &mut relocations).expect("LIR 必须可编码");
-
-        assert_eq!(relocations.len(), 1, "直接调用必须产生一条重定位");
-        assert_eq!(relocations[0].1, callee);
-        assert_eq!(text[relocations[0].0 - 1], 0xE8, "重定位必须指向 `call rel32` 的位移字段");
-        // `test eax, eax` + `0F 84` 后为目标块 0 的相对位移。
-        let conditional = text.windows(2).position(|bytes| bytes == [0x0F, 0x84]).expect("条件跳转必须存在");
-        let displacement = i32::from_le_bytes(text[conditional + 2..conditional + 6].try_into().expect("rel32"));
-        // 标签紧随 11 字节序言（`push rbp` 1 + `mov rbp, rsp` 3 + `sub rsp, imm32` 7）。
-        let label_offset = 11;
-        assert_eq!(displacement, label_offset - (i32::try_from(conditional).expect("offset") + 6));
-    }
-
-    /// 目标块缺少标签是 LIR 结构违约，必须结构化失败而不是编造位移。
-    #[test]
-    fn jump_to_unlabeled_block_is_rejected() {
-        let function = X64Function { frame_bytes: 32, instructions: vec![X64Instruction::Jump(block(9))] };
-        let error = encode_x64_function(&function, &mut Vec::new(), &mut Vec::new()).expect_err("缺少标签必须失败");
-        assert!(error.contains("缺少标签"), "{error}");
-    }
 }

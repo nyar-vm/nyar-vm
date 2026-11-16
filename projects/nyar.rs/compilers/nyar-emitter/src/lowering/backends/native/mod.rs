@@ -152,6 +152,11 @@ pub enum NativeTextInstruction {
     Gt,
     /// `rax = (rax >= rcx) as i64`。
     Ge,
+    /// 按冻结 x86-64 operator 编码执行（操作数已按约定位于 `rax`/`rcx`）。
+    ///
+    /// 正式 lane 的计划降低携带 [`x86_64::X86_64OperatorCode`] 全量算子集；
+    /// 上面的固定变体是残差语言的整数便捷别名，两者经同一字节表编码。
+    Operator(x86_64::X86_64OperatorCode),
     /// 函数内标签（数值 id）。
     Label(u32),
     /// 无条件跳转。

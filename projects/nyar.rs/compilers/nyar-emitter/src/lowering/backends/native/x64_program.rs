@@ -256,6 +256,7 @@ pub fn encode_native_text_program_with_dependencies(
                 NativeTextInstruction::LoadSlotToRdx(slot) => emit_mov_from_frame(&mut text, X64Reg::Rdx, *slot),
                 NativeTextInstruction::CopyBytes => emit_copy_bytes(&mut text),
                 NativeTextInstruction::Trap => emit_trap(&mut text),
+                NativeTextInstruction::Operator(code) => encode_operator(&mut text, *code),
                 NativeTextInstruction::SyscallWrite => {
                     if abi != NativeAbi::SystemV64 {
                         return Err(format!("{} 文本 ABI 没有 `write` syscall 合同：effect 写入必须走宿主导入", abi.name()));
