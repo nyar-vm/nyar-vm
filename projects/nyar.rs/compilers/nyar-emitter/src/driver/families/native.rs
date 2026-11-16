@@ -43,13 +43,26 @@ impl BundledBackendCompiler for NativeFamilyCompiler {
         }
         let backend = NativeBinaryBackend::new();
         backend.validate(&input).map_err(|error| error.to_string())?;
+        let entry_symbol = input.entry_symbol.clone();
+        // 用途决定容器：native 库交付与宿主扩展尚未接线，写出前显式拒绝，
+        // 不得由可执行镜像改标冒充库。
+        match request.purpose {
+            nyar::ArtifactPurpose::Library => {
+                return Err("`native` 库交付尚未接线；拒绝把可执行镜像改标为库产物".to_string());
+            }
+            nyar::ArtifactPurpose::HostExtension => {
+                return Err("`native` 宿主扩展 lane 尚未接入正式编译链；拒绝产出未接线的扩展交付".to_string());
+            }
+            _ => {}
+        }
         let artifacts = backend.compile(input, request.options).map_err(|error| error.to_string())?;
-        // 原生可执行文件就是宿主入口：运行契约直接指向产物本身，不拼接命令前缀。
+        // 原生可执行文件就是宿主入口：运行契约直接指向产物本身，不拼接命令前缀，
+        // 逻辑入口取适配器冻结的入口符号。
         let run_contracts = artifacts
             .artifacts
             .first()
             .map(|artifact| DriverRunContract {
-                logical_entry: "main".to_string(),
+                logical_entry: entry_symbol.clone(),
                 physical_entry: artifact.path.clone(),
                 invocation: artifact.path.clone(),
                 validate: artifact.path.clone(),

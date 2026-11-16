@@ -49,6 +49,7 @@ pub struct CompilerArtifactReport {
 pub struct CompilerBuildBundle {
     compiled_program: crate::compiler::valkyrie_mir::CompiledValkyrieProgram,
     artifact_plan: ArtifactPartitionPlan,
+    artifact_purpose: nyar::ArtifactPurpose,
     wasm_package_kind: nyar_emitter::nyar_backend_wasi::WasmPackageKind,
     test_entry_names: Vec<String>,
 }
@@ -84,10 +85,11 @@ pub fn compile_source_groups_to_backend_bundle(
     let bundle = CompilerBuildBundle {
         compiled_program,
         artifact_plan,
+        artifact_purpose: context.artifact_purpose,
         wasm_package_kind: context.wasm_package_kind,
         test_entry_names: context.test_entry_names.clone(),
     };
-    validate_artifact_surface(&bundle, context.wasm_package_kind)?;
+    validate_artifact_surface(&bundle)?;
     Ok(bundle)
 }
 
@@ -122,19 +124,21 @@ pub fn compile_source_groups_to_artifacts(
     Ok(CompilerArtifactReport { driver, evidence })
 }
 
-fn validate_artifact_surface(
-    bundle: &CompilerBuildBundle,
-    wasm_package_kind: nyar_emitter::nyar_backend_wasi::WasmPackageKind,
-) -> PipelineResult<()> {
+fn validate_artifact_surface(bundle: &CompilerBuildBundle) -> PipelineResult<()> {
     let (export_count, entry_count) = bundle.surface_counts();
     // 「library 必须有导出面」是全 lane 合同：OVM / JVM / CLR 不得回落 `main`
     // 或静默产出空运行契约。
-    if wasm_package_kind == nyar_emitter::nyar_backend_wasi::WasmPackageKind::Library && export_count == 0 {
+    if bundle.artifact_purpose == nyar::ArtifactPurpose::Library && export_count == 0 {
         return Err(PipelineError::Surface(ArtifactSurfaceError::LibraryMissingExport));
     }
-    // binary 入口检查仍只约束 wasm（其余 lane 的 host 入口由各自后端决定）。
-    if bundle.artifact_plan.target.to_profile(None).backend_family == TargetBackendFamily::Wasm
-        && wasm_package_kind == nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary
+    // 测试包必须至少有一个 `[test]` 入口身份。
+    if bundle.artifact_purpose == nyar::ArtifactPurpose::TestBundle && bundle.test_entry_names.is_empty() {
+        return Err(PipelineError::Surface(ArtifactSurfaceError::BinaryMissingEntry));
+    }
+    // 应用入口检查仍只约束 wasm（其余 lane 的 host 入口由各自后端按用途冻结）。
+    if bundle.artifact_purpose == nyar::ArtifactPurpose::Application
+        && bundle.artifact_plan.target.to_profile(None).backend_family == TargetBackendFamily::Wasm
+        && bundle.wasm_package_kind == nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary
         && entry_count == 0
     {
         return Err(PipelineError::Surface(ArtifactSurfaceError::BinaryMissingEntry));
@@ -145,6 +149,10 @@ fn validate_artifact_surface(
 impl FrontendBuildBundle for CompilerBuildBundle {
     fn planned_partitions(&self) -> &dyn PlannedArtifactPartitionsView {
         self
+    }
+
+    fn artifact_purpose(&self) -> nyar::ArtifactPurpose {
+        self.artifact_purpose
     }
 
     fn wasm_package_kind(&self) -> nyar_emitter::nyar_backend_wasi::WasmPackageKind {

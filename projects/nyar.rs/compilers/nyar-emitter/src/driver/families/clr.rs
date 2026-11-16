@@ -39,9 +39,17 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
         let has_entry_point = input.module.global_methods.iter().any(|method| method.is_entry_point);
         let provided_contracts = std::mem::take(&mut input.run_contracts);
         let mut managed_abi = input.managed_abi.take();
-        // 库导出面自带合成入口点，产物必须保持 `.dll`；无导出时按入口点推断镜像口味。
-        if managed_abi.is_some() && input.image_kind.is_none() {
+        let library_surface = request.purpose == nyar::ArtifactPurpose::Library;
+        // 镜像口味由用途决定：库交付固定 `.dll`；应用交付必须有冻结程序入口，
+        // 不得由“有无导出/入口点”反推出库镜像；测试包按导出入口合同（有 ABI 即 dll）。
+        if library_surface {
             input.image_kind = Some(nyar::backends::clr::ClrImageKind::DynamicLibrary);
+        }
+        else if managed_abi.is_some() && input.image_kind.is_none() {
+            input.image_kind = Some(nyar::backends::clr::ClrImageKind::DynamicLibrary);
+        }
+        else if input.image_kind.is_none() && request.purpose == nyar::ArtifactPurpose::Application && !has_entry_point {
+            return Err("`artifact: application` 的 `clr` 产物没有冻结程序入口；拒绝静默改发库镜像".to_string());
         }
         let image_kind = input.image_kind.unwrap_or_else(|| nyar::backends::clr::ClrImageKind::infer(has_entry_point));
         let artifact_file = format!("{}.{}", request.artifact_name, image_kind.file_extension());
@@ -54,7 +62,7 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
         let artifacts = backend.compile(input, request.options).map_err(|error| error.to_string())?;
         // 库产物必须有导出面：缺失 managed ABI 入口时结构化失败，不得回退 `main`
         // 或静默返回空运行契约。
-        if request.library_mode {
+        if library_surface {
             match managed_abi.as_ref() {
                 None => return Err("`artifact: library` 的 `clr` 产物缺少 managed ABI 契约；拒绝回退 `main`".to_string()),
                 Some(contract) if contract.entries.is_empty() => {
@@ -90,7 +98,7 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
         else {
             Vec::new()
         };
-        let library_exports = if request.library_mode {
+        let library_exports = if library_surface {
             managed_abi
                 .as_ref()
                 .map(|contract| {

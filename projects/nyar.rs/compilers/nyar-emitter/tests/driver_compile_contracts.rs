@@ -1,8 +1,8 @@
 mod support;
 
 use nyar::{
-    BackendInputKind, BinaryArch, BinaryFlavor, BinaryTarget, HostProjectionBoundary, PartitionBackendRequirement, ReferenceManagement,
-    TargetFamily, TargetLane,
+    ArtifactPurpose, BackendInputKind, BinaryArch, BinaryFlavor, BinaryTarget, HostProjectionBoundary, PartitionBackendRequirement,
+    ReferenceManagement, TargetFamily, TargetLane,
 };
 use nyar_emitter::{
     BackendBoundaryError, BackendDispatchKind, BackendInputShape, BackendRoute, testing::compile_lowered_backend_input, validate_backend_input,
@@ -25,7 +25,7 @@ fn creates_jvm_run_contract_via_bundled_compiler() {
     // 程序入口 launcher 由 lowering 冻结为显式类名；驱动层不扫描方法名。
     backend_input.entry_launcher = Some("nyar/invoke/main".to_string());
     let input = nyar_emitter::LoweredBackendInput::jvm(backend_input);
-    let report = compile_lowered_backend_input("demo", jvm_requirement(options.target.clone()), input, false, &options).expect("compile ok");
+    let report = compile_lowered_backend_input("demo", jvm_requirement(options.target.clone()), input, false, &options, ArtifactPurpose::Application).expect("compile ok");
 
     let contract = report.run_contracts.into_iter().next().expect("missing run contract");
     assert_eq!(contract.physical_entry, "demo.jar");
@@ -45,6 +45,7 @@ fn creates_node_and_wasi_run_contracts_via_bundled_compiler() {
         node_input,
         false,
         &node_options,
+        ArtifactPurpose::Application,
     )
     .expect("node compile ok");
     let node_contract = node_report.run_contracts.into_iter().next().expect("missing node contract");
@@ -60,6 +61,7 @@ fn creates_node_and_wasi_run_contracts_via_bundled_compiler() {
         wasi_input,
         false,
         &wasi_options,
+        ArtifactPurpose::Application,
     )
     .expect("wasi compile ok");
     let wasi_contract = wasi_report.run_contracts.into_iter().next().expect("missing wasi contract");
@@ -93,6 +95,7 @@ fn creates_wasip3_run_contract_and_packages_component() {
         input,
         false,
         &options,
+        ArtifactPurpose::Application,
     )
     .expect("wasip3 compile ok");
     let contract = report.run_contracts.into_iter().next().expect("missing wasip3 run contract");
@@ -130,6 +133,7 @@ fn packages_wasi_component_with_mirrored_imports() {
         input,
         false,
         &options,
+        ArtifactPurpose::Application,
     )
     .expect("wasi compile ok");
 
@@ -162,8 +166,8 @@ fn rejects_unsupported_backend_requirement() {
         host_boundary: HostProjectionBoundary::WasmJsGlue,
         reference_management: ReferenceManagement::HostGc,
     };
-    let error =
-        compile_lowered_backend_input("demo", requirement, input, false, &options).expect_err("should reject unsupported backend requirement");
+    let error = compile_lowered_backend_input("demo", requirement, input, false, &options, ArtifactPurpose::Application)
+        .expect_err("should reject unsupported backend requirement");
     let msg = error.to_string();
     assert!(
         msg.contains("尚未接入") || msg.contains("emitter") || msg.contains("driver compiler") || msg.contains("missing-backend"),
@@ -208,6 +212,7 @@ fn node_launcher_is_free_of_banner_and_cli_pollution() {
         node_input,
         false,
         &node_options,
+        ArtifactPurpose::Application,
     )
     .expect("node compile ok");
 
@@ -237,6 +242,7 @@ fn node_launcher_renders_only_declared_imports() {
         node_input,
         false,
         &node_options,
+        ArtifactPurpose::Application,
     )
     .expect("node compile ok");
 
@@ -262,6 +268,7 @@ fn node_launcher_without_imports_has_clean_stdout() {
         node_input,
         false,
         &node_options,
+        ArtifactPurpose::Application,
     )
     .expect("node compile ok");
 

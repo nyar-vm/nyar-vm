@@ -45,10 +45,17 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
         }
         let backend = JvmBinaryBackend::new();
         backend.validate(&input).map_err(|error| error.to_string())?;
-        let artifacts = backend.compile(input, request.options).map_err(|error| error.to_string())?;
+        let library_surface = request.purpose == nyar::ArtifactPurpose::Library;
+        let mut artifacts = backend.compile(input, request.options).map_err(|error| error.to_string())?;
+        if library_surface {
+            // 装载方式由用途决定：库 jar 按导出面被宿主调用。
+            for artifact in &mut artifacts.artifacts {
+                artifact.kind = nyar::ArtifactKind::Library;
+            }
+        }
         // 库产物必须有导出面：缺失 managed ABI 入口时结构化失败，不得回退 `main`
         // 或静默返回空运行契约。
-        if request.library_mode {
+        if library_surface {
             match managed_abi.as_ref() {
                 None => return Err("`artifact: library` 的 `jvm` 产物缺少 managed ABI 契约；拒绝回退 `main`".to_string()),
                 Some(contract) if contract.entries.is_empty() => {
@@ -86,7 +93,7 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
         else {
             Vec::new()
         };
-        let library_exports = if request.library_mode {
+        let library_exports = if library_surface {
             managed_abi
                 .as_ref()
                 .map(|contract| {

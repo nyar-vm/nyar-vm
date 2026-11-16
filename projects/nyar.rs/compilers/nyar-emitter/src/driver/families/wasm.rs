@@ -31,9 +31,10 @@ impl BundledBackendCompiler for WasmFamilyCompiler {
         backend.validate(&input).map_err(|error| error.to_string())?;
         let package_as_wasi_command = input.package_as_wasi_command;
         let wasi_preview = input.wasi_preview;
+        let library_surface = request.purpose == nyar::ArtifactPurpose::Library;
         // `artifact: library`：导出通过 glue 的 `callExport` 调用，不产生可执行
         // run contract；同时记录每个导出的物理产物与 ABI digest。
-        let library_exports = if request.library_mode {
+        let library_exports = if library_surface {
             if input.library_wasm_exports.is_empty() {
                 return Err("`artifact: library` 的 `wasm` 产物没有导出面".to_string());
             }
@@ -53,8 +54,14 @@ impl BundledBackendCompiler for WasmFamilyCompiler {
         else {
             Vec::new()
         };
-        let artifacts = backend.compile(input, request.options).map_err(|error| error.to_string())?;
-        let run_contracts = if request.library_mode {
+        let mut artifacts = backend.compile(input, request.options).map_err(|error| error.to_string())?;
+        if library_surface {
+            // 装载方式由用途决定：库交付的产物身份是宿主按导出名调用的模块。
+            for artifact in &mut artifacts.artifacts {
+                artifact.kind = nyar::ArtifactKind::Library;
+            }
+        }
+        let run_contracts = if library_surface {
             Vec::new()
         }
         else {

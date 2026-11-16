@@ -7,7 +7,7 @@
 
 use std::path::Path;
 
-use nyar::{ArtifactPartition, HostProjectionBoundary, TargetBackendFamily, TheoryBundle};
+use nyar::{ArtifactPartition, ArtifactPurpose, HostProjectionBoundary, TargetBackendFamily, TheoryBundle};
 
 use crate::{LoweredBackendInput, Result};
 
@@ -44,7 +44,9 @@ pub struct TargetInputRequest<'a> {
     pub output_dir: &'a Path,
     /// 目标 profile 的 host flavor。
     pub host_flavor: &'a str,
-    /// Wasm 打包形态。
+    /// 产物用途：语言侧声明的交付事实，适配器必须按它冻结入口与导出面。
+    pub artifact_purpose: nyar::ArtifactPurpose,
+    /// Wasm 打包形态（仅 Wasm lane 的容器事实）。
     pub wasm_package_kind: crate::nyar_backend_wasi::WasmPackageKind,
 }
 

@@ -3,7 +3,7 @@
 //! Resolver 必须把 target/profile、架构键和已选 host provider 一并交给 Compiler；
 //! 这些字段是后续 adaptor 链接与表示规划的前置事实，不能留在源码行扫描里。
 
-use nyar::{CanonicalTarget, ClrSuspendStrategy};
+use nyar::{ArtifactPurpose, CanonicalTarget, ClrSuspendStrategy};
 use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
 
 use crate::compiler::semantic::closure::DeclarationKey;
@@ -30,7 +30,9 @@ pub struct CompilerBuildContext {
     pub target: CanonicalTarget,
     /// CLR 后端挂起/恢复策略。
     pub clr_suspend_strategy: ClrSuspendStrategy,
-    /// Wasm 产物形态（模块或组件）。
+    /// 产物用途：应用 / 库 / 测试包 / 宿主扩展（语言侧声明的交付事实）。
+    pub artifact_purpose: ArtifactPurpose,
+    /// Wasm 产物形态（模块或组件）；仅 Wasm lane 的容器事实。
     pub wasm_package_kind: WasmPackageKind,
     /// 装配层已按 target/profile 过滤的 host provider 选择结果。
     pub selected_host_providers: Vec<CompilerHostProviderBinding>,
@@ -65,11 +67,18 @@ impl CompilerBuildContext {
             arch: arch.into(),
             target,
             clr_suspend_strategy,
+            artifact_purpose: ArtifactPurpose::Application,
             wasm_package_kind,
             selected_host_providers: Vec::new(),
             gated_out_host_providers: Vec::new(),
             test_entry_names: Vec::new(),
         }
+    }
+
+    /// 声明产物用途（应用 / 库 / 测试包 / 宿主扩展）；未声明按应用交付。
+    pub fn with_artifact_purpose(mut self, purpose: ArtifactPurpose) -> Self {
+        self.artifact_purpose = purpose;
+        self
     }
 
     /// 附加测试构建的 `[test]` 入口名（由语义闭包 seed 推导）。

@@ -80,6 +80,23 @@ pub enum ArtifactKind {
     AssemblyListing,
 }
 
+/// 产物用途：由语言侧显式声明的交付事实，逐 lane 消费。
+///
+/// 用途、程序入口、公开导出面与装载方式是四个独立事实；lane 不得由“有函数、
+/// 有导出、有 ABI”等局部信息反推用途，也不得用改标产物种类替代容器决策。
+/// 未实现的用途组合必须在写出前拒绝。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ArtifactPurpose {
+    /// 进程可执行应用：携带冻结的程序入口。
+    Application,
+    /// 库：携带公开导出面，由宿主装载；不是可直接启动的程序。
+    Library,
+    /// 测试包：每个 `[test]` 入口一条独立运行合同，不属于库导出面。
+    TestBundle,
+    /// 宿主扩展：经 Node-API / CPython ABI 装载的宿主模块。
+    HostExtension,
+}
+
 /// 容器对象种类。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ObjectKind {

@@ -224,19 +224,31 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
     }
     let target_profile = plan.project.build_target.target.to_profile(None);
     let clr_suspend_strategy = ClrSuspendStrategy::from_runtime_async_flag(plan.project.build_target.runtime_async);
-    let wasm_package_kind = if plan.project.is_test {
-        // 测试构建按可调用 library 打包：`[test]` 是唯一的 run 入口，不得要求 `[main]`
+    // 产物用途由清单与测试模式显式声明；Wasm 容器形态从用途派生，
+    // 不得反过来由容器枚举推导全 lane 的交付形态。
+    let artifact_purpose = if plan.project.is_test {
+        // 测试构建：`[test]` 是唯一的 run 入口，不得要求 `[main]`
         // 或把测试回落成普通程序入口。
+        nyar::ArtifactPurpose::TestBundle
+    }
+    else {
+        match plan.project.artifact_kind {
+            ProjectArtifactKind::Library => nyar::ArtifactPurpose::Library,
+            ProjectArtifactKind::Binary => nyar::ArtifactPurpose::Application,
+        }
+    };
+    let wasm_package_kind = if matches!(artifact_purpose, nyar::ArtifactPurpose::TestBundle | nyar::ArtifactPurpose::Library) {
         nyar_emitter::nyar_backend_wasi::WasmPackageKind::Library
     }
     else {
-        wasm_package_kind_for_manifest(plan.project.artifact_kind)
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary
     };
     fs::create_dir_all(&plan.output_dir).map_err(|e| LegionError::msg(format!("创建输出目录失败: {}: {e}", plan.output_dir.display())))?;
     let host_bindings =
         compiler_host_provider_bindings(&plan.project.selected_host_providers).map_err(|error| LegionError::msg(report!("{error}")))?;
     let gated_out_host_providers = crate::legion::workspace::planner::compiler_gated_out_host_providers(&plan.project.gated_out_host_providers);
     let build_context = CompilerBuildContext::new(arch, plan.project.build_target.target.clone(), clr_suspend_strategy, wasm_package_kind)
+        .with_artifact_purpose(artifact_purpose)
         .with_test_entries(plan.project.test_entries.clone())
         .with_selected_host_providers(host_bindings)
         .with_gated_out_host_providers(gated_out_host_providers);
@@ -366,13 +378,6 @@ fn write_compile_evidence(output_dir: &Path, evidence: &crate::compiler::emitter
     fs::create_dir_all(output_dir).map_err(|e| LegionError::msg(format!("创建输出目录失败: {}: {e}", output_dir.display())))?;
     fs::write(&output_path, content).map_err(|e| LegionError::msg(format!("写入 compile evidence 失败: {}: {e}", output_path.display())))?;
     Ok(())
-}
-
-fn wasm_package_kind_for_manifest(artifact_kind: ProjectArtifactKind) -> nyar_emitter::nyar_backend_wasi::WasmPackageKind {
-    match artifact_kind {
-        ProjectArtifactKind::Library => nyar_emitter::nyar_backend_wasi::WasmPackageKind::Library,
-        ProjectArtifactKind::Binary => nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
-    }
 }
 
 pub(super) fn print_artifacts(output_dir: &Path, artifacts: &ArtifactSet) {

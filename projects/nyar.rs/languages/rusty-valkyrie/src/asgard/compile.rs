@@ -195,13 +195,18 @@ pub fn compile_v_bundle(
     let target_profile = target.to_profile(None);
     fs::create_dir_all(output_dir).map_err(|e| AsgardError::msg(format!("{e}: {}", "failed to create output directory")))?;
     // 浏览器 UI 交付是「宿主按名调用导出」的库形态：JS 宿主（boot.js / 小程序运行时）
-    // 经 wasm 导出驱动渲染与事件，没有进程式 `main` 入口；`binary` 形态的 main 合同
-    // 在这里不成立，产物表面按 library 校验（至少一个 `[export]`）。
+    // 经 wasm 导出驱动渲染与事件，没有进程式 `main` 入口；用途显式声明为
+    // library，产物表面按 library 校验（至少一个 `[export]`），容器形态随之派生。
+    let artifact_purpose = match backend {
+        HostBackend::BrowserDom => nyar::ArtifactPurpose::Library,
+        _ => nyar::ArtifactPurpose::Application,
+    };
     let wasm_package_kind = match backend {
         HostBackend::BrowserDom => nyar_emitter::nyar_backend_wasi::WasmPackageKind::Library,
         _ => nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
     };
     let build_context = CompilerBuildContext::new(target.arch.as_str(), target.clone(), nyar::ClrSuspendStrategy::default(), wasm_package_kind)
+        .with_artifact_purpose(artifact_purpose)
         .with_selected_host_providers(host_provider_bindings.to_vec())
         .with_gated_out_host_providers(gated_out_host_providers.to_vec());
     let input = compiler_input_for_with_dependencies(source_groups, generated, surface, extra_dependency_keys)?;

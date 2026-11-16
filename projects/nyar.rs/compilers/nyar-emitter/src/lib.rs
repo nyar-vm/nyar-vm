@@ -262,6 +262,7 @@ pub mod testing {
         input: LoweredBackendInput,
         generate_runtime_config: bool,
         options: &CompilationOptions,
+        purpose: nyar::ArtifactPurpose,
     ) -> Result<DriverCompileReport> {
         compile_with_bundled_backends(DriverCompileRequest {
             artifact_name,
@@ -269,7 +270,7 @@ pub mod testing {
             input: input.into_driver_backend_input(),
             generate_runtime_config,
             options,
-            library_mode: false,
+            purpose,
         })
     }
 }
@@ -570,7 +571,17 @@ pub trait FrontendBuildBundle {
     /// 返回目标 profile 的 host flavor，供 Emitter 选择目标私有编码。
     fn target_host_flavor(&self) -> Option<String>;
 
+    /// 产物用途：由语言侧显式声明的交付事实（应用 / 库 / 测试包 / 宿主扩展）。
+    ///
+    /// 各 lane 必须消费本事实决定入口、导出面与容器形态；禁止由 Wasm 打包枚举
+    /// 或“有无导出”反推用途。
+    fn artifact_purpose(&self) -> nyar::ArtifactPurpose {
+        nyar::ArtifactPurpose::Application
+    }
+
     /// Wasm glue package mode from manifest (`binary` runs `main`, `library` exposes `callExport`).
+    ///
+    /// 只描述 Wasm lane 的容器形态；全目标用途以 [`Self::artifact_purpose`] 为准。
     fn wasm_package_kind(&self) -> nyar_backend_wasi::WasmPackageKind {
         nyar_backend_wasi::WasmPackageKind::Binary
     }
@@ -737,8 +748,8 @@ pub(crate) struct DriverCompileRequest<'a> {
     pub generate_runtime_config: bool,
     /// 通用编译选项。
     pub options: &'a CompilationOptions,
-    /// 是否为 `artifact: library`（打包成可调用库，不是可执行程序或测试包）。
-    pub library_mode: bool,
+    /// 产物用途：语言侧声明的交付事实，lane 据此冻结入口、导出面与装载方式。
+    pub purpose: nyar::ArtifactPurpose,
 }
 
 /// 驱动层运行契约。
@@ -840,10 +851,23 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
     let primary_partition_name = request.planned_partitions.primary_partition_name();
     let partition_count = request.planned_partitions.partition_count();
     let test_entry_names = request.bundle.test_entry_names();
-    // `artifact: library` 与测试包都按 library 打包；测试包有自己的 `[test]` 入口，
-    // 不属于库导出面，因此不能把测试包当作库来校验/索引。
-    let library_mode =
-        request.bundle.wasm_package_kind() == nyar_backend_wasi::WasmPackageKind::Library && test_entry_names.is_empty();
+    // 产物用途是语言侧声明的交付事实；用途与 `[test]` 入口面必须一致，
+    // 不允许由 Wasm 打包枚举或导出数量反推用途。
+    let purpose = request.bundle.artifact_purpose();
+    match purpose {
+        nyar::ArtifactPurpose::TestBundle if test_entry_names.is_empty() => {
+            return Err("`artifact_purpose = test` 的构建必须携带 `[test]` 入口面；拒绝无测试入口的测试包".to_string());
+        }
+        nyar::ArtifactPurpose::Application | nyar::ArtifactPurpose::Library | nyar::ArtifactPurpose::HostExtension
+            if !test_entry_names.is_empty() =>
+        {
+            return Err(format!("产物用途 `{purpose:?}` 不得携带 `[test]` 入口面；测试交付必须声明为 test 用途"));
+        }
+        nyar::ArtifactPurpose::HostExtension => {
+            return Err("宿主扩展 lane 尚未接入正式编译链；拒绝产出未接线的扩展交付".to_string());
+        }
+        _ => {}
+    }
     let mut reports = Vec::new();
 
     for partition_index in 0..partition_count {
@@ -858,6 +882,7 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
                 host_boundary: partition.host_boundary,
                 output_dir: request.output_dir,
                 host_flavor: &host_flavor,
+                artifact_purpose: purpose,
                 wasm_package_kind: request.bundle.wasm_package_kind(),
             },
         )?;
@@ -883,29 +908,16 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
             input: driver_input,
             generate_runtime_config: request.generate_runtime_config,
             options: &options,
-            library_mode,
+            purpose,
         })?;
         reports.push((partition.name.clone(), report));
     }
 
     let mut report = merge_partition_reports(reports, primary_partition_name.as_deref())?;
-    if library_mode {
-        mark_library_artifacts(&mut report);
-    }
-    if !test_entry_names.is_empty() {
+    if purpose == nyar::ArtifactPurpose::TestBundle {
         emit_test_run_contracts(&mut report, request.output_dir, &test_entry_names)?;
     }
     Ok(report)
-}
-
-/// 把可执行/动态库产物改标为 `Library`：`artifact: library` 的产物是给宿主
-/// 按导出名调用的库，不是可直接启动的程序。
-fn mark_library_artifacts(report: &mut DriverCompileReport) {
-    for artifact in &mut report.artifacts.artifacts {
-        if matches!(artifact.kind, nyar::ArtifactKind::Executable | nyar::ArtifactKind::DynamicLibrary) {
-            artifact.kind = nyar::ArtifactKind::Library;
-        }
-    }
 }
 
 /// 为每个 `[test]` 入口生成独立 run contract。

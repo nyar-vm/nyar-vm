@@ -31,7 +31,8 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
         fs::create_dir_all(&input.output_dir).map_err(|e| format!("创建输出目录失败：{}: {e}", input.output_dir.display()))?;
 
         if let Some(module) = input.nyar_module.as_ref() {
-            let entries = resolve_entry_symbols(module, &input.library_public_exports, request.library_mode)?;
+            let library_surface = request.purpose == nyar::ArtifactPurpose::Library;
+            let entries = resolve_entry_symbols(module, &input.library_public_exports, library_surface)?;
             reject_legacy_output(&input.output_dir, request.artifact_name)?;
             let odin_name = format!("{}.odin", request.artifact_name);
             let odin_path = input.output_dir.join(&odin_name);
@@ -43,14 +44,15 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
             artifacts.push(ArtifactDescriptor {
                 name: odin_name.clone(),
                 path: format!("{}.odin", request.artifact_name),
-                kind: ArtifactKind::Executable,
+                // 装载方式由用途决定：库交付按导出名被宿主调用，不是直接启动的程序。
+                kind: if library_surface { ArtifactKind::Library } else { ArtifactKind::Executable },
                 format: ArtifactFormat::RawBinary,
                 target: request.options.target.clone(),
                 lane: TargetLane::Vm,
             });
 
             entry_symbol = entries.first().cloned();
-            if request.library_mode {
+            if library_surface {
                 // 库导出面必须携带冻结的 ABI 合同；缺失即失败闭合，绝不写出
                 // 无合同的导出索引让宿主按未校验的布局解释内存。
                 let contract =
