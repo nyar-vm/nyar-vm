@@ -10,9 +10,14 @@ use crate::legion::{
 };
 
 /// 把作者面目标标签（占位符、三元组或四元组）解析为冻结目标。
+///
+/// `node` / `python` 占位符在这里探测**真实宿主进程**（Node 的
+/// `process.platform` / `process.arch`，Python 的平台、扩展后缀与导入库），
+/// 一次解析同时冻结平台身份与宿主 ABI 合同；探测失败即结构化失败，不回落
+/// 编译进程平台、不产生空宿主配置。`native` 与显式三元组沿用构建宿主探测。
 pub fn resolve_authoring_target(label: &str) -> LegionResult<ResolvedTarget> {
     let resolver = TargetResolver::for_build_host().map_err(|error| LegionError::msg(format!("无法探测构建宿主：{error}")))?;
-    resolver.resolve_label(label).map_err(|error| LegionError::msg(format!("无法解析目标 `{label}`：{error}")))
+    resolver.resolve_label_probed(label).map_err(|error| LegionError::msg(format!("无法解析目标 `{label}`：{error}")))
 }
 
 /// 解析目标标签为冻结目标（平台身份 + 产物合同）。

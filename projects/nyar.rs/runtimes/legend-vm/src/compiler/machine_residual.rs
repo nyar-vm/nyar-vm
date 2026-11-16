@@ -853,20 +853,16 @@ pub fn lower_machine_residual_to_program(
     let has_methods = host.is_some() && module.functions.iter().any(|function| function.name != "main");
     // Windows 的 IAT 必须指明提供符号的宿主模块：Node 的符号由 `node.exe` 导出，
     // CPython 的在版本化的 `pythonNNN.dll` 里（由构建环境提供，不能猜）。
-    let host_library = match (&target, host) {
-        (_, Some(HostModule::Node)) if target.is_windows() => "node.exe".to_string(),
-        (X64ProductTarget::Extension { library, .. }, Some(HostModule::Python)) if target.is_windows() => {
-            library.clone().ok_or_else(|| {
-                "Windows CPython 扩展必须提供宿主导入 DLL 名（例如 `python312.dll`）：版本相关名不能由编译器猜".to_string()
-            })?
-        }
+    let host_library = match host {
+        Some(HostModule::Node) if target.is_windows() => "node.exe".to_string(),
+        Some(HostModule::Python) if target.is_windows() => target.cpython_import_library().ok_or_else(|| {
+            "Windows CPython 扩展必须提供宿主导入 DLL 名（例如 `python312.dll`）：版本相关名不能由编译器猜".to_string()
+        })?.to_string(),
         _ => String::new(),
     };
     // `ELF` 没有 IAT：宿主库以 `DT_NEEDED` 显式声明，避免依赖「碰巧在全局作用域」。
-    let host_dependencies: Vec<String> = match (&target, host) {
-        (X64ProductTarget::Extension { library: Some(library), .. }, Some(HostModule::Python)) if !target.is_windows() => {
-            vec![library.clone()]
-        }
+    let host_dependencies: Vec<String> = match host {
+        Some(HostModule::Python) if !target.is_windows() => target.cpython_import_library().map(str::to_string).into_iter().collect(),
         _ => Vec::new(),
     };
     // 普通库的 effect 通道由宿主传入；扩展模块自己写 stdout。
@@ -1142,7 +1138,10 @@ pub fn emit_machine_python_extension(
     let target = X64ProductTarget::Extension {
         platform,
         module: HostModule::Python,
-        library: python_library.map(str::to_string),
+        cpython: Some(nyar::target_resolution::CpythonHostConfig {
+            module_suffix: None,
+            import_library: python_library.map(str::to_string),
+        }),
     };
     let image = lower_machine_residual_to_program(module, target)?;
     compile_extension_container(platform, &image)
@@ -2213,7 +2212,10 @@ mod tests {
         let windows = X64ProductTarget::Extension {
             platform: X64Platform::windows_x64(),
             module: HostModule::Python,
-            library: Some("python312.dll".into()),
+            cpython: Some(nyar::target_resolution::CpythonHostConfig {
+                module_suffix: None,
+                import_library: Some("python312.dll".into()),
+            }),
         };
         let error = lower_machine_residual_to_program(&module, windows).expect_err("Win64 行参窗口更窄");
         assert!(error.contains("three"), "unexpected error: {error}");

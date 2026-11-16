@@ -317,12 +317,9 @@ pub fn canonical_target(target: &str) -> std::result::Result<CanonicalTarget, cr
 }
 
 pub(crate) fn default_dist_output_dir(project_dir: &Path, resolved: &crate::legion::ResolvedTarget) -> PathBuf {
-    // 同一平台上的普通原生产物与宿主扩展必须落在不同目录：合同是产物身份的一部分。
-    let identity = match &resolved.contract {
-        contract @ (ArtifactContract::NodeApi | ArtifactContract::Cpython(_)) => format!("{}-{}", resolved.platform.as_canonical_str(), contract.as_str()),
-        _ => resolved.platform.as_canonical_str(),
-    };
-    project_dir.join("dist").join(identity)
+    // 同一平台上的普通原生产物与宿主扩展必须落在不同目录：解析服务冻结的完整
+    // identity（平台 + 合同 + 宿主 ABI 配置）就是产物目录身份。
+    project_dir.join("dist").join(resolved.identity())
 }
 
 pub(crate) fn select_build_target(manifest: &ProjectManifest, target: &CanonicalTarget) -> Option<BuildTargetSpec> {

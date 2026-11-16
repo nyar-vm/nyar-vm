@@ -6,7 +6,7 @@
 //! 宿主边界。本模块据此把「普通共享库」与「宿主扩展」分流到对应的承载合同。
 
 use nyar::abstractions::{CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget};
-use nyar::target_resolution::{ArtifactContract, ResolvedTarget};
+use nyar::target_resolution::{ArtifactContract, CpythonHostConfig, ResolvedTarget};
 
 use super::X64CallConv;
 
@@ -112,14 +112,16 @@ impl HostModule {
 pub enum X64ProductTarget {
     /// 普通共享库：宿主按导出函数 ABI 直接调用（`dlopen` / `LoadLibrary`）。
     Library(X64Platform),
-    /// 宿主扩展模块：`platform` 决定容器与调用约定，`module` 决定入口与导入面。
+    /// 宿主扩展模块：`platform` 决定容器与调用约定，`module` 决定入口与导入面，
+    /// 探测/显式配置冻结的 CPython ABI（扩展后缀、导入库）随合同一起进入发射。
     Extension {
         /// 已冻结的平台身份。
         platform: X64Platform,
         /// 宿主模块类型。
         module: HostModule,
-        /// Windows CPython 扩展的导入 DLL 名（版本相关，由构建环境提供）。
-        library: Option<String>,
+        /// CPython 宿主 ABI 配置（Node 为 `None`）：Windows 导入 DLL 名与扩展后缀
+        /// 都是版本相关的宿主事实，由解析服务一次冻结，lane 不再按 OS 猜。
+        cpython: Option<CpythonHostConfig>,
     },
 }
 
@@ -136,17 +138,34 @@ impl X64ProductTarget {
         let platform = X64Platform::from_canonical(platform)?;
         match contract {
             ArtifactContract::Native => Ok(Self::Library(platform)),
-            ArtifactContract::NodeApi => Ok(Self::Extension { platform, module: HostModule::Node, library: None }),
+            ArtifactContract::NodeApi => Ok(Self::Extension { platform, module: HostModule::Node, cpython: None }),
             ArtifactContract::Cpython(config) => {
-                Ok(Self::Extension { platform, module: HostModule::Python, library: config.import_library.clone() })
+                Ok(Self::Extension { platform, module: HostModule::Python, cpython: Some(config.clone()) })
             }
             ArtifactContract::Platform => Err("平台 lane 合同不是原生宿主产物".to_string()),
         }
     }
 
-    /// 便捷构造：无双阶段/版本参数的扩展目标。
+    /// 便捷构造：无宿主 ABI 配置的扩展目标（残差与测试路径）。
     pub fn extension(platform: X64Platform, module: HostModule) -> Self {
-        Self::Extension { platform, module, library: None }
+        Self::Extension { platform, module, cpython: None }
+    }
+
+    /// 探测/配置冻结的 CPython 导入 DLL 名。
+    pub fn cpython_import_library(&self) -> Option<&str> {
+        match self {
+            Self::Extension { cpython: Some(config), .. } => config.import_library.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// 探测/配置冻结的 CPython 扩展后缀（如 `.cp312-win_amd64.pyd`）；缺失时由
+    /// 调用方按平台规范名回落，并在产物身份中体现配置差异。
+    pub fn cpython_module_suffix(&self) -> Option<&str> {
+        match self {
+            Self::Extension { cpython: Some(config), .. } => config.module_suffix.as_deref(),
+            _ => None,
+        }
     }
 
     /// 产物平台身份。

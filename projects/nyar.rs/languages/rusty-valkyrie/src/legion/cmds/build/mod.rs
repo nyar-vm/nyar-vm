@@ -207,13 +207,10 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
     }
 
     let cache = CompilationCache::open(cache_root_for(&plan.workspace_root));
-    // 缓存身份必须携带宿主合同：同一平台上的普通原生产物与扩展交付不是同一份产物。
-    let canonical_triple = match &plan.project.resolved.contract {
-        contract @ (ArtifactContract::NodeApi | ArtifactContract::Cpython(_)) => {
-            format!("{}-{}", plan.project.build_target.target.as_canonical_str(), contract.as_str())
-        }
-        _ => plan.project.build_target.target.as_canonical_str(),
-    };
+    // 缓存身份消费解析服务冻结的完整 identity：平台 + 宿主合同 + CPython ABI
+    // 配置（扩展后缀、导入库）。同一平台上普通原生产物、Node 扩展与不同解释器
+    // 的 CPython 扩展不是同一份产物。
+    let canonical_triple = plan.project.resolved.identity();
     let manifest_files = plan
         .project
         .semantic_source_groups

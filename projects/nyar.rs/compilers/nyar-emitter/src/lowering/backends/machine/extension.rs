@@ -90,11 +90,9 @@ pub(crate) fn lower_fragment_to_machine_extension(
     }
 
     let host_library = host_import_library(target, platform)?;
-    // `ELF` 没有 IAT：宿主库以 `DT_NEEDED` 显式声明。
-    let host_dependencies: Vec<String> = match target {
-        X64ProductTarget::Extension { module: HostModule::Python, library: Some(library), .. } if !platform.is_windows() => {
-            vec![library.clone()]
-        }
+    // `ELF` 没有 IAT：宿主库以 `DT_NEEDED` 显式声明（名字来自冻结的宿主 ABI 配置）。
+    let host_dependencies: Vec<String> = match target.cpython_import_library() {
+        Some(library) if !platform.is_windows() && matches!(target.host_module(), Some(HostModule::Python)) => vec![library.to_string()],
         _ => Vec::new(),
     };
     let properties: &[HostProperty] = &[];
@@ -131,8 +129,13 @@ pub(crate) fn lower_fragment_to_machine_extension(
             let imports = python_imports(&methods, bool_exports, &host_library);
             let image = encode_x64_program_with_dependencies(&functions, &imports, abi, &data, &relocations, &host_dependencies)?;
             let entry_symbol = format!("PyInit_{module_name}");
-            let extension = if platform.is_windows() { ".pyd" } else { ".so" };
-            (image, entry_symbol, extension.to_string())
+            // 扩展后缀优先取解析服务冻结/探测的宿主 ABI 事实；无配置时才按平台
+            // 规范名回落（`.pyd` / `.so`），产物身份差异由 ResolvedTarget::identity 承载。
+            let extension = target
+                .cpython_module_suffix()
+                .map(|suffix| if suffix.starts_with('.') { suffix.to_string() } else { format!(".{suffix}") })
+                .unwrap_or_else(|| if platform.is_windows() { ".pyd".to_string() } else { ".so".to_string() });
+            (image, entry_symbol, extension)
         }
     };
 
@@ -227,7 +230,7 @@ fn extension_symbol_names(
 
 /// Windows 宿主导入模块名；Linux 的 `CallImport` 模块名必须为空。
 fn host_import_library(target: &X64ProductTarget, platform: X64Platform) -> Result<String> {
-    let X64ProductTarget::Extension { module, library, .. } = target else {
+    let Some(module) = target.host_module() else {
         return Err("目标不是宿主扩展合同".to_string());
     };
     if !platform.is_windows() {
@@ -235,7 +238,7 @@ fn host_import_library(target: &X64ProductTarget, platform: X64Platform) -> Resu
     }
     match module {
         HostModule::Node => Ok("node.exe".to_string()),
-        HostModule::Python => library.clone().ok_or_else(|| {
+        HostModule::Python => target.cpython_import_library().map(str::to_string).ok_or_else(|| {
             "Windows CPython 扩展必须提供宿主导入 DLL 名（例如 `python312.dll`）：版本相关名不能由编译器猜".to_string()
         }),
     }

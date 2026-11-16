@@ -161,16 +161,18 @@ fn validate_target_image(facts: MachineImageFacts, target: &BinaryTarget) -> Res
 /// 宿主扩展名与镜像共享/可执行分类必须一致。
 ///
 /// `.node` / `.pyd` / `.so` / `.dll` / `.dylib` 是共享库载体；把可执行镜像写成
-/// 这些扩展名会让宿主加载失败，必须在写出前结构化拒绝。
+/// 这些扩展名会让宿主加载失败，必须在写出前结构化拒绝。CPython 的真实后缀是
+/// 多段标签（PEP 3149，如 `.cp312-win_amd64.pyd`、`.cpython-312-x86_64-linux-gnu.so`），
+/// 按末段判定载体族，宿主 ABI 配置冻结什么名字就写什么名字。
 fn validate_artifact_extension(extension: &str, shared: bool) -> Result<()> {
     if !extension.starts_with('.') {
-        return Err(format!("Native 产物扩展名 `{extension}` 必须以 `.` 开头"));
+        return Err(format!("机器码产物扩展名 `{extension}` 必须以 `.` 开头"));
     }
-    let shared_extension = matches!(extension, ".node" | ".pyd" | ".so" | ".dll" | ".dylib");
+    let shared_extension = [".node", ".pyd", ".so", ".dll", ".dylib"].iter().any(|tail| extension.ends_with(tail));
     match (shared_extension, shared) {
-        (true, false) => Err(format!("Native 产物扩展名 `{extension}` 需要共享库镜像，实际镜像是可执行文件")),
+        (true, false) => Err(format!("机器码产物扩展名 `{extension}` 需要共享库镜像，实际镜像是可执行文件")),
         (false, true) => {
-            Err(format!("Native 产物扩展名 `{extension}` 与服务端共享库镜像不符：共享库请使用 `.node`/`.pyd`/`.so`/`.dll`/`.dylib`"))
+            Err(format!("机器码产物扩展名 `{extension}` 与共享库镜像不符：共享库必须落在 `.node`/`.pyd`/`.so`/`.dll`/`.dylib` 载体族"))
         }
         _ => Ok(()),
     }

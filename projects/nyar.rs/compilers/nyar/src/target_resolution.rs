@@ -165,12 +165,23 @@ impl ResolvedTarget {
 
     /// 缓存与产物目录使用的完整身份。
     ///
-    /// 同一平台上的普通原生产物与 Node-API / CPython 扩展必须可以区分。
+    /// 同一平台上的普通原生产物与 Node-API / CPython 扩展必须可以区分；
+    /// CPython 的宿主 ABI 配置（扩展后缀、导入库）也是身份的一部分——
+    /// 不同解释器版本产生的 `.pyd` / `.so` 不是同一份交付。
     pub fn identity(&self) -> String {
         match &self.contract {
             ArtifactContract::Platform | ArtifactContract::Native => self.platform.to_string(),
             ArtifactContract::NodeApi => format!("{}-node-api", self.platform),
-            ArtifactContract::Cpython(_) => format!("{}-cpython", self.platform),
+            ArtifactContract::Cpython(config) => {
+                let mut identity = format!("{}-cpython", self.platform);
+                if let Some(suffix) = &config.module_suffix {
+                    identity.push_str(&format!("-{suffix}"));
+                }
+                if let Some(library) = &config.import_library {
+                    identity.push_str(&format!("-{library}"));
+                }
+                identity
+            }
         }
     }
 }

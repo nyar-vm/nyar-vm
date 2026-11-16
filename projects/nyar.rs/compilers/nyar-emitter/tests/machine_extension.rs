@@ -124,11 +124,31 @@ fn node(platform: X64Platform) -> X64ProductTarget {
 }
 
 fn python(platform: X64Platform, library: Option<&str>) -> X64ProductTarget {
+    python_with_suffix(platform, library, None)
+}
+
+fn python_with_suffix(platform: X64Platform, library: Option<&str>, suffix: Option<&str>) -> X64ProductTarget {
     X64ProductTarget::Extension {
         platform,
         module: HostModule::Python,
-        library: library.map(str::to_string),
+        cpython: Some(nyar::target_resolution::CpythonHostConfig {
+            module_suffix: suffix.map(str::to_string),
+            import_library: library.map(str::to_string),
+        }),
     }
+}
+
+/// 探测/配置冻结的 CPython 扩展后缀直接进入产物命名，不按 OS 重新猜。
+#[test]
+fn probed_module_suffix_drives_artifact_extension() {
+    let submission = FragmentSubmission::from_backend_plan(exported_add_plan());
+    let lowered = lower_fragment_to_machine_extension(
+        &submission,
+        &python_with_suffix(X64Platform::windows_x64(), Some("python312.dll"), Some(".cp312-win_amd64.pyd")),
+        "demo",
+    )
+    .expect("带探测后缀的 CPython 扩展必须产出");
+    assert_eq!(lowered.artifact_extension, ".cp312-win_amd64.pyd", "产物扩展名必须来自冻结的宿主 ABI 配置");
 }
 
 /// Node-API Windows：PE DLL、注册入口符号与冻结导出面。
