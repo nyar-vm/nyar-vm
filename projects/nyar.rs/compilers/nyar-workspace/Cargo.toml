@@ -7,7 +7,7 @@ license.workspace = true
 description = "Nyar workspace cache facade over Boost package-cache"
 
 [dependencies]
-package-cache = { git = "https://github.com/oovm/rust-boost", rev = "81ddc9d8081449e19cd704f74f55e25710848ad0" }
+package-cache = { git = "https://github.com/oovm/rust-boost", rev = "1688e402b3526f65863cc42e09dcd0d553dbd305" }
 
 [dev-dependencies]
 acorn-odin = { workspace = true }
