@@ -4,18 +4,13 @@
 //!
 //! # Layering
 //!
-//! - The bytecode engine substrate (module verification, interpreter loop, host boundary,
-//!   runtime builtins) lives in Boost **`interpreter-vm-ovm`** and is re-exported here unchanged.
-//! - This crate keeps only the product-side JSON bridge and workload-intent helpers, which
-//!   depend on `serde_json` / `miette` and therefore must not move into the substrate.
+//! - The bytecode engine substrate, the host JSON boundary and the workload-intent helpers all live
+//!   in Boost **`interpreter-vm-ovm`** and are re-exported here unchanged.
+//! - This crate keeps no implementation of its own; product consumers keep the `odin-vm` name.
 //!
 //! # Naming
 //!
 //! Crate package: `odin-vm`. Rust import path: `odin_vm`.
 
-pub mod json_bridge;
-pub mod workload_json;
-
 pub use interpreter_vm_ovm::*;
-
-pub use crate::workload_json::{WorkloadJsonError, parse_workload_intent_json, snapshot_gc_evidence};
+pub use interpreter_vm_ovm::workload_json::{WorkloadJsonError, parse_workload_intent_json, snapshot_gc_evidence};

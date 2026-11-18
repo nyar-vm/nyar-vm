@@ -4,16 +4,17 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Odin VM consumer facade — re-exports Boost interpreter-vm-ovm with product-side JSON bridge and workload helpers"
+description = "Odin VM consumer facade — re-exports Boost interpreter-vm-ovm, including its host JSON boundary and workload helpers"
 
 [lib]
 name = "odin_vm"
 path = "src/lib.rs"
 
 [dependencies]
-# 引擎底座：Boost `interpreter-vm-ovm`（git rev pin）。本 crate 只保留宿主 JSON 与负载意图适配。
+# 引擎底座：Boost `interpreter-vm-ovm`（git rev pin）。本 crate 不持有实现。
 interpreter-vm-ovm = { workspace = true }
-interpreter-gc = { workspace = true }
+
+[dev-dependencies]
 acorn-odin = { workspace = true }
-miette = { workspace = true }
+interpreter-gc = { workspace = true }
 serde_json = { workspace = true }
