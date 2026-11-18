@@ -1,15 +1,15 @@
-//! 解释执行 NJ1 基线标量机器码（非原生可执行页）。
+//! 解释执行 标量 基线标量机器码（非原生可执行页）。
 
-use nyar_jit::{I32Binop, ScalarProgram, decode_scalar_program};
+use interpreter_jit::{I32Binop, ScalarProgram, decode_scalar_program};
 
 use crate::{error::OdinRuntimeError, value::Value};
 
-/// 在已填好的 local 槽上执行 NJ1 blob，返回结果值。
-pub fn execute_nj1_blob(blob: &[u8], locals: &[Value]) -> Result<Value, OdinRuntimeError> {
+/// 在已填好的 local 槽上执行 标量 blob，返回结果值。
+pub fn execute_scalar_blob(blob: &[u8], locals: &[Value]) -> Result<Value, OdinRuntimeError> {
     let program = decode_scalar_program(blob).map_err(|error| {
         OdinRuntimeError::UnsupportedFeature(match error {
-            nyar_jit::MachineCodeError::InvalidBlob => "invalid NJ1 machine-code blob",
-            nyar_jit::MachineCodeError::UnknownOpcode(_) => "unknown NJ1 opcode",
+            interpreter_jit::MachineCodeError::InvalidBlob => "invalid scalar machine-code blob",
+            interpreter_jit::MachineCodeError::UnknownOpcode(_) => "unknown scalar opcode",
         })
     })?;
     execute_scalar_program(&program, locals)
@@ -28,13 +28,13 @@ pub fn execute_scalar_program(program: &ScalarProgram, locals: &[Value]) -> Resu
                 I32Binop::Mul => lhs.wrapping_mul(rhs),
                 I32Binop::DivS => {
                     if rhs == 0 {
-                        return Err(OdinRuntimeError::DivisionByZero { operation: "nj1 i32.div_s" });
+                        return Err(OdinRuntimeError::DivisionByZero { operation: "scalar i32.div_s" });
                     }
                     lhs.wrapping_div(rhs)
                 }
                 I32Binop::RemS => {
                     if rhs == 0 {
-                        return Err(OdinRuntimeError::DivisionByZero { operation: "nj1 i32.rem_s" });
+                        return Err(OdinRuntimeError::DivisionByZero { operation: "scalar i32.rem_s" });
                     }
                     lhs.wrapping_rem(rhs)
                 }
@@ -57,13 +57,13 @@ pub fn execute_scalar_program(program: &ScalarProgram, locals: &[Value]) -> Resu
                 I32Binop::Mul => lhs.wrapping_mul(rhs),
                 I32Binop::DivS => {
                     if rhs == 0 {
-                        return Err(OdinRuntimeError::DivisionByZero { operation: "nj1 i32.div_s" });
+                        return Err(OdinRuntimeError::DivisionByZero { operation: "scalar i32.div_s" });
                     }
                     lhs.wrapping_div(rhs)
                 }
                 I32Binop::RemS => {
                     if rhs == 0 {
-                        return Err(OdinRuntimeError::DivisionByZero { operation: "nj1 i32.rem_s" });
+                        return Err(OdinRuntimeError::DivisionByZero { operation: "scalar i32.rem_s" });
                     }
                     lhs.wrapping_rem(rhs)
                 }
@@ -102,8 +102,8 @@ pub fn execute_scalar_program(program: &ScalarProgram, locals: &[Value]) -> Resu
             let rhs = i32_local(locals, *b)?;
             let arm = if cmp.eval(lhs, rhs) { then_arm } else { else_arm };
             match arm {
-                nyar_jit::SelectArm::Local(slot) => local_at(locals, *slot).cloned(),
-                nyar_jit::SelectArm::Imm(value) => Ok(Value::I32(*value)),
+                interpreter_jit::SelectArm::Local(slot) => local_at(locals, *slot).cloned(),
+                interpreter_jit::SelectArm::Imm(value) => Ok(Value::I32(*value)),
             }
         }
         ScalarProgram::RetVoid => Ok(Value::Null),

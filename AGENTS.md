@@ -11,7 +11,7 @@
 
 - **Nyar 编译平台**（`projects/nyar.rs/compilers`）：`nyar`、`nyar-analyzer`、`nyar-optimizer`、`nyar-emitter`、`nyar-types`、
   `nyar-runner`、包管理与 workspace。
-- **nyar-vm 运行时**（`projects/nyar.rs/runtimes`）：`odin-vm`（OdinVM）、`legend-vm`（LegendVM）、`nyar-gc`、`nyar-jit`。
+- **nyar-vm 运行时**（`projects/nyar.rs/runtimes`）：`odin-vm`（OdinVM）、`legend-vm`（LegendVM）；托管堆与 JIT 底座已迁至 Boost `interpreter-gc` / `interpreter-jit`，以 git `rev` 消费。
 - **宿主与平台产物**（`projects/nyar.rs/ffis`、`projects/nyar.ts`）：`nyar-napi`、`nyar-wasm`、`valkyrie-napi` 与 npm 平台包。
 
 维护者文档从 [架构合同](documentation/architecture.md) 开始。过期文档直接合并或删除，修复全部引用，不保留平行历史合同。源码现状与目标架构必须分别标明。
@@ -30,7 +30,7 @@
 ```text
 projects/nyar.rs/
 ├── compilers/     语言无关的规划、分析、优化、降低与产物装配
-├── runtimes/      odin-vm、legend-vm、nyar-gc、nyar-jit
+├── runtimes/      odin-vm、legend-vm（GC/JIT 底座在 Boost interpreter-gc / interpreter-jit）
 ├── languages/     rusty-valkyrie（主链单包）与 5 个 guest 前端
 └── ffis/          nyar-napi、nyar-wasm、valkyrie-napi
 

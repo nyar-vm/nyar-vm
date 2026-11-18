@@ -14,7 +14,7 @@ path = "src/lib.rs"
 # 执行格式合同：`acorn-odin`。不得依赖语言前端。
 acorn-odin = { workspace = true }
 interpreter-gc = { workspace = true }
-nyar-jit = { workspace = true }
+interpreter-jit = { workspace = true }
 miette = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

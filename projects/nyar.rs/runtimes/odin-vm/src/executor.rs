@@ -37,8 +37,8 @@ impl ExecutionOutcome {
     }
 }
 
-/// NJ1 编译缓存键：`(module.version, module.name, function_index)`。
-type Nj1CacheKey = (u32, String, usize);
+/// 标量 编译缓存键：`(module.version, module.name, function_index)`。
+type ScalarCacheKey = (u32, String, usize);
 
 pub(crate) fn validate_argument_count(function: &acorn_odin::OdinFunction, actual: usize) -> Result<(), OdinRuntimeError> {
     if usize::try_from(function.arity).ok() != Some(actual) {
@@ -51,7 +51,7 @@ pub(crate) fn validate_argument_count(function: &acorn_odin::OdinFunction, actua
 }
 
 #[derive(Clone)]
-struct Nj1CacheEntry {
+struct ScalarCacheEntry {
     blob: Vec<u8>,
     assumptions: Vec<JitAssumption>,
 }
@@ -96,8 +96,8 @@ pub struct Executor {
     gc: GarbageCollector,
     frames: Vec<Frame>,
     jit: Box<dyn JitCompiler>,
-    /// 已成功编译的 NJ1 blob 缓存（避免每次 `run` 重编译）。
-    nj1_cache: HashMap<Nj1CacheKey, Nj1CacheEntry>,
+    /// 已成功编译的 标量 blob 缓存（避免每次 `run` 重编译）。
+    scalar_cache: HashMap<ScalarCacheKey, ScalarCacheEntry>,
     /// 单次调用步数预算；`None` 表示不设上限。
     step_budget: Option<u64>,
     /// 最近一次调用实际执行的指令数（诊断 / 测试）。
@@ -113,7 +113,7 @@ impl Executor {
             gc: GarbageCollector::new(),
             frames: Vec::new(),
             jit: Box::new(DisabledJit),
-            nj1_cache: HashMap::new(),
+            scalar_cache: HashMap::new(),
             step_budget: configured_step_budget(),
             last_steps: 0,
         }
@@ -146,24 +146,24 @@ impl Executor {
         self.jit.enabled()
     }
 
-    /// NJ1 缓存条目数（测试 / 诊断）。
-    pub fn nj1_cache_len(&self) -> usize {
-        self.nj1_cache.len()
+    /// 标量 缓存条目数（测试 / 诊断）。
+    pub fn scalar_cache_len(&self) -> usize {
+        self.scalar_cache.len()
     }
 
-    /// 清空全部 NJ1 编译缓存（代码失效 / deopt 假设变化后调用）。
-    pub fn invalidate_nj1_cache(&mut self) {
-        self.nj1_cache.clear();
+    /// 清空全部 标量 编译缓存（代码失效 / deopt 假设变化后调用）。
+    pub fn invalidate_scalar_cache(&mut self) {
+        self.scalar_cache.clear();
     }
 
-    /// 按模块版本与名称失效该模块下全部函数的 NJ1 缓存。
-    pub fn invalidate_nj1_module(&mut self, module_version: u32, module_name: &str) {
-        self.nj1_cache.retain(|(version, name, _), _| *version != module_version || name != module_name);
+    /// 按模块版本与名称失效该模块下全部函数的 标量 缓存。
+    pub fn invalidate_scalar_module(&mut self, module_version: u32, module_name: &str) {
+        self.scalar_cache.retain(|(version, name, _), _| *version != module_version || name != module_name);
     }
 
-    /// 失效依赖给定假设的全部 NJ1 缓存条目。
+    /// 失效依赖给定假设的全部 标量 缓存条目。
     pub fn invalidate_assumption(&mut self, assumption: JitAssumption) {
-        self.nj1_cache.retain(|_, entry| !entry.assumptions.iter().any(|item| *item == assumption));
+        self.scalar_cache.retain(|_, entry| !entry.assumptions.iter().any(|item| *item == assumption));
     }
 
     /// Attempts JIT compilation for one module function.
@@ -174,13 +174,13 @@ impl Executor {
         self.jit.compile_function(&request)
     }
 
-    /// Replaces the JIT backend（并清空 NJ1 缓存）。
+    /// Replaces the JIT backend（并清空 标量 缓存）。
     pub fn set_jit(&mut self, jit: Box<dyn JitCompiler>) {
         self.jit = jit;
-        self.invalidate_nj1_cache();
+        self.invalidate_scalar_cache();
     }
 
-    /// 安装 deopt 物化帧链并失效 NJ1 缓存。
+    /// 安装 deopt 物化帧链并失效 标量 缓存。
     ///
     /// `restored[0]` 为最内层（当前执行函数）；写入解释器栈时外层在前、内层在顶。
     pub fn install_deopt_frames(
@@ -189,7 +189,7 @@ impl Executor {
         stack_base: usize,
         roots: Option<&interpreter_gc::HostRoots>,
     ) -> Result<(), OdinRuntimeError> {
-        self.invalidate_nj1_cache();
+        self.invalidate_scalar_cache();
         let mut frames = Vec::with_capacity(restored.len());
         for frame in restored.iter().rev() {
             frames.push(Frame::from_deopt_restore(frame, stack_base, roots)?);
@@ -319,16 +319,16 @@ impl Executor {
         frame.ip = 0;
         frame.set_arguments(args);
 
-        // JIT 快路径：缓存命中或新编译出 NJ1 blob 时跳过解释循环（仅叶标量形态）。
+        // JIT 快路径：缓存命中或新编译出 标量 blob 时跳过解释循环（仅叶标量形态）。
         if self.jit.enabled() {
             let cache_key = (module.version, module.name.clone(), function_index);
-            let blob = if let Some(cached) = self.nj1_cache.get(&cache_key) {
+            let blob = if let Some(cached) = self.scalar_cache.get(&cache_key) {
                 Some(cached.blob.clone())
             }
             else if let Ok(artifact) = self.try_jit_compile(module, function_index) {
                 let assumptions = artifact.assumptions.clone();
                 artifact.machine_code.map(|blob| {
-                    self.nj1_cache.insert(cache_key, Nj1CacheEntry { blob: blob.clone(), assumptions });
+                    self.scalar_cache.insert(cache_key, ScalarCacheEntry { blob: blob.clone(), assumptions });
                     blob
                 })
             }
@@ -347,9 +347,9 @@ impl Executor {
                         &mut self.heap,
                     );
                     self.apply_relocate_map(&relocate, globals);
-                    frame = self.frames.pop().expect("nj1 pressure frame");
+                    frame = self.frames.pop().expect("scalar pressure frame");
                 }
-                return crate::nj1_runtime::execute_nj1_blob(&blob, &frame.locals).map(ExecutionOutcome::Completed);
+                return crate::scalar_runtime::execute_scalar_blob(&blob, &frame.locals).map(ExecutionOutcome::Completed);
             }
         }
 
@@ -565,7 +565,7 @@ impl Debug for Executor {
             .field("gc", &self.gc)
             .field("frames", &self.frames)
             .field("jit_enabled", &self.jit.enabled())
-            .field("nj1_cache_len", &self.nj1_cache.len())
+            .field("scalar_cache_len", &self.scalar_cache.len())
             .finish()
     }
 }

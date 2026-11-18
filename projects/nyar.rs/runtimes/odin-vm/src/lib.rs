@@ -6,7 +6,8 @@
 //!
 //! - This crate executes **decoded Nyar IR modules** only. It must not import concrete
 //!   language ASTs or compilers.
-//! - Managed heap / GC live in **`interpreter-gc`**; optional JIT lives in **`nyar-jit`**.
+//! - Managed heap / GC live in Boost **`interpreter-gc`**; the optional JIT substrate lives in Boost
+//!   **`interpreter-jit`**, with the Odin bytecode → scalar-blob matcher kept here as the format adapter.
 //! - This crate owns the interpreter loop.
 //! - Concrete languages lower through `emitter` into `.odin` bytes before this VM sees them.
 //!
@@ -25,10 +26,11 @@ pub mod host;
 pub mod jit;
 pub mod json_bridge;
 pub mod module;
-pub mod nj1_runtime;
+pub mod odin_scalar_matcher;
 pub mod ops;
 pub mod output_runtime;
 pub mod random_runtime;
+pub mod scalar_runtime;
 pub mod stack;
 pub mod text_runtime;
 pub mod time_runtime;
@@ -43,7 +45,7 @@ pub use crate::{
     executable::{ExecOp, ExecutableFunction, InstructionIndex},
     executor::ExecutionOutcome,
     module::ModuleGlobals,
-    nj1_runtime::{execute_nj1_blob, execute_scalar_program},
+    scalar_runtime::{execute_scalar_blob, execute_scalar_program},
     value::{CoroutineState, ObjectId, Value},
     vm::OdinVm,
     workload_json::{WorkloadJsonError, parse_workload_intent_json, snapshot_gc_evidence},

@@ -1,15 +1,15 @@
-//! JIT integration — re-exports `nyar-jit` and builds requests from loaded modules.
+//! JIT integration — re-exports Boost `interpreter-jit` and builds requests from loaded modules.
 
 use crate::module::LoadedModule;
 
-pub use nyar_jit::{
+pub use crate::odin_scalar_matcher::{OdinScalarMatcher, match_scalar_program};
+pub use interpreter_jit::{
     BaselineScalarJit, DeoptFrame, DeoptMap, DeoptMapEntry, DeoptRestoreError, DisabledJit, FunctionStackMaps, I32Binop, I32Cmp,
     InlineFrameSpec, JitAssumption, JitCompileRequest, JitCompiledArtifact, JitCompiler, JitError, JitFunctionSpec, MACHINE_CODE_MAGIC,
-    MachineCodeError, RestoredInterpreterFrame, RestoredLocal, ScalarProgram, StackMapEntry, StackMapJit, baseline_scalar_assumptions,
-    build_baseline_deopt_map, build_conservative_stack_maps, build_inline_deopt_map, decode_scalar_program, encode_ret_const_i32,
-    encode_ret_i32_add_locals, encode_ret_i32_binop_imm_local, encode_ret_i32_binop_locals, encode_ret_i32_cmp_imm_local,
-    encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_consts, encode_ret_i32_select_cmp_locals, encode_ret_local, match_scalar_program,
-    materialize_interpreter_frames,
+    MachineCodeError, RestoredInterpreterFrame, RestoredLocal, ScalarProgram, ScalarProgramMatcher, StackMapEntry, StackMapJit,
+    baseline_scalar_assumptions, build_baseline_deopt_map, build_conservative_stack_maps, build_inline_deopt_map, decode_scalar_program,
+    encode_ret_const_i32, encode_ret_i32_binop_imm_local, encode_ret_i32_binop_locals, encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals,
+    encode_ret_i32_select_cmp_consts, encode_ret_i32_select_cmp_locals, encode_ret_local, materialize_interpreter_frames,
 };
 
 /// Builds a language-agnostic JIT request from a loaded `.odin` module.

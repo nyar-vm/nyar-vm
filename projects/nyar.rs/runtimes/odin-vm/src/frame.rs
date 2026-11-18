@@ -1,6 +1,6 @@
 //! 单次函数调用的激活帧与局部变量槽。
 
-use nyar_jit::{RestoredInterpreterFrame, RestoredLocal};
+use interpreter_jit::{RestoredInterpreterFrame, RestoredLocal};
 
 use crate::{
     error::OdinRuntimeError,

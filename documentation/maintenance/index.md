@@ -17,5 +17,4 @@ cargo fmt --manifest-path projects/nyar.rs/Cargo.toml --all --check
 - [Emitter](../../projects/nyar.rs/compilers/nyar-emitter/readme.md)
 - [LegendVM](../../projects/nyar.rs/runtimes/legend-vm/readme.md)
 - [OdinVM](../../projects/nyar.rs/runtimes/odin-vm/readme.md)
-- [GC](../../projects/nyar.rs/runtimes/nyar-gc/readme.md)
-- [JIT](../../projects/nyar.rs/runtimes/nyar-jit/readme.md)
+- [GC / JIT 底座](https://github.com/oovm/rust-boost/tree/dev/projects/interpreter)（已迁至 Boost `interpreter-gc` / `interpreter-jit`，本仓以 git `rev` 消费）

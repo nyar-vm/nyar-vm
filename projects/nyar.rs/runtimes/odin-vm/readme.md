@@ -16,10 +16,10 @@ Package name: `odin-vm`. Rust import path: `odin_vm`.
 | Component                             | Role                                                                     |
 |:--------------------------------------|:-------------------------------------------------------------------------|
 | `OdinVm`                              | Public entry: `load`, `run`, `run_with_globals`, JIT/stack-map hooks     |
-| `Executor`                            | Interpreter loop, call frames, NJ1 compile cache, deoptimization handoff |
+| `Executor`                            | Interpreter loop, call frames, scalar compile cache, deoptimization handoff |
 | `LoadedModule` / `ModuleGlobals`      | Decoded module image and persistent global slots (singleton init)        |
 | `interpreter-gc` (re-exported)               | Managed heap, collector, layout descriptors, workload intent             |
-| `nyar-jit` (via `Executor::with_jit`) | Optional machine-code backend injected by the host                       |
+| `interpreter-jit` (via `Executor::with_jit`) | Optional JIT backend from Boost, injected by the host; the Odin bytecode → scalar-blob matcher lives in `odin_scalar_matcher` |
 
 ## Features
 
@@ -28,7 +28,7 @@ Package name: `odin-vm`. Rust import path: `odin_vm`.
 - **Host imports** via `CallImport` and the `host` module (`HostOp` dispatch).
 - **Algebraic effects** (`PerformEffect`), **async** (`Yield` / `Resume`), and **coroutine** objects on the managed
   heap.
-- **NJ1 scalar fast path** with an in-executor compile cache (`invalidate_nj1_*` APIs).
+- **Scalar fast path** with an in-executor compile cache (`invalidate_scalar_*` APIs).
 - **JIT integration** through `JitCompiler`, stack maps, and deopt value encode/decode helpers.
 - **Workload JSON** parsing for GC evidence and runtime tuning experiments.
 

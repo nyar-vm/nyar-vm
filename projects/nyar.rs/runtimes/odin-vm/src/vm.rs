@@ -118,27 +118,27 @@ impl OdinVm {
         self.executor.set_jit(jit);
     }
 
-    /// NJ1 编译缓存条目数（测试 / 诊断）。
-    pub fn nj1_cache_len(&self) -> usize {
-        self.executor.nj1_cache_len()
+    /// 标量 编译缓存条目数（测试 / 诊断）。
+    pub fn scalar_cache_len(&self) -> usize {
+        self.executor.scalar_cache_len()
     }
 
-    /// 清空全部 NJ1 编译缓存。
-    pub fn invalidate_nj1_cache(&mut self) {
-        self.executor.invalidate_nj1_cache();
+    /// 清空全部 标量 编译缓存。
+    pub fn invalidate_scalar_cache(&mut self) {
+        self.executor.invalidate_scalar_cache();
     }
 
-    /// 失效指定模块的 NJ1 缓存条目。
-    pub fn invalidate_nj1_module(&mut self, module: &LoadedModule) {
-        self.executor.invalidate_nj1_module(module.version, &module.name);
+    /// 失效指定模块的 标量 缓存条目。
+    pub fn invalidate_scalar_module(&mut self, module: &LoadedModule) {
+        self.executor.invalidate_scalar_module(module.version, &module.name);
     }
 
-    /// 失效依赖给定 JIT 假设的 NJ1 缓存。
+    /// 失效依赖给定 JIT 假设的 标量 缓存。
     pub fn invalidate_assumption(&mut self, assumption: crate::jit::JitAssumption) {
         self.executor.invalidate_assumption(assumption);
     }
 
-    /// 安装 deopt 物化帧并失效 NJ1（见 [`crate::executor::Executor::install_deopt_frames`]）。
+    /// 安装 deopt 物化帧并失效 标量（见 [`crate::executor::Executor::install_deopt_frames`]）。
     pub fn install_deopt_frames(
         &mut self,
         restored: &[crate::jit::RestoredInterpreterFrame],

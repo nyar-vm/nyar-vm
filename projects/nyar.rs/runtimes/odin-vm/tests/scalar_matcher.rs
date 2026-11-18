@@ -1,5 +1,6 @@
-use nyar_jit::*;
+use interpreter_jit::*;
 use acorn_odin::{Odin_VERSION, OdinHeadCode};
+use odin_vm::odin_scalar_matcher::OdinScalarMatcher;
 
 fn request(code: Vec<u8>) -> JitCompileRequest {
     request_with_constants(code, Vec::new())
@@ -22,7 +23,7 @@ fn compiles_const_i32_return() {
     code.push(OdinHeadCode::Constant as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
     code.push(OdinHeadCode::Return as u8);
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     let artifact = jit.compile_function(&request_with_constants(code, vec![Some(123)])).expect("compile");
     let blob = artifact.machine_code.as_ref().expect("machine code");
     assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetConstI32 { value: 123 });
@@ -30,7 +31,7 @@ fn compiles_const_i32_return() {
 
 #[test]
 fn compiles_i32_div_rem() {
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     for (op, binop) in [(OdinHeadCode::I32DivS, I32Binop::DivS), (OdinHeadCode::I32RemS, I32Binop::RemS)] {
         let mut code = Vec::new();
         emit_load(&mut code, 0);
@@ -55,7 +56,7 @@ fn compiles_i32_cmp_return() {
     emit_load(&mut code, 1);
     code.push(OdinHeadCode::I32LtS as u8);
     code.push(OdinHeadCode::Return as u8);
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     let artifact = jit.compile_function(&request(code)).expect("compile");
     let blob = artifact.machine_code.as_ref().expect("machine code");
     assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetI32CmpLocals { cmp: I32Cmp::LtS, a: 0, b: 1 });
@@ -63,7 +64,7 @@ fn compiles_i32_cmp_return() {
 
 #[test]
 fn compiles_i32_unsigned_cmp_return() {
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     for (op, cmp) in [
         (OdinHeadCode::I32LtU, I32Cmp::LtU),
         (OdinHeadCode::I32LeU, I32Cmp::LeU),
@@ -83,7 +84,7 @@ fn compiles_i32_unsigned_cmp_return() {
 
 #[test]
 fn compiles_i32_bitwise_return() {
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     for (op, binop) in [
         (OdinHeadCode::I32And, I32Binop::And),
         (OdinHeadCode::I32Or, I32Binop::Or),
@@ -105,7 +106,7 @@ fn compiles_i32_bitwise_return() {
 
 #[test]
 fn folds_const_const_bitwise_to_ret_const() {
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     for (op, lhs, rhs, expected) in [
         (OdinHeadCode::I32And, 0b1100, 0b1010, 0b1000),
         (OdinHeadCode::I32Or, 0b1100, 0b1010, 0b1110),
@@ -138,7 +139,7 @@ fn compiles_load_dup_binop() {
     code.push(OdinHeadCode::Dup as u8);
     code.push(OdinHeadCode::I32Mul as u8);
     code.push(OdinHeadCode::Return as u8);
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     let artifact = jit.compile_function(&request(code)).expect("compile");
     let blob = artifact.machine_code.as_ref().expect("machine code");
     assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetI32BinopLocals { binop: I32Binop::Mul, a: 0, b: 0 });
@@ -153,7 +154,7 @@ fn folds_const_const_binop_to_ret_const() {
     code.extend_from_slice(&1i32.to_le_bytes());
     code.push(OdinHeadCode::I32Mul as u8);
     code.push(OdinHeadCode::Return as u8);
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     let artifact = jit.compile_function(&request_with_constants(code, vec![Some(6), Some(7)])).expect("compile");
     let blob = artifact.machine_code.as_ref().expect("machine code");
     assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetConstI32 { value: 42 });
@@ -169,7 +170,7 @@ fn folds_const_const_binop_pop_to_ret_void() {
     code.push(OdinHeadCode::I32Add as u8);
     code.push(OdinHeadCode::Pop as u8);
     code.push(OdinHeadCode::Return as u8);
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     let artifact = jit.compile_function(&request_with_constants(code, vec![Some(6), Some(7)])).expect("compile");
     let blob = artifact.machine_code.as_ref().expect("machine code");
     assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetVoid);
@@ -183,7 +184,7 @@ fn compiles_load_dup_op_pop_void() {
     code.push(OdinHeadCode::I32Mul as u8);
     code.push(OdinHeadCode::Pop as u8);
     code.push(OdinHeadCode::Return as u8);
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     let artifact = jit.compile_function(&request(code)).expect("compile");
     let blob = artifact.machine_code.as_ref().expect("machine code");
     assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetVoid);
@@ -197,7 +198,7 @@ fn compiles_const_local_binop_and_cmp() {
     emit_load(&mut code, 0);
     code.push(OdinHeadCode::I32Add as u8);
     code.push(OdinHeadCode::Return as u8);
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     let artifact = jit.compile_function(&request_with_constants(code, vec![Some(10)])).expect("compile");
     let blob = artifact.machine_code.as_ref().expect("machine code");
     assert_eq!(
@@ -228,7 +229,7 @@ fn compiles_const_load_op_pop_void() {
     code.push(OdinHeadCode::I32Add as u8);
     code.push(OdinHeadCode::Pop as u8);
     code.push(OdinHeadCode::Return as u8);
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     let artifact = jit.compile_function(&request_with_constants(code, vec![Some(3)])).expect("compile");
     let blob = artifact.machine_code.as_ref().expect("machine code");
     assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetVoid);
@@ -254,7 +255,7 @@ fn compiles_i32_select_cmp_consts() {
     code.extend_from_slice(&1i32.to_le_bytes());
     code.push(OdinHeadCode::Return as u8);
 
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     let artifact = jit.compile_function(&request_with_constants(code, vec![Some(7), Some(9)])).expect("compile");
     let blob = artifact.machine_code.as_ref().expect("machine code");
     assert_eq!(
@@ -282,7 +283,7 @@ fn compiles_i32_select_cmp() {
     emit_load(&mut code, 3);
     code.push(OdinHeadCode::Return as u8);
 
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     let artifact = jit.compile_function(&request(code)).expect("compile");
     let blob = artifact.machine_code.as_ref().expect("machine code");
     assert_eq!(
@@ -310,7 +311,7 @@ fn compiles_i32_select_cmp_mixed() {
     emit_load(&mut code, 2);
     code.push(OdinHeadCode::Return as u8);
 
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     let artifact = jit.compile_function(&request_with_constants(code, vec![Some(7)])).expect("compile");
     let blob = artifact.machine_code.as_ref().expect("machine code");
     assert_eq!(
@@ -322,7 +323,7 @@ fn compiles_i32_select_cmp_mixed() {
 #[test]
 fn compiles_void_return() {
     let code = vec![OdinHeadCode::Return as u8];
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     let artifact = jit.compile_function(&request(code)).expect("compile");
     let blob = artifact.machine_code.as_ref().expect("machine code");
     assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetVoid);
@@ -331,7 +332,7 @@ fn compiles_void_return() {
 #[test]
 fn compiles_pop_void_return() {
     let code = vec![OdinHeadCode::Pop as u8, OdinHeadCode::Return as u8];
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     let artifact = jit.compile_function(&request(code)).expect("compile");
     let blob = artifact.machine_code.as_ref().expect("machine code");
     assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetVoid);
@@ -343,7 +344,7 @@ fn compiles_load_pop_void_return() {
     emit_load(&mut code, 0);
     code.push(OdinHeadCode::Pop as u8);
     code.push(OdinHeadCode::Return as u8);
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     let artifact = jit.compile_function(&request(code)).expect("compile");
     let blob = artifact.machine_code.as_ref().expect("machine code");
     assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetVoid);
@@ -357,7 +358,7 @@ fn compiles_binop_pop_void_return() {
     code.push(OdinHeadCode::I32Add as u8);
     code.push(OdinHeadCode::Pop as u8);
     code.push(OdinHeadCode::Return as u8);
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     let artifact = jit.compile_function(&request(code)).expect("compile");
     let blob = artifact.machine_code.as_ref().expect("machine code");
     assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetVoid);
@@ -370,7 +371,7 @@ fn compiles_const_pop_void_return() {
     code.extend_from_slice(&0i32.to_le_bytes());
     code.push(OdinHeadCode::Pop as u8);
     code.push(OdinHeadCode::Return as u8);
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     let artifact = jit.compile_function(&request_with_constants(code, vec![Some(1)])).expect("compile");
     let blob = artifact.machine_code.as_ref().expect("machine code");
     assert_eq!(decode_scalar_program(blob).unwrap(), ScalarProgram::RetVoid);
@@ -385,7 +386,7 @@ fn compiles_i32_neg_via_const0_sub() {
     emit_load(&mut code, 0);
     code.push(OdinHeadCode::I32Sub as u8);
     code.push(OdinHeadCode::Return as u8);
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     let artifact = jit.compile_function(&request_with_constants(code, vec![Some(0)])).expect("compile");
     let blob = artifact.machine_code.as_ref().expect("machine code");
     assert_eq!(
@@ -396,7 +397,7 @@ fn compiles_i32_neg_via_const0_sub() {
 
 #[test]
 fn does_not_fold_div_rem_that_can_trap_at_runtime() {
-    let mut jit = BaselineScalarJit;
+    let mut jit = BaselineScalarJit::new(OdinScalarMatcher);
     // `Const(6); Const(0); Div; Return`：除零必须运行期 trap，不得折叠为常量。
     let mut code = Vec::new();
     code.push(OdinHeadCode::Constant as u8);

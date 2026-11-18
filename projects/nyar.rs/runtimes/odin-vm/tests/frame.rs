@@ -1,4 +1,4 @@
-use nyar_jit::{build_baseline_deopt_map, materialize_interpreter_frames};
+use interpreter_jit::{build_baseline_deopt_map, materialize_interpreter_frames};
 use odin_vm::{frame::Frame, *};
 
 #[test]

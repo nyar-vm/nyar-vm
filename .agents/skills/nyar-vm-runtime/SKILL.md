@@ -1,8 +1,8 @@
 ---
 name: nyar-vm-runtime
 description: >-
-  改 nyar-vm 的运行时层：OdinVM（odin-vm）、LegendVM（legend-vm）、nyar-gc、
-  nyar-jit、acorn-odin。用户要求修解释器、GC、JIT、协程/代数效应、字节码格式、
+  改 nyar-vm 的运行时层：OdinVM（odin-vm）、LegendVM（legend-vm）、acorn-odin；
+  托管堆与 JIT 底座已迁至 Boost `interpreter-gc` / `interpreter-jit`。用户要求修解释器、GC、JIT、协程/代数效应、字节码格式、
   guest 语言接入或运行时架构守卫时加载。
 ---
 
@@ -15,8 +15,8 @@ description: >-
 | `runtimes/odin-vm` | OVM 字节码加载、校验、解释执行、宿主导入、JIT 注入 |
 | `acorn-odin`（上游 Acorn） | `.odin` 磁盘格式的编解码合同；本仓以 git `rev` 消费 |
 | `runtimes/legend-vm` | 语言无关的 PE / Futamura 基底、guest 注册与分发 |
-| `runtimes/nyar-gc` | 托管堆、`Value`、分代标记-清除回收、写屏障 |
-| `runtimes/nyar-jit` | `JitCompiler`、栈图、标量快路径、去优化 |
+| Boost `interpreter-gc`（git `rev` pin） | 托管堆、`Value`、分代标记-清除回收、写屏障 |
+| Boost `interpreter-jit`（git `rev` pin） | `JitCompiler`、栈图、标量 blob 合同、去优化；Odin 外码匹配器在 `odin-vm::odin_scalar_matcher` |
 
 先读对应 crate 的 `readme.md` 与 `tests/`，再动代码。
 
@@ -39,10 +39,10 @@ description: >-
 
 ## GC / JIT 合同
 
-- `nyar_gc::Value` 是带标签枚举；对象形状通过 `LayoutDescriptor` 注册，堆内按 `layout_id` 存槽位。
-- 堆与回收器不得依赖语言 crate；宿主根与写屏障属于 `nyar-gc`。
-- `nyar-jit` 只消费字节码级事实（函数规格、栈图、标量程序），不得依赖 `odin-vm` 或语言 crate。
-- 栈图、去优化值编解码是 `odin-vm` 与 `nyar-jit` 的共享合同，改一侧必须同步另一侧与测试。
+- `interpreter_gc::Value` 是带标签枚举；对象形状通过 `LayoutDescriptor` 注册，堆内按 `layout_id` 存槽位。
+- 堆与回收器不得依赖语言 crate；宿主根与写屏障属于 `interpreter-gc`。
+- `interpreter-jit` 只消费字节码级事实（函数规格、栈图、标量程序），不得依赖 `odin-vm` 或语言 crate；格式匹配经 `ScalarProgramMatcher` 由本仓注入。
+- 栈图、去优化值编解码是 `odin-vm` 与 `interpreter-jit` 的共享合同，改一侧必须同步另一侧与测试；底座先 push、本仓再升 `rev`。
 
 ## 工作流
 
@@ -54,8 +54,7 @@ description: >-
 ```powershell
 cargo test -p odin-vm
 cargo test -p legend-vm
-cargo test -p nyar-gc
-cargo test -p nyar-jit
+cargo test -p odin-vm --test scalar_matcher
 cargo test -p odin-vm --test architecture_guards
 ```
 

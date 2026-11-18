@@ -1,33 +1,23 @@
-//! 有限标量模式匹配 → NJ1 机器码 blob（无原生可执行页）。
+//! Odin 外码 → 标量程序 blob 的格式适配器（实现 `interpreter-jit` 的 [`interpreter_jit::ScalarProgramMatcher`]）。
+//!
+//! 匹配规则属于 Odin 执行格式，留在目标 VM 侧；通用调度、stack map / deopt 组装与
+//! blob 编解码合同在底座 `interpreter-jit`。
 
 use acorn_odin::{OdinHeadCode, decode_at};
-
-use crate::{
-    JitCompileRequest, JitCompiledArtifact, JitCompiler, JitError, baseline_scalar_assumptions, build_baseline_deopt_map,
-    build_conservative_stack_maps,
-    machine_code::{
-        I32Binop, I32Cmp, SelectArm, encode_ret_const_i32, encode_ret_i32_binop_imm_local, encode_ret_i32_binop_locals,
-        encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_consts, encode_ret_i32_select_cmp_locals,
-        encode_ret_i32_select_cmp_mixed, encode_ret_local, encode_ret_void,
-    },
+use interpreter_jit::{
+    I32Binop, I32Cmp, JitCompileRequest, ScalarProgramMatcher, SelectArm, encode_ret_const_i32, encode_ret_i32_binop_imm_local,
+    encode_ret_i32_binop_locals, encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_consts,
+    encode_ret_i32_select_cmp_locals, encode_ret_i32_select_cmp_mixed, encode_ret_local, encode_ret_void,
 };
 
-/// 识别极简外码模式并附带 NJ1 blob 的 JIT 后端。
+/// Odin 外码标量匹配器。
 #[derive(Debug, Default)]
-pub struct BaselineScalarJit;
+pub struct OdinScalarMatcher;
 
-impl JitCompiler for BaselineScalarJit {
-    fn enabled(&self) -> bool {
-        true
-    }
-
-    fn compile_function(&mut self, request: &JitCompileRequest) -> Result<JitCompiledArtifact, JitError> {
-        let code = request.function_code()?;
-        let machine_code = match_scalar_program(code, &request.constant_i32).ok_or(JitError::Unsupported)?;
-        let maps = build_conservative_stack_maps(request.function_index, request.function.local_count, &request.function.safepoint_indices);
-        let deopt = build_baseline_deopt_map(request.function_index, request.function.local_count, &request.function.safepoint_indices);
-        Ok(JitCompiledArtifact::with_machine_code(maps, deopt, machine_code)
-            .with_assumptions(baseline_scalar_assumptions(request.module_version)))
+impl ScalarProgramMatcher for OdinScalarMatcher {
+    fn match_scalar_program(&self, request: &JitCompileRequest) -> Option<Vec<u8>> {
+        let code = request.function_code().ok()?;
+        match_scalar_program(code, &request.constant_i32)
     }
 }
 
