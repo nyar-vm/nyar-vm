@@ -38,12 +38,12 @@ repository = "https://github.com/nyar-vm/nyar-vm"
 [workspace.dependencies]
 # Boost 库，已使用本地 `.cargo/config.toml` 覆盖
 boost-diagnostic = { git = "https://github.com/oovm/rust-boost", rev = "9aa52745d6eae2d7748c76e4e3e6555e1f6e4b86", default-features = false, features = ["std", "serde"] }
-compiler-optimize = { git = "https://github.com/oovm/rust-boost", rev = "b21f7bfbe3094e5c7145743ab52e541774a88dc6" }
-interpreter-gc = { git = "https://github.com/oovm/rust-boost", rev = "b21f7bfbe3094e5c7145743ab52e541774a88dc6" }
-interpreter-jit = { git = "https://github.com/oovm/rust-boost", rev = "b21f7bfbe3094e5c7145743ab52e541774a88dc6" }
-compiler-analysis = { git = "https://github.com/oovm/rust-boost", rev = "b21f7bfbe3094e5c7145743ab52e541774a88dc6" }
-compiler-types = { git = "https://github.com/oovm/rust-boost", rev = "b21f7bfbe3094e5c7145743ab52e541774a88dc6" }
-interpreter-vm-ovm = { git = "https://github.com/oovm/rust-boost", rev = "b21f7bfbe3094e5c7145743ab52e541774a88dc6" }
+compiler-optimize = { git = "https://github.com/oovm/rust-boost", rev = "5af0e4c174ca0e38d9ac20a6a869feda2afc8bd1" }
+interpreter-gc = { git = "https://github.com/oovm/rust-boost", rev = "5af0e4c174ca0e38d9ac20a6a869feda2afc8bd1" }
+interpreter-jit = { git = "https://github.com/oovm/rust-boost", rev = "5af0e4c174ca0e38d9ac20a6a869feda2afc8bd1" }
+compiler-analysis = { git = "https://github.com/oovm/rust-boost", rev = "5af0e4c174ca0e38d9ac20a6a869feda2afc8bd1" }
+compiler-types = { git = "https://github.com/oovm/rust-boost", rev = "5af0e4c174ca0e38d9ac20a6a869feda2afc8bd1" }
+interpreter-vm-ovm = { git = "https://github.com/oovm/rust-boost", rev = "5af0e4c174ca0e38d9ac20a6a869feda2afc8bd1" }
 acorn-wasm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "beccbdf77374dbb2ca67395be19af3e2048c57ca" }
 acorn-jvm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "beccbdf77374dbb2ca67395be19af3e2048c57ca" }
 acorn-pe = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "beccbdf77374dbb2ca67395be19af3e2048c57ca" }
