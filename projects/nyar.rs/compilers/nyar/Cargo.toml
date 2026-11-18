@@ -2,18 +2,14 @@
 name = "nyar"
 version.workspace = true
 edition.workspace = true
-description = "Generic optimization backend orchestration for multi-frontend compilers"
+description = "Consumer facade re-exporting Boost compiler-target plus product-side fixture tooling"
 authors.workspace = true
 license.workspace = true
 
 [dependencies]
-nyar-analyzer = { workspace = true }
-nyar-optimizer = { workspace = true }
-nyar-types = { workspace = true, features = ["serde"] }
+compiler-target = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 
 [dev-dependencies]
-nyar-emitter = { workspace = true }
 tempfile = { workspace = true }
