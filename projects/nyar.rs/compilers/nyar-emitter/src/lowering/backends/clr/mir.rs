@@ -126,8 +126,8 @@ pub(crate) fn freeze_clr_operator(
     link: &nyar::ExternalImportLink,
     instance: nyar_types::ItemInstanceId,
     symbol: &str,
-    parameter_types: &[nyar_types::NyarType],
-    return_type: &nyar_types::NyarType,
+    parameter_types: &[nyar_types::SemanticType],
+    return_type: &nyar_types::SemanticType,
 ) -> crate::Result<Option<ClrOperatorBinding>> {
     let Some(mnemonic) = crate::lowering::shared::interop::clr_operator_target(link)
     else {

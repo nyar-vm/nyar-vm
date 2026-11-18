@@ -11,7 +11,7 @@ impl<'a> WasmMirLowerer<'a> {
     /// 栈：`[length: i32]` → `[arrayref]`，结果写入 `output` 的引用槽。
     pub(super) fn emit_array_new_default_ops(
         &mut self,
-        element_type: &NyarType,
+        element_type: &SemanticType,
         length: &MirOperand,
         output: MirValueRef,
     ) -> crate::Result<()> {
@@ -71,8 +71,8 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_array_get(type_index);
         if let Some(output) = output {
             let wants_i64 = self.mir_fn.value_types.get(&output).is_some_and(|ty| {
-                matches!(ty, NyarType::Integer64 { .. } | NyarType::Integer128 { .. })
-                    || matches!(ty, NyarType::Named(name) if name.as_str() == "i64")
+                matches!(ty, SemanticType::Integer64 { .. } | SemanticType::Integer128 { .. })
+                    || matches!(ty, SemanticType::Named(name) if name.as_str() == "i64")
             });
             if element_stack_ty == WASM_GC_ANYREF && wants_i64 {
                 self.emit_unbox_i64_payload();

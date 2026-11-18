@@ -139,8 +139,8 @@ pub(crate) fn freeze_jvm_operator(
     link: &nyar::ExternalImportLink,
     instance: nyar_types::ItemInstanceId,
     symbol: &str,
-    parameter_types: &[nyar_types::NyarType],
-    return_type: &nyar_types::NyarType,
+    parameter_types: &[nyar_types::SemanticType],
+    return_type: &nyar_types::SemanticType,
 ) -> crate::Result<Option<JvmOperatorBinding>> {
     let Some(mnemonic) = crate::lowering::shared::interop::jvm_operator_target(link)
     else {

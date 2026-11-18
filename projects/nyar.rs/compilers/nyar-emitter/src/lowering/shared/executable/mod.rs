@@ -2,10 +2,10 @@
 
 pub mod slots;
 
-use nyar::NyarType;
+use nyar::SemanticType;
 
-/// Identity helper: executable payloads already carry platform [`NyarType`].
-pub fn platform_type(ty: &NyarType) -> NyarType {
+/// Identity helper: executable payloads already carry platform [`SemanticType`].
+pub fn platform_type(ty: &SemanticType) -> SemanticType {
     ty.clone()
 }
 use std::borrow::Cow;
@@ -57,10 +57,10 @@ impl<'a> ExecutableLoweringContext<'a> {
     /// 按结构化类型查冻结布局。
     ///
     /// `Nominal` 自带 `LayoutId`；`Apply`（泛型实例）从计划冻结的
-    /// `NyarType → LayoutId` 索引解析。两者之外不做名字回查。
-    pub fn layout_for_nyar_type(&self, ty: &NyarType) -> Option<&ResolvedAggregateLayout> {
+    /// `SemanticType → LayoutId` 索引解析。两者之外不做名字回查。
+    pub fn layout_for_nyar_type(&self, ty: &SemanticType) -> Option<&ResolvedAggregateLayout> {
         let layout_id = match ty {
-            NyarType::Nominal { layout, .. } => *layout,
+            SemanticType::Nominal { layout, .. } => *layout,
             _ => *self.submission.backend_plan.aggregate_layout_by_nyar_type().get(ty)?,
         };
         self.layout_by_id(layout_id)
@@ -82,38 +82,38 @@ impl<'a> ExecutableLoweringContext<'a> {
     /// 这里既不做 layout 名称回查，也没有 `Reference` 默认值：`Named` 残差
     /// 不携带 declaration / `TypeId`，不存在可按身份解析的名义 layout。
     /// [`validate_storage_identities`] 已在 lowering 前拒绝该形状。
-    pub fn storage_for_type(&self, ty: &NyarType) -> ExecutableStorageKind {
+    pub fn storage_for_type(&self, ty: &SemanticType) -> ExecutableStorageKind {
         match ty {
-            NyarType::Bottom
-            | NyarType::Unit
-            | NyarType::Boolean
-            | NyarType::Integer8 { .. }
-            | NyarType::Integer16 { .. }
-            | NyarType::Integer32 { .. }
-            | NyarType::Integer64 { .. }
-            | NyarType::Integer128 { .. }
-            | NyarType::Float32
-            | NyarType::Float64
-            | NyarType::Character
-            | NyarType::Utf8
-            | NyarType::Utf16 => ExecutableStorageKind::Value,
-            NyarType::Tuple(_) | NyarType::FixedArray { .. } => ExecutableStorageKind::Value,
-            NyarType::Array(_)
-            | NyarType::TraitObject(_)
-            | NyarType::Union(_)
-            | NyarType::Nullable(_)
-            | NyarType::Apply(..)
-            | NyarType::Function(_) => ExecutableStorageKind::Reference,
+            SemanticType::Bottom
+            | SemanticType::Unit
+            | SemanticType::Boolean
+            | SemanticType::Integer8 { .. }
+            | SemanticType::Integer16 { .. }
+            | SemanticType::Integer32 { .. }
+            | SemanticType::Integer64 { .. }
+            | SemanticType::Integer128 { .. }
+            | SemanticType::Float32
+            | SemanticType::Float64
+            | SemanticType::Character
+            | SemanticType::Utf8
+            | SemanticType::Utf16 => ExecutableStorageKind::Value,
+            SemanticType::Tuple(_) | SemanticType::FixedArray { .. } => ExecutableStorageKind::Value,
+            SemanticType::Array(_)
+            | SemanticType::TraitObject(_)
+            | SemanticType::Union(_)
+            | SemanticType::Nullable(_)
+            | SemanticType::Apply(..)
+            | SemanticType::Function(_) => ExecutableStorageKind::Reference,
             // `Nominal` 携带 canonical 冻结的实例级布局身份：存储类按 `layout` 解析，
             // 不按拼写匹配。布局缺失属合同破坏（预发射门禁已拒绝该形状）。
-            NyarType::Nominal { layout, spelling } => match self.layout_by_id(*layout) {
+            SemanticType::Nominal { layout, spelling } => match self.layout_by_id(*layout) {
                 Some(layout) => layout.storage,
                 None => panic!(
                     "executable lowering contract violation: `Nominal({spelling})` 的 layout `{layout:?}` 未注册，\
 身份无法解析存储类（预编码校验见 `validate_storage_identities`）"
                 ),
             },
-            NyarType::Named(name) => panic!(
+            SemanticType::Named(name) => panic!(
                 "executable lowering contract violation: `Named({name})` 无 declaration / `TypeId` 身份，\
 禁止按短名解析名义 layout 或回落 `Reference`（预编码校验见 `validate_storage_identities`）"
             ),
@@ -129,12 +129,12 @@ pub struct UnresolvedStorageIdentity {
     /// 出现位置（参数 / 返回值 / SSA 值 / 指令 / layout 字段）。
     pub site: String,
     /// 残差类型。
-    pub ty: NyarType,
+    pub ty: SemanticType,
 }
 
 /// 预编码校验：可执行合同不得携带无身份的名义类型残差。
 ///
-/// `NyarType::Named` 只有短名，没有 declaration / `TypeId`。一旦它进入可执行合同，
+/// `SemanticType::Named` 只有短名，没有 declaration / `TypeId`。一旦它进入可执行合同，
 /// 存储类、参数 ABI 与 GC 字段字节都只能靠名称回查或默认值猜实现；
 /// 该形状必须在生成任何字节之前结构化失败，而不是由 backend 认亲。
 pub fn validate_storage_identities(submission: &FragmentSubmission) -> Result<(), UnresolvedStorageIdentity> {
@@ -194,10 +194,10 @@ pub fn validate_storage_identities(submission: &FragmentSubmission) -> Result<()
 
 /// 递归查找无法按身份解析存储类的名义形状：
 /// 裸 `Named` 短名残差，或 `Nominal` 携带的 `layout` 未在计划中注册。
-fn named_residual(ty: &NyarType, registered_layouts: &std::collections::BTreeSet<LayoutId>) -> Option<NyarType> {
+fn named_residual(ty: &SemanticType, registered_layouts: &std::collections::BTreeSet<LayoutId>) -> Option<SemanticType> {
     match ty {
-        NyarType::Named(_) => Some(ty.clone()),
-        NyarType::Nominal { layout, .. } => {
+        SemanticType::Named(_) => Some(ty.clone()),
+        SemanticType::Nominal { layout, .. } => {
             if registered_layouts.contains(layout) {
                 None
             }
@@ -205,16 +205,16 @@ fn named_residual(ty: &NyarType, registered_layouts: &std::collections::BTreeSet
                 Some(ty.clone())
             }
         }
-        NyarType::Apply(_base, arguments) => arguments.iter().find_map(|argument| named_residual(argument, registered_layouts)),
-        NyarType::Function(function) => named_residual(&function.return_type, registered_layouts)
+        SemanticType::Apply(_base, arguments) => arguments.iter().find_map(|argument| named_residual(argument, registered_layouts)),
+        SemanticType::Function(function) => named_residual(&function.return_type, registered_layouts)
             .or_else(|| function.params.iter().find_map(|parameter| named_residual(parameter, registered_layouts))),
-        NyarType::Tuple(elements) | NyarType::Union(elements) => {
+        SemanticType::Tuple(elements) | SemanticType::Union(elements) => {
             elements.iter().find_map(|element| named_residual(element, registered_layouts))
         }
-        NyarType::Array(element) | NyarType::FixedArray { element, .. } | NyarType::Nullable(element) => {
+        SemanticType::Array(element) | SemanticType::FixedArray { element, .. } | SemanticType::Nullable(element) => {
             named_residual(element, registered_layouts)
         }
-        NyarType::TraitObject(object) => object.type_arguments.iter().find_map(|argument| named_residual(argument, registered_layouts)),
+        SemanticType::TraitObject(object) => object.type_arguments.iter().find_map(|argument| named_residual(argument, registered_layouts)),
         _ => None,
     }
 }
@@ -265,7 +265,7 @@ mod tests {
     use nyar_types::{AggregateLayout, FieldLayout, Identifier, StorageKind};
 
     /// 构造仅含返回类型与参数类型的最小可执行函数。
-    fn identity_function(return_type: NyarType, param_types: Vec<NyarType>) -> ExecutableFunction {
+    fn identity_function(return_type: SemanticType, param_types: Vec<SemanticType>) -> ExecutableFunction {
         ExecutableFunction {
             symbol: "probe".to_string(),
             return_type,
@@ -286,7 +286,7 @@ mod tests {
         }
     }
 
-    fn submission(return_type: NyarType, layouts: AggregateLayoutPlan) -> FragmentSubmission {
+    fn submission(return_type: SemanticType, layouts: AggregateLayoutPlan) -> FragmentSubmission {
         let function = identity_function(return_type, Vec::new());
         let name = nyar::QualifiedName::new(vec![nyar::Identifier::new("probe")]);
         let mut plan = TargetExecutionPlan::from_functions(std::collections::BTreeMap::from([(name, function)]));
@@ -294,7 +294,7 @@ mod tests {
         FragmentSubmission::from_backend_plan(plan)
     }
 
-    fn layout_with_field(layout_id: LayoutId, field_ty: NyarType) -> AggregateLayoutPlan {
+    fn layout_with_field(layout_id: LayoutId, field_ty: SemanticType) -> AggregateLayoutPlan {
         AggregateLayoutPlan {
             layouts: vec![AggregateLayout {
                 id: layout_id,
@@ -310,23 +310,23 @@ mod tests {
 
     #[test]
     fn named_residual_in_return_type_is_rejected() {
-        let submission = submission(NyarType::Named(Identifier::new("Config")), AggregateLayoutPlan::default());
+        let submission = submission(SemanticType::Named(Identifier::new("Config")), AggregateLayoutPlan::default());
         let error = validate_storage_identities(&submission).expect_err("裸 Named 缺声明身份必须被拒绝");
         assert_eq!(error.site, "return type");
-        assert_eq!(error.ty, NyarType::Named(Identifier::new("Config")));
+        assert_eq!(error.ty, SemanticType::Named(Identifier::new("Config")));
     }
 
     #[test]
     fn named_residual_in_layout_field_is_rejected() {
-        let layouts = layout_with_field(1, NyarType::Named(Identifier::new("EngineSpec")));
-        let submission = submission(nyar_types::NyarType::Unit, layouts);
+        let layouts = layout_with_field(1, SemanticType::Named(Identifier::new("EngineSpec")));
+        let submission = submission(nyar_types::SemanticType::Unit, layouts);
         let error = validate_storage_identities(&submission).expect_err("layout 字段裸 Named 必须被拒绝");
         assert!(error.site.contains("field `payload`"), "site must identify the layout field: {}", error.site);
     }
 
     #[test]
     fn nominal_with_unregistered_layout_is_rejected() {
-        let nominal = NyarType::Nominal { layout: 7, spelling: Identifier::new("app::Config") };
+        let nominal = SemanticType::Nominal { layout: 7, spelling: Identifier::new("app::Config") };
         let submission = submission(nominal.clone(), AggregateLayoutPlan::default());
         let error = validate_storage_identities(&submission).expect_err("未注册布局的 Nominal 必须被拒绝");
         assert_eq!(error.ty, nominal);
@@ -334,8 +334,8 @@ mod tests {
 
     #[test]
     fn nominal_with_registered_layout_passes() {
-        let layouts = layout_with_field(1, nyar_types::NyarType::Integer32 { signed: true });
-        let nominal = NyarType::Nominal { layout: 1, spelling: Identifier::new("app::Probe") };
+        let layouts = layout_with_field(1, nyar_types::SemanticType::Integer32 { signed: true });
+        let nominal = SemanticType::Nominal { layout: 1, spelling: Identifier::new("app::Probe") };
         let submission = submission(nominal, layouts);
         validate_storage_identities(&submission).expect("已注册布局的 Nominal 必须通过");
     }

@@ -18,23 +18,23 @@ use nyar_emitter::{
     },
     testing::lower_fragment_to_nyar_module,
 };
-use nyar_types::{InstructionId, NyarType, ProvenanceId};
+use nyar_types::{InstructionId, SemanticType, ProvenanceId};
 use acorn_odin::{OdinConstant, OdinHeadCode, OdinInstruction, OdinModuleData, decode_at};
 
-fn i8_(signed: bool) -> NyarType {
-    NyarType::Integer8 { signed }
+fn i8_(signed: bool) -> SemanticType {
+    SemanticType::Integer8 { signed }
 }
 
-fn i16_(signed: bool) -> NyarType {
-    NyarType::Integer16 { signed }
+fn i16_(signed: bool) -> SemanticType {
+    SemanticType::Integer16 { signed }
 }
 
-fn i32_(signed: bool) -> NyarType {
-    NyarType::Integer32 { signed }
+fn i32_(signed: bool) -> SemanticType {
+    SemanticType::Integer32 { signed }
 }
 
-fn i64_(signed: bool) -> NyarType {
-    NyarType::Integer64 { signed }
+fn i64_(signed: bool) -> SemanticType {
+    SemanticType::Integer64 { signed }
 }
 
 fn main_name() -> QualifiedName {
@@ -42,7 +42,7 @@ fn main_name() -> QualifiedName {
 }
 
 /// `main(source: S) -> T { Cast(source) }`。
-fn cast_function(source_type: NyarType, target_type: NyarType) -> ExecutableFunction {
+fn cast_function(source_type: SemanticType, target_type: SemanticType) -> ExecutableFunction {
     ExecutableFunction {
         symbol: "main".to_string(),
         return_type: target_type.clone(),
@@ -69,7 +69,7 @@ fn cast_function(source_type: NyarType, target_type: NyarType) -> ExecutableFunc
 }
 
 /// 常量源：`main() -> T { Cast(5) }`，源位宽必须来自 semantic MIR 的常量合同。
-fn cast_constant_function(target_type: NyarType) -> ExecutableFunction {
+fn cast_constant_function(target_type: SemanticType) -> ExecutableFunction {
     ExecutableFunction {
         symbol: "main".to_string(),
         return_type: target_type.clone(),
@@ -171,7 +171,7 @@ fn unique_pool_integer64(module: &OdinModuleData) -> Vec<i64> {
     values
 }
 
-fn lower(source: NyarType, target: NyarType) -> OdinModuleData {
+fn lower(source: SemanticType, target: SemanticType) -> OdinModuleData {
     try_lower(cast_function(source, target)).unwrap_or_else(|error| panic!("Cast 必须能 lowering: {error}"))
 }
 
@@ -221,7 +221,7 @@ fn u32_to_i64_zero_extends_upper_half() {
 /// `Character`（32 位无符号码位）走同一套无符号 32 位规则，不按类型名特判。
 #[test]
 fn character_to_i64_uses_unsigned_32_rule() {
-    let module = lower(NyarType::Character, i64_(true));
+    let module = lower(SemanticType::Character, i64_(true));
     assert_eq!(
         host_symbols(&module),
         vec!["i32_to_i64", "i32_to_i64", "i64_shr_u", "i64_mul", "i64_add"],
@@ -312,42 +312,42 @@ fn constant_source_uses_semantic_integer64_width() {
 /// 布尔 → 整数没有冻结语义：结构化失败，不得把 `true` 近似成 1。
 #[test]
 fn boolean_to_integer_fails_structured() {
-    let error = try_lower(cast_function(NyarType::Boolean, i32_(true))).expect_err("布尔→整数必须结构化失败");
+    let error = try_lower(cast_function(SemanticType::Boolean, i32_(true))).expect_err("布尔→整数必须结构化失败");
     assert!(error.contains("没有 `bool` → `i32`") && error.contains("确定转换语义"), "错误必须点名缺失的转换: {error}");
 }
 
 /// `i64 → f64`：有符号源必须走 `i64_to_f64`。
 #[test]
 fn i64_to_f64_uses_signed_conversion() {
-    let module = lower(i64_(true), NyarType::Float64);
+    let module = lower(i64_(true), SemanticType::Float64);
     assert_eq!(host_symbols(&module), vec!["i64_to_f64"], "有符号 64 位转 f64 必须走有符号转换");
 }
 
 /// `u64 → f64`：必须走无符号转换，复用 `i64_to_f64` 会让 2^63 以上的值静默变负。
 #[test]
 fn u64_to_f64_uses_unsigned_conversion() {
-    let module = lower(i64_(false), NyarType::Float64);
+    let module = lower(i64_(false), SemanticType::Float64);
     assert_eq!(host_symbols(&module), vec!["u64_to_f64"], "无符号 64 位转 f64 必须走无符号转换");
 }
 
 /// `i32 → f64`：有符号 32 位源走 `i32_to_f64`。
 #[test]
 fn i32_to_f64_uses_signed_conversion() {
-    let module = lower(i32_(true), NyarType::Float64);
+    let module = lower(i32_(true), SemanticType::Float64);
     assert_eq!(host_symbols(&module), vec!["i32_to_f64"]);
 }
 
 /// `u32` / `Character → f64`：无符号 32 位载体走 `u32_to_f64`。
 #[test]
 fn u32_and_character_to_f64_use_unsigned_conversion() {
-    assert_eq!(host_symbols(&lower(i32_(false), NyarType::Float64)), vec!["u32_to_f64"]);
-    assert_eq!(host_symbols(&lower(NyarType::Character, NyarType::Float64)), vec!["u32_to_f64"]);
+    assert_eq!(host_symbols(&lower(i32_(false), SemanticType::Float64)), vec!["u32_to_f64"]);
+    assert_eq!(host_symbols(&lower(SemanticType::Character, SemanticType::Float64)), vec!["u32_to_f64"]);
 }
 
 /// 窄无符号整数先在 `i32` 载体上掩码成非负，再走无符号转换。
 #[test]
 fn narrow_unsigned_to_f64_masks_before_conversion() {
-    let module = lower(i8_(false), NyarType::Float64);
+    let module = lower(i8_(false), SemanticType::Float64);
     assert!(unique_pool_integer32(&module).contains(&0xFF), "必须先掩掉高位: {:?}", module.constants);
     assert!(codes(&module).contains(&OdinHeadCode::I32And), "掩码必须在转换前发射");
     assert_eq!(host_symbols(&module), vec!["u32_to_f64"]);
@@ -356,21 +356,21 @@ fn narrow_unsigned_to_f64_masks_before_conversion() {
 /// `f64 → i64`：checked 语义（截断后越界/NaN 结构化失败，不饱和）。
 #[test]
 fn f64_to_i64_uses_checked_conversion() {
-    let module = lower(NyarType::Float64, i64_(true));
+    let module = lower(SemanticType::Float64, i64_(true));
     assert_eq!(host_symbols(&module), vec!["f64_to_i64_checked"], "`as` 不得复用饱和版 `f64_to_i64`");
 }
 
 /// `f64 → u64`：checked 无符号语义。
 #[test]
 fn f64_to_u64_uses_checked_unsigned_conversion() {
-    let module = lower(NyarType::Float64, i64_(false));
+    let module = lower(SemanticType::Float64, i64_(false));
     assert_eq!(host_symbols(&module), vec!["f64_to_u64_checked"]);
 }
 
 /// `f64 → u8`：先 checked 转 `u32`，再按目标位宽掩码（与整数收窄口径一致）。
 #[test]
 fn f64_to_u8_normalizes_after_checked_conversion() {
-    let module = lower(NyarType::Float64, i8_(false));
+    let module = lower(SemanticType::Float64, i8_(false));
     assert!(unique_pool_integer32(&module).contains(&0xFF), "窄目标必须掩掉高位: {:?}", module.constants);
     assert!(codes(&module).contains(&OdinHeadCode::I32And), "掩码必须在 checked 转换之后发射");
     assert_eq!(host_symbols(&module), vec!["f64_to_u32_checked"]);
@@ -379,7 +379,7 @@ fn f64_to_u8_normalizes_after_checked_conversion() {
 /// `f64 → i16`：先 checked 转 `i32`，再做 16 位符号扩展。
 #[test]
 fn f64_to_i16_sign_extends_after_checked_conversion() {
-    let module = lower(NyarType::Float64, i16_(true));
+    let module = lower(SemanticType::Float64, i16_(true));
     assert!(codes(&module).contains(&OdinHeadCode::I32Shl) && codes(&module).contains(&OdinHeadCode::I32ShrS), "必须有符号扩展");
     assert_eq!(host_symbols(&module), vec!["f64_to_i32_checked"]);
 }
@@ -387,11 +387,11 @@ fn f64_to_i16_sign_extends_after_checked_conversion() {
 /// `f32` 是独立的 OVM 浮点载体：`f32`↔`f64` 走专用单步头码，不得借另一精度中转。
 #[test]
 fn f32_f64_conversions_use_dedicated_codes() {
-    let promote = lower(NyarType::Float32, NyarType::Float64);
+    let promote = lower(SemanticType::Float32, SemanticType::Float64);
     assert!(host_symbols(&promote).is_empty(), "f32→f64 不得产生宿主调用: {:?}", host_symbols(&promote));
     assert!(codes(&promote).contains(&OdinHeadCode::F64PromoteF32), "f32→f64 必须走 `F64PromoteF32`: {:?}", codes(&promote));
 
-    let demote = lower(NyarType::Float64, NyarType::Float32);
+    let demote = lower(SemanticType::Float64, SemanticType::Float32);
     assert!(host_symbols(&demote).is_empty(), "f64→f32 不得产生宿主调用: {:?}", host_symbols(&demote));
     assert!(codes(&demote).contains(&OdinHeadCode::F32DemoteF64), "f64→f32 必须走 `F32DemoteF64`: {:?}", codes(&demote));
 }
@@ -400,26 +400,26 @@ fn f32_f64_conversions_use_dedicated_codes() {
 /// 不得借 `f64` 中转（double rounding）或用 `i32` 位模式冒充数值转换。
 #[test]
 fn integer_f32_casts_fail_structured() {
-    let error = try_lower(cast_function(NyarType::Float32, i64_(true))).expect_err("f32→整数必须结构化失败");
+    let error = try_lower(cast_function(SemanticType::Float32, i64_(true))).expect_err("f32→整数必须结构化失败");
     assert!(
         error.contains("`f32` → `i64`") && error.contains("`f32` 是独立载体") && error.contains("禁止借 `f64` 中转"),
         "错误必须点名缺失的转换与独立载体约束: {error}"
     );
-    let error = try_lower(cast_function(i64_(true), NyarType::Float32)).expect_err("整数→f32 必须结构化失败");
+    let error = try_lower(cast_function(i64_(true), SemanticType::Float32)).expect_err("整数→f32 必须结构化失败");
     assert!(error.contains("`i64` → `f32`") && error.contains("尚未冻结"), "错误必须点名两端类型与未冻结的单步转换: {error}");
 }
 
 /// 浮点 → 布尔/文本没有 `as` 合同：结构化失败。
 #[test]
 fn float_to_boolean_fails_structured() {
-    let error = try_lower(cast_function(NyarType::Float64, NyarType::Boolean)).expect_err("f64→bool 必须结构化失败");
+    let error = try_lower(cast_function(SemanticType::Float64, SemanticType::Boolean)).expect_err("f64→bool 必须结构化失败");
     assert!(error.contains("`f64` → `bool`"), "错误必须点名两端类型: {error}");
 }
 
 /// 整数 → 文本没有冻结语义：结构化失败。
 #[test]
 fn integer_to_text_fails_structured() {
-    let error = try_lower(cast_function(i64_(true), NyarType::Utf8)).expect_err("整数→文本必须结构化失败");
+    let error = try_lower(cast_function(i64_(true), SemanticType::Utf8)).expect_err("整数→文本必须结构化失败");
     assert!(error.contains("utf8"), "错误必须点名目标类型: {error}");
 }
 
@@ -427,7 +427,7 @@ fn integer_to_text_fails_structured() {
 /// 必须保持结构化失败，不得静默产出空槽。
 #[test]
 fn array_new_remains_fail_closed() {
-    let array_type = NyarType::Array(Box::new(i64_(true)));
+    let array_type = SemanticType::Array(Box::new(i64_(true)));
     let mut function = cast_function(i64_(true), array_type.clone());
     function.value_types.insert(ValueRef(1), array_type.clone());
     function.return_type = array_type.clone();

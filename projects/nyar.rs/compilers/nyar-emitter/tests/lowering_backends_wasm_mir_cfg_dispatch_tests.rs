@@ -2,7 +2,7 @@
 #![allow(deprecated)]
 
 use acorn_wasm::{WasmBinaryModule, WasmOpcode};
-use nyar::{Identifier, NyarType, QualifiedName};
+use nyar::{Identifier, SemanticType, QualifiedName};
 use nyar_emitter::{
     FragmentSubmission, TargetExecutionPlan,
     contracts::{Block, BlockRef, Constant, ExecutableFunction, Operand, Terminator},
@@ -13,7 +13,7 @@ use std::{collections::BTreeMap, process::Command};
 fn leaf_i32_fn(symbol: &str, blocks: Vec<Block>) -> ExecutableFunction {
     ExecutableFunction {
         symbol: symbol.to_string(),
-        return_type: NyarType::Integer32 { signed: true },
+        return_type: SemanticType::Integer32 { signed: true },
         param_types: Vec::new(),
         value_types: Default::default(),
         value_layouts: BTreeMap::new(),

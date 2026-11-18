@@ -19,14 +19,14 @@ use nyar_emitter::{
 };
 use nyar_emitter::contracts::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef};
 use nyar_types::{
-    AggregateLayout, AggregateLayoutPlan, FieldLayout, ImportIndex, ItemInstanceId, NyarType, StorageKind,
+    AggregateLayout, AggregateLayoutPlan, FieldLayout, ImportIndex, ItemInstanceId, SemanticType, StorageKind,
 };
 
-const LONG: NyarType = NyarType::Integer64 { signed: true };
-const INTEGER: NyarType = NyarType::Integer32 { signed: true };
-const BOOLEAN: NyarType = NyarType::Boolean;
+const LONG: SemanticType = SemanticType::Integer64 { signed: true };
+const INTEGER: SemanticType = SemanticType::Integer32 { signed: true };
+const BOOLEAN: SemanticType = SemanticType::Boolean;
 
-fn function(symbol: &str, return_type: NyarType, parameters: Vec<NyarType>) -> ExecutableFunction {
+fn function(symbol: &str, return_type: SemanticType, parameters: Vec<SemanticType>) -> ExecutableFunction {
     let value_types = parameters.iter().enumerate().map(|(index, ty)| (ValueRef(index as u32), ty.clone())).collect();
     let block_parameters = (0..parameters.len() as u32).map(ValueRef).collect();
     ExecutableFunction {
@@ -110,8 +110,8 @@ fn operator_import(plan: TargetOperatorPlan<JvmOperatorCode>) -> BackendImport {
     let return_type = match plan.result_type {
         TargetOperandType::I32 => BOOLEAN,
         TargetOperandType::I64 => LONG,
-        TargetOperandType::F32 => NyarType::Float32,
-        TargetOperandType::F64 => NyarType::Float64,
+        TargetOperandType::F32 => SemanticType::Float32,
+        TargetOperandType::F64 => SemanticType::Float64,
     };
     BackendImport {
         index: ImportIndex::from_index(0).expect("import index"),
@@ -132,13 +132,13 @@ fn operator_plan(code: JvmOperatorCode, operand_type: TargetOperandType, result_
 }
 
 /// 构造只调用一个冻结 `long` operator 的导出函数，并返回降低后的 class。
-fn lower_single_operator_call(code: JvmOperatorCode, result_type: TargetOperandType, return_type: NyarType) -> JvmClassFile {
+fn lower_single_operator_call(code: JvmOperatorCode, result_type: TargetOperandType, return_type: SemanticType) -> JvmClassFile {
     let operator = ItemInstanceId::from_index(1).expect("operator instance");
     let result_value_type = match result_type {
         TargetOperandType::I64 => LONG,
         TargetOperandType::I32 => INTEGER,
-        TargetOperandType::F32 => NyarType::Float32,
-        TargetOperandType::F64 => NyarType::Float64,
+        TargetOperandType::F32 => SemanticType::Float32,
+        TargetOperandType::F64 => SemanticType::Float64,
     };
     let mut fixture = function("jvm.fixture", return_type, vec![LONG, LONG]);
     fixture.value_types.insert(ValueRef(2), result_value_type);
@@ -237,8 +237,8 @@ fn write_class(directory: &Path, class_file: &JvmClassFile) {
 fn managed_launcher_for(
     directory: &Path,
     export: &str,
-    parameter_types: Vec<NyarType>,
-    return_type: NyarType,
+    parameter_types: Vec<SemanticType>,
+    return_type: SemanticType,
     operator: TargetOperatorPlan<JvmOperatorCode>,
     mnemonic: &str,
 ) -> String {
@@ -776,20 +776,20 @@ fn option_char_layout() -> AggregateLayout {
         key: None,
         storage: StorageKind::Reference,
         fields: vec![
-            FieldLayout { name: "discriminant".to_string(), ty: NyarType::Integer32 { signed: false } },
-            FieldLayout { name: "payload".to_string(), ty: NyarType::Character },
+            FieldLayout { name: "discriminant".to_string(), ty: SemanticType::Integer32 { signed: false } },
+            FieldLayout { name: "payload".to_string(), ty: SemanticType::Character },
         ],
     }
 }
 
 /// 泛型实例 `Option<char>` 的结算形态：实例级布局（`LayoutId` 0）由计划注册表持有，
 /// 类型只携带布局身份；实参代入后不再保留未结算的 `Apply` 形状。
-fn option_char_type() -> NyarType {
-    NyarType::Nominal { layout: 0, spelling: Identifier::new("Option") }
+fn option_char_type() -> SemanticType {
+    SemanticType::Nominal { layout: 0, spelling: Identifier::new("Option") }
 }
 
 /// 构造签名为 `(Option<char>, char) -> Option<char>` 的入口操作，返回第一个形参。
-fn option_flow_plan(parameters: Vec<NyarType>, return_type: NyarType) -> FragmentSubmission {
+fn option_flow_plan(parameters: Vec<SemanticType>, return_type: SemanticType) -> FragmentSubmission {
     let mut fixture = function("jvm.option_flow", return_type, parameters);
     fixture.blocks[0].terminator = Terminator::Return { value: Some(Operand::Value(ValueRef(0))) };
     let main = QualifiedName::new(vec![Identifier::new("main")]);
@@ -804,7 +804,7 @@ fn option_flow_plan(parameters: Vec<NyarType>, return_type: NyarType) -> Fragmen
 #[test]
 fn option_char_flow_lowers_with_settled_layout_carrier() {
     let option = option_char_type();
-    let submission = option_flow_plan(vec![option.clone(), NyarType::Character], option.clone());
+    let submission = option_flow_plan(vec![option.clone(), SemanticType::Character], option.clone());
     let class_file = lower_fragment_to_jvm_class(&submission).expect("Option<char> settled layout must lower");
 
     let method = class_file.methods.iter().find(|method| method.name == "main").expect("entry method");
@@ -833,7 +833,7 @@ fn option_char_flow_lowers_with_settled_layout_carrier() {
 /// 计划边界未结算即缺载体合同，JVM 不得按引用擦除掩盖缺口。
 #[test]
 fn unsettled_apply_generic_instance_is_rejected_structurally() {
-    let unsettled = NyarType::Apply(Box::new(NyarType::Named(Identifier::new("Option"))), vec![NyarType::Character]);
+    let unsettled = SemanticType::Apply(Box::new(SemanticType::Named(Identifier::new("Option"))), vec![SemanticType::Character]);
     let mut fixture = function("jvm.option_flow", unsettled.clone(), vec![unsettled.clone()]);
     fixture.blocks[0].terminator = Terminator::Return { value: Some(Operand::Value(ValueRef(0))) };
     let main = QualifiedName::new(vec![Identifier::new("main")]);
@@ -847,7 +847,7 @@ fn unsettled_apply_generic_instance_is_rejected_structurally() {
 /// 携带身份的名义类型引用存储时同样走擦除引用载体（不经泛型实参形状）。
 #[test]
 fn nominal_with_registered_reference_layout_lowers_to_reference_carrier() {
-    let nominal = NyarType::Nominal { layout: 0, spelling: Identifier::new("Option") };
+    let nominal = SemanticType::Nominal { layout: 0, spelling: Identifier::new("Option") };
     let submission = option_flow_plan(vec![nominal.clone()], nominal);
     let class_file = lower_fragment_to_jvm_class(&submission).expect("reference nominal must lower");
     let method = class_file.methods.iter().find(|method| method.name == "main").expect("entry method");
@@ -864,7 +864,7 @@ fn nominal_with_registered_reference_layout_lowers_to_reference_carrier() {
 /// `Nominal` 携带的布局身份未在计划中注册：合同破坏，必须结构化失败。
 #[test]
 fn nominal_with_unregistered_layout_is_rejected_structurally() {
-    let nominal = NyarType::Nominal { layout: 7, spelling: Identifier::new("Option") };
+    let nominal = SemanticType::Nominal { layout: 7, spelling: Identifier::new("Option") };
     let submission = option_flow_plan(vec![nominal.clone()], nominal);
     let error = lower_fragment_to_jvm_class(&submission).expect_err("unregistered layout identity must fail");
     assert!(error.contains("未在计划中注册"), "{error}");
@@ -876,7 +876,7 @@ fn nominal_with_unregistered_layout_is_rejected_structurally() {
 fn value_storage_nominal_uses_layout_class_name() {
     let mut layout = option_char_layout();
     layout.storage = StorageKind::Value;
-    let nominal = NyarType::Nominal { layout: 0, spelling: Identifier::new("Option") };
+    let nominal = SemanticType::Nominal { layout: 0, spelling: Identifier::new("Option") };
     let mut fixture = function("jvm.option_flow", nominal.clone(), vec![nominal.clone()]);
     fixture.blocks[0].terminator = Terminator::Return { value: Some(Operand::Value(ValueRef(0))) };
     let main = QualifiedName::new(vec![Identifier::new("main")]);
@@ -901,7 +901,7 @@ fn zero_field_value_storage_nominal_is_rejected_structurally() {
     let mut layout = option_char_layout();
     layout.storage = StorageKind::Value;
     layout.fields.clear();
-    let nominal = NyarType::Nominal { layout: 0, spelling: Identifier::new("Option") };
+    let nominal = SemanticType::Nominal { layout: 0, spelling: Identifier::new("Option") };
     let mut fixture = function("jvm.option_flow", nominal.clone(), vec![nominal.clone()]);
     fixture.blocks[0].terminator = Terminator::Return { value: Some(Operand::Value(ValueRef(0))) };
     let main = QualifiedName::new(vec![Identifier::new("main")]);
@@ -916,7 +916,7 @@ fn zero_field_value_storage_nominal_is_rejected_structurally() {
 /// 裸 `Named` 短名残差不携带身份，仍必须结构化失败。
 #[test]
 fn bare_named_residual_is_rejected_structurally() {
-    let residual = NyarType::Named(Identifier::new("Option"));
+    let residual = SemanticType::Named(Identifier::new("Option"));
     let submission = option_flow_plan(vec![residual.clone()], residual);
     let error = lower_fragment_to_jvm_class(&submission).expect_err("bare `Named` residual must fail");
     assert!(error.contains("缺少该形状的 JVM 载体合同"), "{error}");
@@ -941,7 +941,7 @@ fn nested_value_layout_plan() -> AggregateLayoutPlan {
                 storage: StorageKind::Value,
                 fields: vec![FieldLayout {
                     name: "inner".to_string(),
-                    ty: NyarType::Nominal { layout: 0, spelling: Identifier::new("Inner") },
+                    ty: SemanticType::Nominal { layout: 0, spelling: Identifier::new("Inner") },
                 }],
             },
         ],
@@ -952,7 +952,7 @@ fn nested_value_layout_plan() -> AggregateLayoutPlan {
 /// 嵌套值聚合复制必须为外层与内层各新建一个对象，而不是共享内层引用。
 #[test]
 fn aggregate_copy_recurses_into_nested_value_layouts() {
-    let outer = NyarType::Nominal { layout: 1, spelling: Identifier::new("Outer") };
+    let outer = SemanticType::Nominal { layout: 1, spelling: Identifier::new("Outer") };
     // 目标值作为形参，保证槽规划为两者都分配局部槽。
     let mut fixture = function("demo.nested_copy", outer.clone(), vec![outer.clone(), outer.clone()]);
     fixture.blocks[0].instructions.push(instr(

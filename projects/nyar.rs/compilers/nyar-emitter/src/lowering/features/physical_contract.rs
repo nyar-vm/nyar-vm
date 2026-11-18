@@ -7,7 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use nyar_types::{ItemInstanceId, NyarType};
+use nyar_types::{ItemInstanceId, SemanticType};
 
 use crate::{
     FragmentSubmission, TargetExecutionPlan,
@@ -45,7 +45,7 @@ pub struct PhysicalCallContract {
     pub parameters: Vec<PhysicalValueCategory>,
 }
 
-/// 文本 ABI 的编码身份：只来自声明的 `NyarType`，不看函数名或包名。
+/// 文本 ABI 的编码身份：只来自声明的 `SemanticType`，不看函数名或包名。
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PhysicalTextEncoding {
@@ -101,11 +101,11 @@ pub(crate) fn text_abi_boundary(backend: PhysicalBackend) -> Option<PhysicalText
     }
 }
 
-/// 文本 ABI 事实的唯一查询点：编码来自声明的 `NyarType`，载体来自该边界。
-pub(crate) fn declared_text_projection(boundary: PhysicalTextBoundary, ty: &NyarType) -> Option<PhysicalTextProjection> {
+/// 文本 ABI 事实的唯一查询点：编码来自声明的 `SemanticType`，载体来自该边界。
+pub(crate) fn declared_text_projection(boundary: PhysicalTextBoundary, ty: &SemanticType) -> Option<PhysicalTextProjection> {
     let encoding = match ty {
-        NyarType::Utf8 => PhysicalTextEncoding::Utf8,
-        NyarType::Utf16 => PhysicalTextEncoding::Utf16,
+        SemanticType::Utf8 => PhysicalTextEncoding::Utf8,
+        SemanticType::Utf16 => PhysicalTextEncoding::Utf16,
         _ => return None,
     };
     let carrier = match (encoding, boundary) {
@@ -122,9 +122,9 @@ pub(crate) fn declared_text_projection(boundary: PhysicalTextBoundary, ty: &Nyar
 }
 
 /// 未落地文本 ABI 载体的统一拒绝理由。
-pub(crate) fn unresolved_text_abi_reason(ty: &NyarType) -> Option<&'static str> {
+pub(crate) fn unresolved_text_abi_reason(ty: &SemanticType) -> Option<&'static str> {
     match ty {
-        NyarType::Utf16 => Some(UTF16_UNRESOLVED_TEXT_ABI),
+        SemanticType::Utf16 => Some(UTF16_UNRESOLVED_TEXT_ABI),
         _ => None,
     }
 }
@@ -135,14 +135,14 @@ mod text_abi_tests {
 
     #[test]
     fn text_abi_fact_binds_encoding_boundary_and_carrier_from_declared_type() {
-        let js_utf8 = declared_text_projection(PhysicalTextBoundary::WasmJsGlue, &NyarType::Utf8)
+        let js_utf8 = declared_text_projection(PhysicalTextBoundary::WasmJsGlue, &SemanticType::Utf8)
             .expect("`utf8` 必须已有冻结载体");
         assert_eq!(js_utf8.encoding, PhysicalTextEncoding::Utf8);
         assert_eq!(js_utf8.boundary, PhysicalTextBoundary::WasmJsGlue);
         assert_eq!(js_utf8.carrier, Some(PhysicalTextCarrier::JsStringHandle));
 
         for boundary in [PhysicalTextBoundary::WasmJsGlue, PhysicalTextBoundary::WasiComponent] {
-            let projection = declared_text_projection(boundary, &NyarType::Utf16);
+            let projection = declared_text_projection(boundary, &SemanticType::Utf16);
             match boundary {
                 // `WasmJsGlue` 已冻结编码身份与共享载体，但 lowering 仍未接入该载体。
                 PhysicalTextBoundary::WasmJsGlue => {
@@ -160,11 +160,11 @@ mod text_abi_tests {
             }
         }
         assert_eq!(
-            unresolved_text_abi_reason(&NyarType::Utf16),
+            unresolved_text_abi_reason(&SemanticType::Utf16),
             Some(UTF16_UNRESOLVED_TEXT_ABI)
         );
-        assert_eq!(unresolved_text_abi_reason(&NyarType::Utf8), None);
-        assert_eq!(declared_text_projection(PhysicalTextBoundary::WasmJsGlue, &NyarType::Unit), None);
+        assert_eq!(unresolved_text_abi_reason(&SemanticType::Utf8), None);
+        assert_eq!(declared_text_projection(PhysicalTextBoundary::WasmJsGlue, &SemanticType::Unit), None);
     }
 }
 
@@ -369,7 +369,7 @@ fn resolve_callee_parameter_types(
     callee: ItemInstanceId,
     function: &ExecutableFunction,
     location: &str,
-) -> Result<Vec<NyarType>, PhysicalPlanError> {
+) -> Result<Vec<SemanticType>, PhysicalPlanError> {
     if let Some(view) = executable.get_function(&callee) {
         return Ok(view.function.param_types.clone());
     }
@@ -385,14 +385,14 @@ fn resolve_callee_parameter_types(
 }
 
 /// Map an executable immediate to its Semantic MIR type for physical planning.
-fn constant_nyar_type(constant: &crate::contracts::Constant) -> NyarType {
+fn constant_nyar_type(constant: &crate::contracts::Constant) -> SemanticType {
     match constant {
-        crate::contracts::Constant::Int(_) => NyarType::Integer64 { signed: true },
-        crate::contracts::Constant::Float64(_) => NyarType::Float64,
-        crate::contracts::Constant::Bool(_) => NyarType::Boolean,
-        crate::contracts::Constant::Utf8(_) => NyarType::Utf8,
-        crate::contracts::Constant::Utf16(_) => NyarType::Utf16,
-        crate::contracts::Constant::Unit => NyarType::Unit,
+        crate::contracts::Constant::Int(_) => SemanticType::Integer64 { signed: true },
+        crate::contracts::Constant::Float64(_) => SemanticType::Float64,
+        crate::contracts::Constant::Bool(_) => SemanticType::Boolean,
+        crate::contracts::Constant::Utf8(_) => SemanticType::Utf8,
+        crate::contracts::Constant::Utf16(_) => SemanticType::Utf16,
+        crate::contracts::Constant::Unit => SemanticType::Unit,
         // 空值没有独立名义类型；它只能经带 `T?` 类型的 LoadConstant 进入计划。
         crate::contracts::Constant::Null => panic!("bare null constant has no standalone semantic type"),
     }
@@ -402,7 +402,7 @@ fn collect_text_projections(
     function: &ExecutableFunction,
     backend: PhysicalBackend,
 ) -> Result<(BTreeSet<ExecutableValueRef>, BTreeMap<ExecutableValueRef, PhysicalTextProjection>), PhysicalPlanError> {
-    // Utf8/Utf16 identity lives on NyarType. 编码 × 边界 × 载体只在这里冻结，
+    // Utf8/Utf16 identity lives on SemanticType. 编码 × 边界 × 载体只在这里冻结，
     // 物理落点不得各自重新推断。
     let Some(boundary) = text_abi_boundary(backend) else {
         return Ok((BTreeSet::new(), BTreeMap::new()));
@@ -418,41 +418,41 @@ fn collect_text_projections(
 
 fn physical_category(
     _backend: PhysicalBackend,
-    ty: &NyarType,
+    ty: &SemanticType,
     is_result: bool,
     text_authorized: bool,
     function: &ExecutableFunction,
     location: impl Into<String>,
 ) -> Result<PhysicalValueCategory, PhysicalPlanError> {
     let category = match ty {
-        NyarType::Bottom | NyarType::Unit if is_result => PhysicalValueCategory::Void,
-        NyarType::Bottom | NyarType::Unit => {
+        SemanticType::Bottom | SemanticType::Unit if is_result => PhysicalValueCategory::Void,
+        SemanticType::Bottom | SemanticType::Unit => {
             return Err(PhysicalPlanError::new("BPHYS001", function, location, "void/unit cannot occupy a physical value slot"));
         }
-        NyarType::Boolean | NyarType::Character | NyarType::Integer8 { .. } | NyarType::Integer16 { .. } | NyarType::Integer32 { .. } => {
+        SemanticType::Boolean | SemanticType::Character | SemanticType::Integer8 { .. } | SemanticType::Integer16 { .. } | SemanticType::Integer32 { .. } => {
             PhysicalValueCategory::I32
         }
-        NyarType::Integer64 { .. } => PhysicalValueCategory::I64,
-        NyarType::Float32 => PhysicalValueCategory::F32,
-        NyarType::Float64 => PhysicalValueCategory::F64,
-        NyarType::Integer128 { .. } => {
+        SemanticType::Integer64 { .. } => PhysicalValueCategory::I64,
+        SemanticType::Float32 => PhysicalValueCategory::F32,
+        SemanticType::Float64 => PhysicalValueCategory::F64,
+        SemanticType::Integer128 { .. } => {
             return Err(PhysicalPlanError::new("BPHYS001", function, location, "i128 has no declared managed physical category"));
         }
-        // Utf8 vs Utf16 remain distinct NyarType identities (no TextConvert God opcode).
-        NyarType::Utf8 | NyarType::Utf16 => {
+        // Utf8 vs Utf16 remain distinct SemanticType identities (no TextConvert God opcode).
+        SemanticType::Utf8 | SemanticType::Utf16 => {
             let _ = text_authorized;
             PhysicalValueCategory::Reference
         }
-        NyarType::Named(_)
-        | NyarType::Nominal { .. }
-        | NyarType::Apply(_, _)
-        | NyarType::Function(_)
-        | NyarType::Tuple(_)
-        | NyarType::Array(_)
-        | NyarType::FixedArray { .. }
-        | NyarType::TraitObject(_)
-        | NyarType::Nullable(_)
-        | NyarType::Union(_) => PhysicalValueCategory::Reference,
+        SemanticType::Named(_)
+        | SemanticType::Nominal { .. }
+        | SemanticType::Apply(_, _)
+        | SemanticType::Function(_)
+        | SemanticType::Tuple(_)
+        | SemanticType::Array(_)
+        | SemanticType::FixedArray { .. }
+        | SemanticType::TraitObject(_)
+        | SemanticType::Nullable(_)
+        | SemanticType::Union(_) => PhysicalValueCategory::Reference,
     };
     Ok(category)
 }

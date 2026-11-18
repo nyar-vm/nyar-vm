@@ -13,11 +13,11 @@ use nyar_emitter::{
     testing::lower_fragment_to_jvm_managed_surface,
 };
 use nyar_emitter::contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef};
-use nyar_types::{ItemInstanceId, NyarType};
+use nyar_types::{ItemInstanceId, SemanticType};
 
-const LONG: NyarType = NyarType::Integer64 { signed: true };
+const LONG: SemanticType = SemanticType::Integer64 { signed: true };
 
-fn function(symbol: &str, return_type: NyarType, parameters: Vec<NyarType>) -> ExecutableFunction {
+fn function(symbol: &str, return_type: SemanticType, parameters: Vec<SemanticType>) -> ExecutableFunction {
     let value_types = parameters.iter().enumerate().map(|(index, ty)| (ValueRef(index as u32), ty.clone())).collect();
     let block_parameters = (0..parameters.len() as u32).map(ValueRef).collect();
     ExecutableFunction {
@@ -145,7 +145,7 @@ fn export_without_lowered_method_is_rejected_structurally() {
 fn unsigned_logical_entry_is_rejected_instead_of_signed_remap() {
     // `u64` 在物理上可以合法承载于 JVM `Long`，但 launcher 只有 `parseLong`
     // 有符号解析器；不得因此把逻辑 ABI 类型改写成 `i64`。
-    let unsigned = NyarType::Integer64 { signed: false };
+    let unsigned = SemanticType::Integer64 { signed: false };
     let mut fixture = function("managed.abi.unsigned", unsigned.clone(), vec![unsigned.clone()]);
     fixture.value_types.insert(ValueRef(1), unsigned.clone());
     fixture.blocks[0].instructions.push(instruction(InstructionKind::Copy { source: Operand::Value(ValueRef(0)) }, vec![ValueRef(1)]));
@@ -247,7 +247,7 @@ fn library_without_entry_freezes_exports_without_application_launcher() {
 
 #[test]
 fn unsupported_return_type_does_not_fabricate_entry() {
-    let fixture = function("managed.abi.aggregate", NyarType::Tuple(vec![LONG]), Vec::new());
+    let fixture = function("managed.abi.aggregate", SemanticType::Tuple(vec![LONG]), Vec::new());
 
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main.clone(), fixture)]));

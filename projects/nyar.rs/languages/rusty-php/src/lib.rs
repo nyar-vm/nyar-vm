@@ -6,7 +6,7 @@
 pub mod codegen;
 
 use chomsky_uir::ConstraintAnalysis;
-use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
+use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
 use oak_core::{source::SourceText, Builder};
 use oak_php::{PhpBuilder, PhpLanguage, PhpRoot};
 
@@ -31,13 +31,13 @@ impl RustyPhpFrontend {
 impl NyarFrontend<ConstraintAnalysis, PhpRoot> for RustyPhpFrontend {
     type Language = PhpLanguage;
 
-    fn parse(&self, source: &str) -> Result<PhpRoot, NyarError> {
+    fn parse(&self, source: &str) -> Result<PhpRoot, TypesError> {
         let builder = PhpBuilder::new(&self.language);
         let source_text = SourceText::new(source);
         let mut session = oak_core::parser::ParseSession::<PhpLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
-        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output.result.map_err(|e| TypesError::Parse(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, _ast: &PhpRoot, _ctx: &mut NyarContext<'_, V, ConstraintAnalysis>) -> Id {

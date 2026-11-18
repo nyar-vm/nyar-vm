@@ -2,7 +2,7 @@
 
 use chomsky_types::Loc;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, IntentBuilder};
-use nyar_types::NyarError;
+use nyar_types::TypesError;
 use oak_csharp::ast::*;
 
 /// CSharp 翻译器上下文
@@ -89,12 +89,12 @@ impl NyarTranslator {
         &self,
         ast: &CSharpRoot,
         egraph: &mut EGraph<IKun, ConstraintAnalysis>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let mut ctx = TranslatorContext::new(egraph);
         self.translate_root(ast, &mut ctx)
     }
 
-    pub fn translate_to_tree(&self, ast: &CSharpRoot) -> Result<IKunTree, NyarError> {
+    pub fn translate_to_tree(&self, ast: &CSharpRoot) -> Result<IKunTree, TypesError> {
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
         let root_id = self.translate_to_graph(ast, &mut egraph)?;
 
@@ -107,7 +107,7 @@ impl NyarTranslator {
         &self,
         root: &CSharpRoot,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let mut items = Vec::new();
         for item in &root.items {
             if let Some(id) = self.translate_item(item, ctx)? {
@@ -121,7 +121,7 @@ impl NyarTranslator {
         &self,
         item: &Item,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<Option<chomsky_uir::egraph::Id>, NyarError> {
+    ) -> Result<Option<chomsky_uir::egraph::Id>, TypesError> {
         match item {
             Item::Namespace(ns) => Ok(Some(self.translate_namespace(ns, ctx)?)),
             Item::Using(using) => {
@@ -151,7 +151,7 @@ impl NyarTranslator {
         &self,
         ns: &NamespaceDeclaration,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let mut items = Vec::new();
         // 处理特性的翻译（可选，取决于 Nyar 是否支持模块特性）
         for _attr in &ns.attributes {
@@ -169,7 +169,7 @@ impl NyarTranslator {
         &self,
         class: &ClassDeclaration,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let mut members = Vec::new();
 
         // 处理特性的翻译
@@ -234,7 +234,7 @@ impl NyarTranslator {
         &self,
         attr: &Attribute,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let loc = Loc::unknown();
         let mut args = Vec::new();
         for arg in &attr.arguments {
@@ -248,7 +248,7 @@ impl NyarTranslator {
         &self,
         tp: &TypeParameter,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let loc = Loc::unknown();
         Ok(ctx.builder.symbol(&tp.name, loc))
     }
@@ -257,7 +257,7 @@ impl NyarTranslator {
         &self,
         delegate: &DelegateDeclaration,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let loc = Loc::unknown();
         let mut params = Vec::new();
         for p in &delegate.parameters {
@@ -272,7 +272,7 @@ impl NyarTranslator {
         &self,
         interface: &InterfaceDeclaration,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let mut members = Vec::new();
         for member in &interface.members {
             if let Member::Method(method) = member {
@@ -286,7 +286,7 @@ impl NyarTranslator {
         &self,
         struct_decl: &StructDeclaration,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let mut members = Vec::new();
         for member in &struct_decl.members {
             match member {
@@ -303,7 +303,7 @@ impl NyarTranslator {
         &self,
         record_decl: &RecordDeclaration,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let mut members = Vec::new();
         for member in &record_decl.members {
             match member {
@@ -321,7 +321,7 @@ impl NyarTranslator {
         &self,
         enum_decl: &EnumDeclaration,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let mut variants = Vec::new();
         let loc = Loc::unknown();
         for variant in &enum_decl.members {
@@ -335,7 +335,7 @@ impl NyarTranslator {
         &self,
         field: &FieldDeclaration,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let loc = Loc::unknown();
         let mut field_id = ctx.builder.symbol(&field.name, loc);
 
@@ -359,7 +359,7 @@ impl NyarTranslator {
         &self,
         prop: &PropertyDeclaration,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let loc = Loc::unknown();
         let mut accessors = Vec::new();
         if let Some(get) = &prop.get_accessor {
@@ -379,7 +379,7 @@ impl NyarTranslator {
         &self,
         indexer: &IndexerDeclaration,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let loc = Loc::unknown();
         let mut accessors = Vec::new();
         let mut params = Vec::new();
@@ -406,7 +406,7 @@ impl NyarTranslator {
         &self,
         event: &EventDeclaration,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let loc = Loc::unknown();
         let name_id = ctx.builder.symbol(&event.name, loc);
         Ok(ctx.builder.export(&event.name, name_id, loc))
@@ -416,7 +416,7 @@ impl NyarTranslator {
         &self,
         method: &MethodDeclaration,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let loc = Loc::unknown();
         let mut stmts = Vec::new();
 
@@ -463,7 +463,7 @@ impl NyarTranslator {
         &self,
         statements: &[Statement],
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let mut stmts = Vec::new();
         for stmt in statements {
             stmts.push(self.translate_stmt(stmt, ctx)?);
@@ -475,7 +475,7 @@ impl NyarTranslator {
         &self,
         stmt: &Statement,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let loc = Loc::unknown();
         match stmt {
             Statement::Expression(expr) => self.translate_expr(expr, ctx),
@@ -531,7 +531,7 @@ impl NyarTranslator {
         &self,
         expr: &Expression,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let loc = Loc::unknown();
         match expr {
             Expression::Literal(lit) => match lit {
@@ -608,7 +608,7 @@ impl NyarTranslator {
         &self,
         query: &QueryExpression,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let loc = Loc::unknown();
         // LINQ 翻译通常将其转换为方法链调用
         // 例如: from x in source where x > 0 select x

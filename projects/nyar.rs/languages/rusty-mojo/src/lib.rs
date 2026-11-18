@@ -8,7 +8,7 @@ use crate::codegen::MojoCodegen;
 pub mod codegen;
 
 use chomsky_uir::ConstraintAnalysis;
-use nyar_types::{Id, Loc, NyarContext, NyarError, NyarFrontend, Vfs};
+use nyar_types::{Id, Loc, NyarContext, TypesError, NyarFrontend, Vfs};
 use oak_mojo::ast::MojoStatement;
 pub use oak_mojo::MojoLanguage;
 
@@ -33,7 +33,7 @@ impl RustyMojoFrontend {
 impl NyarFrontend<ConstraintAnalysis, Vec<MojoStatement>> for RustyMojoFrontend {
     type Language = MojoLanguage;
 
-    fn parse(&self, source: &str) -> Result<Vec<MojoStatement>, NyarError> {
+    fn parse(&self, source: &str) -> Result<Vec<MojoStatement>, TypesError> {
         use oak_core::{parser::Parser, source::SourceText};
         use oak_mojo::{builder::MojoBuilder, parser::MojoParser};
 
@@ -41,11 +41,11 @@ impl NyarFrontend<ConstraintAnalysis, Vec<MojoStatement>> for RustyMojoFrontend 
         let mut session = oak_core::parser::ParseSession::<MojoLanguage>::default();
         let output = parser.parse(source, &[], &mut session);
 
-        let green = output.result.map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
+        let green = output.result.map_err(|e| TypesError::Compile(format!("{:?}", e)))?;
 
         let source_text = SourceText::new(source.to_string());
         let builder = MojoBuilder::new(&source_text);
-        builder.build_root(green).map_err(|e| NyarError::Compile(format!("{:?}", e)))
+        builder.build_root(green).map_err(|e| TypesError::Compile(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, ast: &Vec<MojoStatement>, ctx: &mut NyarContext<'_, V, ConstraintAnalysis>) -> Id {

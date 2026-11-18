@@ -1,4 +1,4 @@
-//! Wasm physical representation of NyarType / AggregateLayout.
+//! Wasm physical representation of SemanticType / AggregateLayout.
 //!
 //! Owns unique storage and value-type rules for the Wasm GC backend:
 //! Semantic MIR `StorageKind`, ABI param/return bytes, and GC field-type bytes.
@@ -7,7 +7,7 @@
 //!
 //! Zero-logic extract from the former monolithic lowerer (B4 seam).
 
-use super::{ExecutableLoweringContext, LayoutId, MirFunction, MirStorageKind, NyarType, StorageKind, WASM_GC_ANYREF};
+use super::{ExecutableLoweringContext, LayoutId, MirFunction, MirStorageKind, SemanticType, StorageKind, WASM_GC_ANYREF};
 use crate::lowering::backends::wasm::gc::{VALTYPE_F32, wasm_gc_field_type_byte, wasm_js_glue_value_carrier_valtype};
 use acorn_wasm::{VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64};
 use std::collections::BTreeMap;
@@ -16,13 +16,13 @@ use std::collections::BTreeMap;
 pub(in crate::lowering::backends::wasm) const WASM_CLOSURE_CODE_FIELD: u32 = 0;
 pub(in crate::lowering::backends::wasm) const WASM_CLOSURE_ENV_FIELD: u32 = 1;
 
-pub(super) fn is_js_glue_host_string_type(ty: &NyarType) -> bool {
+pub(super) fn is_js_glue_host_string_type(ty: &SemanticType) -> bool {
     // Only the explicit language encoding reaches the JS glue ABI. Nominal
     // names are not evidence of text semantics.
-    matches!(ty, NyarType::Utf8)
+    matches!(ty, SemanticType::Utf8)
 }
 
-pub(super) fn mir_storage_for_type(ctx: &ExecutableLoweringContext, ty: &NyarType, js_glue_utf8_as_anyref: bool) -> MirStorageKind {
+pub(super) fn mir_storage_for_type(ctx: &ExecutableLoweringContext, ty: &SemanticType, js_glue_utf8_as_anyref: bool) -> MirStorageKind {
     let _ = js_glue_utf8_as_anyref;
     if is_js_glue_host_string_type(ty) {
         return StorageKind::Value;
@@ -32,7 +32,7 @@ pub(super) fn mir_storage_for_type(ctx: &ExecutableLoweringContext, ty: &NyarTyp
     // still reports a value-oriented payload representation; otherwise a
     // variant return can later be ref.cast from an i32 slot and trap with
     // `illegal cast`.
-    if matches!(ty, NyarType::Union(_)) {
+    if matches!(ty, SemanticType::Union(_)) {
         return StorageKind::Reference;
     }
     ctx.storage_for_type(ty)
@@ -64,7 +64,7 @@ pub(super) fn type_uses_gc_struct_param(
 
 pub(super) fn wasm_param_value_type_for(
     ctx: &ExecutableLoweringContext,
-    ty: &NyarType,
+    ty: &SemanticType,
     layout_id: Option<LayoutId>,
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     js_glue_utf8_as_anyref: bool,
@@ -78,7 +78,7 @@ pub(super) fn wasm_param_value_type_for(
     // gc struct 的名义实例时，仍必须按注册表返回 anyref。闭包环境 layout 由
     // `LoadFunctionRef` 的 environment 操作数强制登记（见 `type_registry`），
     // 否则跨间接调用的环境槽会被降成 i32，与构造点分叉。
-    if let NyarType::Nominal { layout, .. } = ty {
+    if let SemanticType::Nominal { layout, .. } = ty {
         if gc_struct_type_indices.contains_key(layout) {
             return Ok(WASM_GC_ANYREF);
         }
@@ -96,8 +96,8 @@ pub(super) fn wasm_param_value_type_for(
 /// 边界准入已由 `validate_text_encoding_projection` 按
 /// `declared_text_projection` 判定（`WasiComponent` 在到达这里前被拒绝）。
 /// GC 聚合字段槽仍走 `wasm_gc_field_type_byte`，继续拒绝 `utf16`。
-pub(super) fn wasm_js_glue_abi_value_type(ctx: &ExecutableLoweringContext, ty: &NyarType, js_glue_utf8_as_anyref: bool) -> crate::Result<u8> {
-    if matches!(ty, NyarType::Utf16) {
+pub(super) fn wasm_js_glue_abi_value_type(ctx: &ExecutableLoweringContext, ty: &SemanticType, js_glue_utf8_as_anyref: bool) -> crate::Result<u8> {
+    if matches!(ty, SemanticType::Utf16) {
         return wasm_js_glue_value_carrier_valtype(ty)
             .ok_or_else(|| crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI.to_string());
     }
@@ -127,7 +127,7 @@ pub(super) fn wasm_param_types(
         .collect()
 }
 
-pub(super) fn wasm_gc_field_type_byte_for_glue(ty: &NyarType, js_glue_utf8_as_anyref: bool) -> crate::Result<u8> {
+pub(super) fn wasm_gc_field_type_byte_for_glue(ty: &SemanticType, js_glue_utf8_as_anyref: bool) -> crate::Result<u8> {
     // Node/WASI 宿主字符串默认是 i32 句柄（`const_utf8` / `utf8_*`）；
     // 仅当显式打开 js_glue_utf8_as_anyref 时才把 utf8/utf16 放进 anyref 字段/数组元。
     if is_js_glue_host_string_type(ty) {
@@ -139,13 +139,13 @@ pub(super) fn wasm_gc_field_type_byte_for_glue(ty: &NyarType, js_glue_utf8_as_an
 /// 函数值签名的 ABI 载体：函数值跨 `call_indirect` 时只认托管形态。
 ///
 /// 函数值自身是闭包对象（anyref），其 code 槽指向的函数体按托管约定接收
-/// `utf8`，因此 `NyarType::Function` 的可见形参/返回值必须与函数体同一张
+/// `utf8`，因此 `SemanticType::Function` 的可见形参/返回值必须与函数体同一张
 /// 载体表；宿主 i32 句柄只允许出现在真正的导入/导出边界，由边界物化点
 /// 转换。若此处仍按 `None` layout 推导成 i32，`is_less_or_equal` 等间接
 /// 调用点会与闭包体的 anyref 形参分叉。
 pub(super) fn wasm_function_abi_value_type_for(
     ctx: &ExecutableLoweringContext,
-    ty: &NyarType,
+    ty: &SemanticType,
     gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
     js_glue_utf8_as_anyref: bool,
 ) -> crate::Result<u8> {
@@ -157,8 +157,8 @@ pub(super) fn wasm_function_abi_value_type_for(
 
 /// wasm/wasi 强制 GC：heap `[T]` / fixed array 在 layout 里常为 Value，
 /// 但 lowering 必须用 anyref + `array.*`，不能分配 i32 槽后 `ref.cast`。
-pub(super) fn type_is_wasm_gc_heap_reference(ty: &NyarType) -> bool {
-    matches!(ty, NyarType::Array(_) | NyarType::FixedArray { .. })
+pub(super) fn type_is_wasm_gc_heap_reference(ty: &SemanticType) -> bool {
+    matches!(ty, SemanticType::Array(_) | SemanticType::FixedArray { .. })
 }
 
 /// 该类型在 wasm 线性内存里是否是**带字段的内联聚合**。
@@ -167,16 +167,16 @@ pub(super) fn type_is_wasm_gc_heap_reference(ty: &NyarType) -> bool {
 /// 赋值/字段写入方式。零字段值布局（`[primitive(...)] structure usize { }`、
 /// 空结构）与所有标量载体（整数/浮点/bool/unit/字符串句柄）的槽直接持有载体
 /// 本身；对这些形状使用 `memory.copy` 会把载体数值当地址解引用，产生静默错误结果。
-pub(super) fn type_is_inline_aggregate(ctx: &ExecutableLoweringContext, ty: &NyarType) -> bool {
+pub(super) fn type_is_inline_aggregate(ctx: &ExecutableLoweringContext, ty: &SemanticType) -> bool {
     match ty {
-        NyarType::Tuple(_) | NyarType::FixedArray { .. } => true,
-        NyarType::Nominal { layout, .. } => ctx.layout_by_id(*layout).is_some_and(|layout| !layout.fields.is_empty()),
+        SemanticType::Tuple(_) | SemanticType::FixedArray { .. } => true,
+        SemanticType::Nominal { layout, .. } => ctx.layout_by_id(*layout).is_some_and(|layout| !layout.fields.is_empty()),
         _ => false,
     }
 }
 
 /// Maps a MIR parameter type to its WASM value-type byte.
-pub(super) fn wasm_param_value_type(ctx: &ExecutableLoweringContext, ty: &NyarType, js_glue_utf8_as_anyref: bool) -> crate::Result<u8> {
+pub(super) fn wasm_param_value_type(ctx: &ExecutableLoweringContext, ty: &SemanticType, js_glue_utf8_as_anyref: bool) -> crate::Result<u8> {
     let _ = js_glue_utf8_as_anyref;
     if let Some(reason) = crate::lowering::features::physical_contract::unresolved_text_abi_reason(ty) {
         // 载体事实只有一个来源：`physical_contract::declared_text_projection`。
@@ -192,13 +192,13 @@ pub(super) fn wasm_param_value_type(ctx: &ExecutableLoweringContext, ty: &NyarTy
     // Aggregates carrying references are represented by wasm-gc structs.
     // Keep their ABI as anyref even when stale nominal layout metadata says
     // Value; otherwise callers ref.cast an i32 return and trap.
-    if matches!(ty, NyarType::Union(_)) {
+    if matches!(ty, SemanticType::Union(_)) {
         return Ok(WASM_GC_ANYREF);
     }
     // 函数值 = 闭包对象（gc struct `[code: i32, env: anyref]`），见合同 §5.3。
     // 无捕获路径同样使用该载体（env 为 `ref.null anyref`），因此 SSA 槽一律 anyref；
     // 不再把 funcref table 槽位下标当作函数值本身。
-    if matches!(ty, NyarType::Function(_)) {
+    if matches!(ty, SemanticType::Function(_)) {
         return Ok(WASM_GC_ANYREF);
     }
     // 引用类型参数用 anyref (VALTYPE_ANYREF) 传递;值类型参数仍用 i32 地址。
@@ -208,7 +208,7 @@ pub(super) fn wasm_param_value_type(ctx: &ExecutableLoweringContext, ty: &NyarTy
     Ok(wasm_scalar_value_type(ty)?)
 }
 
-/// 标量 `NyarType` 的 wasm 载体映射。
+/// 标量 `SemanticType` 的 wasm 载体映射。
 ///
 /// 载体按语义宽度一一对应：`f32 → VALTYPE_F32`（`0x7D`，真实 4 字节）、
 /// `f64 → VALTYPE_F64`。`f32` 不得落到 `VALTYPE_F64` 或 `VALTYPE_I32`：
@@ -217,11 +217,11 @@ pub(super) fn wasm_param_value_type(ctx: &ExecutableLoweringContext, ty: &NyarTy
 ///
 /// 转换只允许显式指令：`f64.promote_f32` / `f32.demote_f64`（RNE）。本表不做
 /// 任何隐式拓宽或收窄，调用点也不得自行补转换。
-fn wasm_scalar_value_type(ty: &NyarType) -> crate::Result<u8> {
+fn wasm_scalar_value_type(ty: &SemanticType) -> crate::Result<u8> {
     match ty {
-        NyarType::Float32 => Ok(VALTYPE_F32),
-        NyarType::Float64 => Ok(VALTYPE_F64),
-        NyarType::Integer64 { .. } | NyarType::Integer128 { .. } => Ok(VALTYPE_I64),
+        SemanticType::Float32 => Ok(VALTYPE_F32),
+        SemanticType::Float64 => Ok(VALTYPE_F64),
+        SemanticType::Integer64 { .. } | SemanticType::Integer128 { .. } => Ok(VALTYPE_I64),
         _ => Ok(VALTYPE_I32),
     }
 }
@@ -233,14 +233,14 @@ mod tests {
     /// 回归：`f32` 必须有独立的 32 位载体，不得落到 64 位或整数假载体。
     #[test]
     fn f32_has_independent_wasm_carrier() {
-        assert_eq!(wasm_scalar_value_type(&NyarType::Float32).expect("`f32` 必须有载体"), VALTYPE_F32);
-        assert_eq!(wasm_scalar_value_type(&NyarType::Float64).expect("`f64` 载体未变"), VALTYPE_F64);
+        assert_eq!(wasm_scalar_value_type(&SemanticType::Float32).expect("`f32` 必须有载体"), VALTYPE_F32);
+        assert_eq!(wasm_scalar_value_type(&SemanticType::Float64).expect("`f64` 载体未变"), VALTYPE_F64);
         assert_ne!(
-            wasm_scalar_value_type(&NyarType::Float32).expect("`f32` 载体"),
-            wasm_scalar_value_type(&NyarType::Float64).expect("`f64` 载体"),
+            wasm_scalar_value_type(&SemanticType::Float32).expect("`f32` 载体"),
+            wasm_scalar_value_type(&SemanticType::Float64).expect("`f64` 载体"),
             "`f32` 不得复用 `f64` 槽"
         );
-        assert_ne!(wasm_scalar_value_type(&NyarType::Float32).expect("`f32` 载体"), VALTYPE_I32, "`f32` 不得借 i32 假载体");
+        assert_ne!(wasm_scalar_value_type(&SemanticType::Float32).expect("`f32` 载体"), VALTYPE_I32, "`f32` 不得借 i32 假载体");
     }
 }
 
@@ -252,7 +252,7 @@ pub(super) fn wasm_return_value_type(
     js_glue_utf8_as_anyref: bool,
 ) -> crate::Result<Option<u8>> {
     match &mir_fn.return_type {
-        NyarType::Unit | NyarType::Bottom => Ok(None),
+        SemanticType::Unit | SemanticType::Bottom => Ok(None),
         other => Ok(Some(wasm_param_value_type_for(ctx, other, mir_fn.return_layout, gc_struct_type_indices, js_glue_utf8_as_anyref)?)),
     }
 }

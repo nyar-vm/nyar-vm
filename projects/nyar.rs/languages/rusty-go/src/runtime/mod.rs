@@ -1,7 +1,7 @@
 use chomsky_cost::DefaultCostModel;
 use chomsky_extract::IKunExtractor;
 use chomsky_uir::{EGraph, IKun, Id};
-use nyar_types::NyarError;
+use nyar_types::TypesError;
 use odin_vm::vm::{traits::RuntimeProvider, NyarVM};
 
 #[derive(Debug)]
@@ -14,7 +14,7 @@ impl RustyGoRuntime {
         Self { vm: NyarVM::new() }
     }
 
-    pub fn execute(&mut self, intent_graph: (EGraph<IKun, ()>, Id)) -> Result<(), NyarError> {
+    pub fn execute(&mut self, intent_graph: (EGraph<IKun, ()>, Id)) -> Result<(), TypesError> {
         let (egraph, root_id) = intent_graph;
 
         // 1. Extract the best tree using the default cost model
@@ -58,7 +58,7 @@ impl RustyGoRuntime {
             }
         }
         else {
-            Err(NyarError::RuntimeError("No entry point found in module".to_string()))
+            Err(TypesError::RuntimeError("No entry point found in module".to_string()))
         }
     }
 }

@@ -4,7 +4,7 @@ use chomsky_cost::DefaultCostModel;
 use chomsky_extract::IKunExtractor;
 use chomsky_types::Loc;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, Id, IntentBuilder};
-use nyar_types::NyarError;
+use nyar_types::TypesError;
 
 pub struct NyarTranslator;
 
@@ -13,7 +13,7 @@ impl NyarTranslator {
         Self
     }
 
-    pub fn translate_to_tree(&self, _root: &()) -> Result<IKunTree, NyarError> {
+    pub fn translate_to_tree(&self, _root: &()) -> Result<IKunTree, TypesError> {
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
         let mut builder = IntentBuilder::new(&mut egraph);
         let root_id = self.translate_to_id(_root, &mut builder)?;
@@ -21,7 +21,7 @@ impl NyarTranslator {
         Ok(extractor.extract(root_id))
     }
 
-    pub fn translate_to_id(&self, _root: &(), builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, NyarError> {
+    pub fn translate_to_id(&self, _root: &(), builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, TypesError> {
         let root_id = builder.seq(vec![], Loc::default());
         Ok(root_id)
     }

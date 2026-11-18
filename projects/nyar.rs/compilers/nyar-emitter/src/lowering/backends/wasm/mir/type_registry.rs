@@ -8,7 +8,7 @@
 //! Zero-logic extract from the former monolithic lowerer (B4 seam).
 
 use super::{
-    ExecutableLoweringContext, LayoutId, MirInstructionKind, MirOperand, NominalInstanceId, NyarType, StorageKind,
+    ExecutableLoweringContext, LayoutId, MirInstructionKind, MirOperand, NominalInstanceId, SemanticType, StorageKind,
     representation::{is_js_glue_host_string_type, mir_storage_for_type, wasm_gc_field_type_byte_for_glue},
 };
 use crate::lowering::backends::wasm::gc::{wasm_gc_array_type, wasm_gc_struct_type};
@@ -38,7 +38,7 @@ pub(super) fn collect_mir_reference_layout_ids(ctx: &ExecutableLoweringContext) 
                     MirInstructionKind::StructNew { nominal, .. } => {
                         if let Some(layout) = ctx.layout_by_nominal(*nominal) {
                             // 注册条件必须与槽规划同源：槽规划按 `ctx.storage_for_type`
-                            // 决定 anyref，而泛型实例（`NyarType::Apply`，如
+                            // 决定 anyref，而泛型实例（`SemanticType::Apply`，如
                             // `EnumerateItem<K>`）在类型层是 Reference、在声明级
                             // `layout.storage` 却可能是 Value。只看后者会让槽规划出
                             // anyref、注册表却缺该 layout，构造点随即报「未注册 gc
@@ -172,12 +172,12 @@ pub(super) fn register_gc_array_types(
             continue;
         }
         match ty {
-            NyarType::Array(element) | NyarType::FixedArray { element, .. } => {
+            SemanticType::Array(element) | SemanticType::FixedArray { element, .. } => {
                 elements.insert(element.as_ref().clone());
                 pending.push(*element);
             }
-            NyarType::Nullable(inner) => pending.push(*inner),
-            NyarType::Tuple(fields) | NyarType::Union(fields) => pending.extend(fields),
+            SemanticType::Nullable(inner) => pending.push(*inner),
+            SemanticType::Tuple(fields) | SemanticType::Union(fields) => pending.extend(fields),
             _ => {}
         }
     }
@@ -231,7 +231,7 @@ pub(super) fn register_gc_sum_types(ctx: &ExecutableLoweringContext, type_indice
         else {
             continue;
         };
-        let mut pending: Vec<NyarType> = view.function.param_types.clone();
+        let mut pending: Vec<SemanticType> = view.function.param_types.clone();
         pending.push(view.function.return_type.clone());
         for ty in pending {
             let structure = crate::abi_structure::abi_structure_for_type_with_layouts(
@@ -278,6 +278,6 @@ fn collect_boundary_sums(structure: &crate::abi_structure::AbiStructure, nominal
 }
 
 /// 为 heap array element_type 生成稳定字符串键,用于 `gc_array_type_indices` 查找。
-pub(super) fn wasm_array_element_type_key(element_type: &NyarType) -> String {
+pub(super) fn wasm_array_element_type_key(element_type: &SemanticType) -> String {
     format!("{:?}", element_type)
 }

@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use nyar_types::{AggregateLayoutPlan, LayoutId, LayoutKey, NyarType, StorageKind};
+use nyar_types::{AggregateLayoutPlan, LayoutId, LayoutKey, SemanticType, StorageKind};
 
 /// 目标数据布局策略。
 ///
@@ -40,7 +40,7 @@ pub(crate) struct ResolvedFieldLayout {
     /// 字段身份（来自语义布局）。
     pub name: String,
     /// 字段类型（来自语义布局）。
-    pub ty: NyarType,
+    pub ty: SemanticType,
     /// 相对对象 body 起点的字节偏移。
     pub offset: u32,
     /// 字段在对象 body 中占用的字节数。
@@ -167,24 +167,24 @@ fn layout_extent(
 }
 
 fn type_extent(
-    ty: &NyarType,
+    ty: &SemanticType,
     semantic: &AggregateLayoutPlan,
     policy: LayoutPolicy,
     memo: &mut BTreeMap<LayoutId, (u32, u32)>,
     visiting: &mut BTreeSet<LayoutId>,
 ) -> Result<(u32, u32), String> {
     match ty {
-        NyarType::Nominal { layout, spelling, .. } => {
+        SemanticType::Nominal { layout, spelling, .. } => {
             layout_extent(*layout, semantic, policy, memo, visiting).map_err(|reason| format!("名义字段 `{spelling}`: {reason}"))
         }
-        NyarType::Tuple(types) => {
+        SemanticType::Tuple(types) => {
             let key = LayoutKey::Tuple(types.clone());
             if let Some(layout) = semantic.synthetic_layouts.get(&key).copied() {
                 return layout_extent(layout, semantic, policy, memo, visiting);
             }
             inline_synthetic_extent(types, policy, |element| type_extent(element, semantic, policy, memo, visiting))
         }
-        NyarType::FixedArray { element, length } => {
+        SemanticType::FixedArray { element, length } => {
             let key = LayoutKey::FixedArray { element: Box::new((**element).clone()), length: *length };
             if let Some(layout) = semantic.synthetic_layouts.get(&key).copied() {
                 return layout_extent(layout, semantic, policy, memo, visiting);
@@ -193,28 +193,28 @@ fn type_extent(
                 type_extent(element, semantic, policy, memo, visiting)
             })
         }
-        NyarType::Boolean
-        | NyarType::Character
-        | NyarType::Integer8 { .. }
-        | NyarType::Integer16 { .. }
-        | NyarType::Integer32 { .. }
-        | NyarType::Float32
-        | NyarType::Bottom
-        | NyarType::Unit => Ok((4, 4)),
-        NyarType::Integer64 { .. } | NyarType::Float64 => Ok((8, 8)),
-        NyarType::Utf8 | NyarType::Utf16 => Ok(policy.text_extent),
-        NyarType::Array(_) | NyarType::Nullable(_) | NyarType::Named(_) | NyarType::Apply(_, _) | NyarType::Function(_) => {
+        SemanticType::Boolean
+        | SemanticType::Character
+        | SemanticType::Integer8 { .. }
+        | SemanticType::Integer16 { .. }
+        | SemanticType::Integer32 { .. }
+        | SemanticType::Float32
+        | SemanticType::Bottom
+        | SemanticType::Unit => Ok((4, 4)),
+        SemanticType::Integer64 { .. } | SemanticType::Float64 => Ok((8, 8)),
+        SemanticType::Utf8 | SemanticType::Utf16 => Ok(policy.text_extent),
+        SemanticType::Array(_) | SemanticType::Nullable(_) | SemanticType::Named(_) | SemanticType::Apply(_, _) | SemanticType::Function(_) => {
             Ok(policy.reference_extent)
         }
-        NyarType::Union(_) | NyarType::TraitObject(_) => Ok(policy.reference_extent),
-        NyarType::Integer128 { .. } => Err("`i128/u128` 没有目标字段宽度，目标必须显式拆分".to_string()),
+        SemanticType::Union(_) | SemanticType::TraitObject(_) => Ok(policy.reference_extent),
+        SemanticType::Integer128 { .. } => Err("`i128/u128` 没有目标字段宽度，目标必须显式拆分".to_string()),
     }
 }
 
 fn inline_synthetic_extent(
-    element_types: &[NyarType],
+    element_types: &[SemanticType],
     _policy: LayoutPolicy,
-    mut extent_for: impl FnMut(&NyarType) -> Result<(u32, u32), String>,
+    mut extent_for: impl FnMut(&SemanticType) -> Result<(u32, u32), String>,
 ) -> Result<(u32, u32), String> {
     let mut offset = 0u32;
     let mut max_align = 1u32;
@@ -237,7 +237,7 @@ mod tests {
     use super::*;
     use nyar_types::{AggregateLayout, FieldLayout};
 
-    fn semantic_layout(id: LayoutId, storage: StorageKind, fields: Vec<(&str, NyarType)>) -> AggregateLayout {
+    fn semantic_layout(id: LayoutId, storage: StorageKind, fields: Vec<(&str, SemanticType)>) -> AggregateLayout {
         AggregateLayout {
             id,
             name: format!("L{id}"),
@@ -254,13 +254,13 @@ mod tests {
 
     #[test]
     fn semantic_layout_becomes_target_physical_layout() {
-        let nested = semantic_layout(2, StorageKind::Value, vec![("a", NyarType::Integer64 { signed: true })]);
+        let nested = semantic_layout(2, StorageKind::Value, vec![("a", SemanticType::Integer64 { signed: true })]);
         let outer = semantic_layout(
             1,
             StorageKind::Value,
             vec![
-                ("x", NyarType::Integer32 { signed: true }),
-                ("nested", NyarType::Nominal { layout: 2, spelling: nyar_types::Identifier::new("Nested") }),
+                ("x", SemanticType::Integer32 { signed: true }),
+                ("nested", SemanticType::Nominal { layout: 2, spelling: nyar_types::Identifier::new("Nested") }),
             ],
         );
         let resolved = resolve_physical_layouts(&plan(vec![nested, outer]), LayoutPolicy::WASM32).expect("physical layout");
@@ -279,8 +279,8 @@ mod tests {
             1,
             StorageKind::Reference,
             vec![
-                ("next", NyarType::Nominal { layout: 1, spelling: nyar_types::Identifier::new("Node") }),
-                ("value", NyarType::Integer64 { signed: true }),
+                ("next", SemanticType::Nominal { layout: 1, spelling: nyar_types::Identifier::new("Node") }),
+                ("value", SemanticType::Integer64 { signed: true }),
             ],
         );
         let resolved = resolve_physical_layouts(&plan(vec![node]), LayoutPolicy::WASM32).expect("自引用引用布局必须可解析");
@@ -291,7 +291,7 @@ mod tests {
 
     #[test]
     fn integer128_requires_explicit_target_split() {
-        let layout = semantic_layout(1, StorageKind::Value, vec![("wide", NyarType::Integer128 { signed: true })]);
+        let layout = semantic_layout(1, StorageKind::Value, vec![("wide", SemanticType::Integer128 { signed: true })]);
         assert!(resolve_physical_layouts(&plan(vec![layout]), LayoutPolicy::WASM32).is_err());
     }
 

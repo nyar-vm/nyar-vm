@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use nyar::{HostProjectionBoundary, NyarType, QualifiedName};
+use nyar::{HostProjectionBoundary, SemanticType, QualifiedName};
 use nyar_emitter::{
     FragmentSubmission, TargetExecutionPlan,
     contracts::{Block, BlockRef, ExecutableFunction, Terminator},
@@ -8,16 +8,16 @@ use nyar_emitter::{
 };
 
 fn utf16_submission() -> FragmentSubmission {
-    text_abi_submission(NyarType::Utf16)
+    text_abi_submission(SemanticType::Utf16)
 }
 
-fn text_abi_submission(param_type: NyarType) -> FragmentSubmission {
+fn text_abi_submission(param_type: SemanticType) -> FragmentSubmission {
     let operation = QualifiedName::new(vec![nyar::Identifier::new("entry")]);
     let function = ExecutableFunction {
         return_layout: None,
         value_layouts: BTreeMap::new(),
         symbol: "entry".to_string(),
-        return_type: NyarType::Unit,
+        return_type: SemanticType::Unit,
         param_types: vec![param_type],
         value_types: BTreeMap::new(),
         entry: BlockRef(0),
@@ -51,7 +51,7 @@ fn admits_declared_utf16_abi_sites_on_wasm_js_glue() {
 
 #[test]
 fn keeps_nested_utf16_denied_without_a_declared_abi_position() {
-    let submission = text_abi_submission(NyarType::Tuple(vec![NyarType::Utf16]));
+    let submission = text_abi_submission(SemanticType::Tuple(vec![SemanticType::Utf16]));
     let error = validate_text_encoding_projection(&submission, HostProjectionBoundary::WasmJsGlue)
         .expect_err("聚合内的 `utf16` 没有独立的 ABI 位置");
     let message = error.to_string();

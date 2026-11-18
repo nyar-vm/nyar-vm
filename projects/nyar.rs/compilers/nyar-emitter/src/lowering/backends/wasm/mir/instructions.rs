@@ -52,7 +52,7 @@ impl<'a> WasmMirLowerer<'a> {
                 }
             }
             MirInstructionKind::Cast { source, ty } => {
-                // 语言层 `as` 是表示转换：转换语义由计划冻结的两端 `NyarType` 决定，
+                // 语言层 `as` 是表示转换：转换语义由计划冻结的两端 `SemanticType` 决定，
                 // 栈类型字节（`i32`/`i64`）区分不了有符号与无符号扩展。
                 let source_ty = self
                     .operand_semantic_type(source)
@@ -292,7 +292,7 @@ impl<'a> WasmMirLowerer<'a> {
                         self.mir_fn.symbol
                     ));
                 };
-                if matches!(array_type, NyarType::FixedArray { .. }) {
+                if matches!(array_type, SemanticType::FixedArray { .. }) {
                     // Fixed value aggregate: linear layout when available.
                     if let Some(layout) = layout_id.and_then(|layout_id| self.ctx.layout_by_id(layout_id)).cloned() {
                         // 缺值槽是缺事实，发射前拒绝。
@@ -790,7 +790,7 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     /// 嵌套字段是否是需要递归复制的值语义聚合（返回其 layout 身份与 gc struct 类型索引）。
-    fn nested_value_aggregate_layout(&self, ty: &NyarType) -> Option<(LayoutId, u32)> {
+    fn nested_value_aggregate_layout(&self, ty: &SemanticType) -> Option<(LayoutId, u32)> {
         // 字段槽必须是引用载体，否则没有可递归的堆对象。
         if wasm_gc_field_type_byte_for_glue(ty, self.js_glue_utf8_as_anyref).ok() != Some(WASM_GC_ANYREF) {
             return None;
@@ -918,13 +918,13 @@ const WASM_F64_PROMOTE_F32: WasmOpcode = WasmOpcode::F64PromoteF32;
 ///
 /// f32/f64 之间的转换必须显式走 `f64.promote_f32` / `f32.demote_f64`，
 /// 不存在「同载体恒等」或「借 64 位槽」的隐式路径。
-fn is_float_carrier(ty: &NyarType) -> bool {
-    matches!(ty, NyarType::Float32 | NyarType::Float64)
+fn is_float_carrier(ty: &SemanticType) -> bool {
+    matches!(ty, SemanticType::Float32 | SemanticType::Float64)
 }
 
 /// 语言层 `as` 的数值表示转换配方。
 ///
-/// 语义由计划冻结的两端 `NyarType` 决定：`i32` 与 `u32` 都占 `VALTYPE_I32`，只有
+/// 语义由计划冻结的两端 `SemanticType` 决定：`i32` 与 `u32` 都占 `VALTYPE_I32`，只有
 /// `signed` 能区分 `i64.extend_i32_s` 与 `i64.extend_i32_u`；窄整数（`Integer8` /
 /// `Integer16`）同样占 `VALTYPE_I32`，因此窄化配方必须显式写出，不能靠载体相同就跳过。
 ///
@@ -937,14 +937,14 @@ fn is_float_carrier(ty: &NyarType) -> bool {
 /// 因此不存在 double rounding；也禁止把 `f32` 当 `f64` 恒等搬移。
 ///
 /// 任何缺少精确配方的组合都必须响亮失败，禁止用近似指令冒充。
-fn scalar_cast_steps(source: &NyarType, target: &NyarType) -> crate::Result<Vec<ScalarCastStep>> {
+fn scalar_cast_steps(source: &SemanticType, target: &SemanticType) -> crate::Result<Vec<ScalarCastStep>> {
     if source == target {
         return Ok(Vec::new());
     }
     match (source, target) {
         // 浮点之间是显式单指令转换，不是载体恒等。
-        (NyarType::Float32, NyarType::Float64) => return Ok(vec![ScalarCastStep::Opcode(WASM_F64_PROMOTE_F32)]),
-        (NyarType::Float64, NyarType::Float32) => return Ok(vec![ScalarCastStep::Opcode(WASM_F32_DEMOTE_F64)]),
+        (SemanticType::Float32, SemanticType::Float64) => return Ok(vec![ScalarCastStep::Opcode(WASM_F64_PROMOTE_F32)]),
+        (SemanticType::Float64, SemanticType::Float32) => return Ok(vec![ScalarCastStep::Opcode(WASM_F32_DEMOTE_F64)]),
         _ => {}
     }
     if is_float_carrier(source) {
@@ -954,12 +954,12 @@ fn scalar_cast_steps(source: &NyarType, target: &NyarType) -> crate::Result<Vec<
         return integer_to_float_steps(source, target);
     }
     match (source, target) {
-        (NyarType::Integer64 { .. }, NyarType::Integer64 { .. }) => return Ok(Vec::new()),
+        (SemanticType::Integer64 { .. }, SemanticType::Integer64 { .. }) => return Ok(Vec::new()),
         _ => {}
     }
     let source_on_i32 = match source {
-        NyarType::Integer8 { .. } | NyarType::Integer16 { .. } | NyarType::Integer32 { .. } | NyarType::Character => true,
-        NyarType::Integer64 { .. } => false,
+        SemanticType::Integer8 { .. } | SemanticType::Integer16 { .. } | SemanticType::Integer32 { .. } | SemanticType::Character => true,
+        SemanticType::Integer64 { .. } => false,
         _ => return Err(unsupported_cast(source, target)),
     };
     let mut steps = Vec::new();
@@ -968,7 +968,7 @@ fn scalar_cast_steps(source: &NyarType, target: &NyarType) -> crate::Result<Vec<
         steps.push(ScalarCastStep::Opcode(WasmOpcode::I32WrapI64));
     }
     match target {
-        NyarType::Integer64 { .. } => steps.push(if source_is_signed(source) {
+        SemanticType::Integer64 { .. } => steps.push(if source_is_signed(source) {
             ScalarCastStep::Opcode(WasmOpcode::I64ExtendI32S)
         }
         else {
@@ -982,13 +982,13 @@ fn scalar_cast_steps(source: &NyarType, target: &NyarType) -> crate::Result<Vec<
 /// i32 载体值落到目标整数类型的规范化配方（窄化掩码 / 符号扩展）。
 ///
 /// 32 位目标与 `Character` 直接就是载体本身；`None` 表示目标不是 32 位以内的整数族。
-fn normalize_i32_carrier_to_integer(target: &NyarType) -> Option<Vec<ScalarCastStep>> {
+fn normalize_i32_carrier_to_integer(target: &SemanticType) -> Option<Vec<ScalarCastStep>> {
     Some(match target {
-        NyarType::Integer32 { .. } | NyarType::Character => Vec::new(),
-        NyarType::Integer8 { signed: false } => vec![ScalarCastStep::I32Const(0xFF), ScalarCastStep::Opcode(WasmOpcode::I32And)],
-        NyarType::Integer8 { signed: true } => vec![ScalarCastStep::Opcode(WASM_I32_EXTEND8_S)],
-        NyarType::Integer16 { signed: false } => vec![ScalarCastStep::I32Const(0xFFFF), ScalarCastStep::Opcode(WasmOpcode::I32And)],
-        NyarType::Integer16 { signed: true } => vec![ScalarCastStep::Opcode(WASM_I32_EXTEND16_S)],
+        SemanticType::Integer32 { .. } | SemanticType::Character => Vec::new(),
+        SemanticType::Integer8 { signed: false } => vec![ScalarCastStep::I32Const(0xFF), ScalarCastStep::Opcode(WasmOpcode::I32And)],
+        SemanticType::Integer8 { signed: true } => vec![ScalarCastStep::Opcode(WASM_I32_EXTEND8_S)],
+        SemanticType::Integer16 { signed: false } => vec![ScalarCastStep::I32Const(0xFFFF), ScalarCastStep::Opcode(WasmOpcode::I32And)],
+        SemanticType::Integer16 { signed: true } => vec![ScalarCastStep::Opcode(WASM_I32_EXTEND16_S)],
         _ => return None,
     })
 }
@@ -1000,10 +1000,10 @@ fn normalize_i32_carrier_to_integer(target: &NyarType) -> Option<Vec<ScalarCastS
 ///
 /// 源在 i32 载体上已是规范形态（无符号是掩码后的非负值，有符号是符号扩展值，
 /// `Character` 是码点），所以窄整数只需看 `signed` 位宽即可，无需先规范化。
-fn integer_to_float_steps(source: &NyarType, target: &NyarType) -> crate::Result<Vec<ScalarCastStep>> {
-    let to_f32 = matches!(target, NyarType::Float32);
+fn integer_to_float_steps(source: &SemanticType, target: &SemanticType) -> crate::Result<Vec<ScalarCastStep>> {
+    let to_f32 = matches!(target, SemanticType::Float32);
     let opcode = match source {
-        NyarType::Integer64 { signed: true } => {
+        SemanticType::Integer64 { signed: true } => {
             if to_f32 {
                 WASM_F32_CONVERT_I64_S
             }
@@ -1011,7 +1011,7 @@ fn integer_to_float_steps(source: &NyarType, target: &NyarType) -> crate::Result
                 WASM_F64_CONVERT_I64_S
             }
         }
-        NyarType::Integer64 { signed: false } => {
+        SemanticType::Integer64 { signed: false } => {
             if to_f32 {
                 WASM_F32_CONVERT_I64_U
             }
@@ -1019,14 +1019,14 @@ fn integer_to_float_steps(source: &NyarType, target: &NyarType) -> crate::Result
                 WASM_F64_CONVERT_I64_U
             }
         }
-        NyarType::Integer8 { signed } | NyarType::Integer16 { signed } | NyarType::Integer32 { signed } => match (*signed, to_f32) {
+        SemanticType::Integer8 { signed } | SemanticType::Integer16 { signed } | SemanticType::Integer32 { signed } => match (*signed, to_f32) {
             (true, true) => WASM_F32_CONVERT_I32_S,
             (true, false) => WASM_F64_CONVERT_I32_S,
             (false, true) => WASM_F32_CONVERT_I32_U,
             (false, false) => WASM_F64_CONVERT_I32_U,
         },
         // Unicode 码点恒非负。
-        NyarType::Character => {
+        SemanticType::Character => {
             if to_f32 {
                 WASM_F32_CONVERT_I32_U
             }
@@ -1043,37 +1043,37 @@ fn integer_to_float_steps(source: &NyarType, target: &NyarType) -> crate::Result
 ///
 /// `trunc_*` 在 NaN 与目标范围外会触发 wasm trap（`integer overflow`），这是
 /// 语言层 `as` 的 fail-closed 行为，不得换成静默饱和。
-fn float_to_integer_steps(source: &NyarType, target: &NyarType) -> crate::Result<Vec<ScalarCastStep>> {
+fn float_to_integer_steps(source: &SemanticType, target: &SemanticType) -> crate::Result<Vec<ScalarCastStep>> {
     let (trunc_i32_s, trunc_i32_u, trunc_i64_s, trunc_i64_u) = match source {
-        NyarType::Float32 => (WASM_I32_TRUNC_F32_S, WASM_I32_TRUNC_F32_U, WASM_I64_TRUNC_F32_S, WASM_I64_TRUNC_F32_U),
-        NyarType::Float64 => (WASM_I32_TRUNC_F64_S, WASM_I32_TRUNC_F64_U, WASM_I64_TRUNC_F64_S, WASM_I64_TRUNC_F64_U),
+        SemanticType::Float32 => (WASM_I32_TRUNC_F32_S, WASM_I32_TRUNC_F32_U, WASM_I64_TRUNC_F32_S, WASM_I64_TRUNC_F32_U),
+        SemanticType::Float64 => (WASM_I32_TRUNC_F64_S, WASM_I32_TRUNC_F64_U, WASM_I64_TRUNC_F64_S, WASM_I64_TRUNC_F64_U),
         _ => return Err(unsupported_cast(source, target)),
     };
     match target {
-        NyarType::Integer64 { signed: true } => Ok(vec![ScalarCastStep::Opcode(trunc_i64_s)]),
-        NyarType::Integer64 { signed: false } => Ok(vec![ScalarCastStep::Opcode(trunc_i64_u)]),
-        NyarType::Integer8 { signed } | NyarType::Integer16 { signed } | NyarType::Integer32 { signed } => {
+        SemanticType::Integer64 { signed: true } => Ok(vec![ScalarCastStep::Opcode(trunc_i64_s)]),
+        SemanticType::Integer64 { signed: false } => Ok(vec![ScalarCastStep::Opcode(trunc_i64_u)]),
+        SemanticType::Integer8 { signed } | SemanticType::Integer16 { signed } | SemanticType::Integer32 { signed } => {
             let trunc = if *signed { trunc_i32_s } else { trunc_i32_u };
             let mut steps = vec![ScalarCastStep::Opcode(trunc)];
             steps.extend(normalize_i32_carrier_to_integer(target).expect("32 位整数族必须有规范化配方"));
             Ok(steps)
         }
         // 码点恒非负，`trunc_u` 之后就是 `Character` 的规范形态。
-        NyarType::Character => Ok(vec![ScalarCastStep::Opcode(trunc_i32_u)]),
+        SemanticType::Character => Ok(vec![ScalarCastStep::Opcode(trunc_i32_u)]),
         _ => Err(unsupported_cast(source, target)),
     }
 }
 
 /// 源类型在 i32 载体上的值是否可能为负：决定宽化到 64 位时用符号扩展还是零扩展。
-fn source_is_signed(source: &NyarType) -> bool {
+fn source_is_signed(source: &SemanticType) -> bool {
     match source {
-        NyarType::Integer8 { signed } | NyarType::Integer16 { signed } | NyarType::Integer32 { signed } => *signed,
+        SemanticType::Integer8 { signed } | SemanticType::Integer16 { signed } | SemanticType::Integer32 { signed } => *signed,
         // `Character` 是 Unicode 码点，恒非负。
         _ => false,
     }
 }
 
-fn unsupported_cast(source: &NyarType, target: &NyarType) -> String {
+fn unsupported_cast(source: &SemanticType, target: &SemanticType) -> String {
     format!("wasm 后端缺少 {source} → {target} 的精确表示转换编码（acorn_wasm 未提供对应 opcode），不得退化为近似转换")
 }
 
@@ -1081,115 +1081,115 @@ fn unsupported_cast(source: &NyarType, target: &NyarType) -> String {
 mod tests {
     use super::*;
 
-    fn cast(source: NyarType, target: NyarType) -> Vec<ScalarCastStep> {
+    fn cast(source: SemanticType, target: SemanticType) -> Vec<ScalarCastStep> {
         scalar_cast_steps(&source, &target).expect("表示转换应有精确配方")
     }
 
     #[test]
     fn widening_selects_extension_by_source_signedness() {
-        let i32s = NyarType::Integer32 { signed: true };
-        let u32v = NyarType::Integer32 { signed: false };
-        let i64s = NyarType::Integer64 { signed: true };
+        let i32s = SemanticType::Integer32 { signed: true };
+        let u32v = SemanticType::Integer32 { signed: false };
+        let i64s = SemanticType::Integer64 { signed: true };
         assert_eq!(cast(i32s.clone(), i64s.clone()), vec![ScalarCastStep::Opcode(WasmOpcode::I64ExtendI32S)]);
         assert_eq!(cast(u32v, i64s.clone()), vec![ScalarCastStep::Opcode(WASM_I64_EXTEND_I32_U)]);
         // 窄整数在 i32 载体上已是规范形态：宽化到 32 位不需要任何指令。
-        assert_eq!(cast(NyarType::Integer8 { signed: false }, NyarType::Integer32 { signed: false }), Vec::new());
-        assert_eq!(cast(NyarType::Integer16 { signed: true }, i32s), Vec::new());
-        assert_eq!(cast(NyarType::Integer8 { signed: true }, i64s), vec![ScalarCastStep::Opcode(WasmOpcode::I64ExtendI32S)]);
+        assert_eq!(cast(SemanticType::Integer8 { signed: false }, SemanticType::Integer32 { signed: false }), Vec::new());
+        assert_eq!(cast(SemanticType::Integer16 { signed: true }, i32s), Vec::new());
+        assert_eq!(cast(SemanticType::Integer8 { signed: true }, i64s), vec![ScalarCastStep::Opcode(WasmOpcode::I64ExtendI32S)]);
     }
 
     #[test]
     fn narrowing_masks_unsigned_and_extends_signed_explicitly() {
         assert_eq!(
-            cast(NyarType::Integer32 { signed: false }, NyarType::Integer8 { signed: false }),
+            cast(SemanticType::Integer32 { signed: false }, SemanticType::Integer8 { signed: false }),
             vec![ScalarCastStep::I32Const(0xFF), ScalarCastStep::Opcode(WasmOpcode::I32And)]
         );
         assert_eq!(
-            cast(NyarType::Integer32 { signed: true }, NyarType::Integer16 { signed: false }),
+            cast(SemanticType::Integer32 { signed: true }, SemanticType::Integer16 { signed: false }),
             vec![ScalarCastStep::I32Const(0xFFFF), ScalarCastStep::Opcode(WasmOpcode::I32And)]
         );
         assert_eq!(
-            cast(NyarType::Integer32 { signed: true }, NyarType::Integer8 { signed: true }),
+            cast(SemanticType::Integer32 { signed: true }, SemanticType::Integer8 { signed: true }),
             vec![ScalarCastStep::Opcode(WASM_I32_EXTEND8_S)]
         );
         assert_eq!(
-            cast(NyarType::Integer64 { signed: false }, NyarType::Integer16 { signed: true }),
+            cast(SemanticType::Integer64 { signed: false }, SemanticType::Integer16 { signed: true }),
             vec![ScalarCastStep::Opcode(WasmOpcode::I32WrapI64), ScalarCastStep::Opcode(WASM_I32_EXTEND16_S)]
         );
     }
 
     #[test]
     fn character_conversions_use_the_code_point_carrier() {
-        assert_eq!(cast(NyarType::Character, NyarType::Integer32 { signed: false }), Vec::new());
+        assert_eq!(cast(SemanticType::Character, SemanticType::Integer32 { signed: false }), Vec::new());
         // 码点可以超出 16 位，收窄到 `u16` 必须显式掩码。
         assert_eq!(
-            cast(NyarType::Character, NyarType::Integer16 { signed: false }),
+            cast(SemanticType::Character, SemanticType::Integer16 { signed: false }),
             vec![ScalarCastStep::I32Const(0xFFFF), ScalarCastStep::Opcode(WasmOpcode::I32And)]
         );
-        assert_eq!(cast(NyarType::Character, NyarType::Integer64 { signed: true }), vec![ScalarCastStep::Opcode(WASM_I64_EXTEND_I32_U)]);
-        assert_eq!(cast(NyarType::Integer16 { signed: false }, NyarType::Character), Vec::new());
-        assert_eq!(cast(NyarType::Integer64 { signed: true }, NyarType::Character), vec![ScalarCastStep::Opcode(WasmOpcode::I32WrapI64)]);
+        assert_eq!(cast(SemanticType::Character, SemanticType::Integer64 { signed: true }), vec![ScalarCastStep::Opcode(WASM_I64_EXTEND_I32_U)]);
+        assert_eq!(cast(SemanticType::Integer16 { signed: false }, SemanticType::Character), Vec::new());
+        assert_eq!(cast(SemanticType::Integer64 { signed: true }, SemanticType::Character), vec![ScalarCastStep::Opcode(WasmOpcode::I32WrapI64)]);
     }
 
     #[test]
     fn integer_to_float_picks_opcode_by_signedness_and_carrier() {
         // 64 位源：有符号与无符号必须选不同的 convert 指令。
-        assert_eq!(cast(NyarType::Integer64 { signed: true }, NyarType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I64_S)]);
-        assert_eq!(cast(NyarType::Integer64 { signed: false }, NyarType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I64_U)]);
+        assert_eq!(cast(SemanticType::Integer64 { signed: true }, SemanticType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I64_S)]);
+        assert_eq!(cast(SemanticType::Integer64 { signed: false }, SemanticType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I64_U)]);
         // 32 位载体同理。
-        assert_eq!(cast(NyarType::Integer32 { signed: true }, NyarType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_S)]);
-        assert_eq!(cast(NyarType::Integer32 { signed: false }, NyarType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_U)]);
+        assert_eq!(cast(SemanticType::Integer32 { signed: true }, SemanticType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_S)]);
+        assert_eq!(cast(SemanticType::Integer32 { signed: false }, SemanticType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_U)]);
         // 窄无符号在 i32 载体上已是掩码后的非负值，无需再规范化。
-        assert_eq!(cast(NyarType::Integer8 { signed: false }, NyarType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_U)]);
+        assert_eq!(cast(SemanticType::Integer8 { signed: false }, SemanticType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_U)]);
         // 码点恒非负。
-        assert_eq!(cast(NyarType::Character, NyarType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_U)]);
+        assert_eq!(cast(SemanticType::Character, SemanticType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_U)]);
     }
 
     #[test]
     fn float_to_integer_uses_trunc_then_target_normalization() {
-        assert_eq!(cast(NyarType::Float64, NyarType::Integer64 { signed: true }), vec![ScalarCastStep::Opcode(WASM_I64_TRUNC_F64_S)]);
-        assert_eq!(cast(NyarType::Float64, NyarType::Integer64 { signed: false }), vec![ScalarCastStep::Opcode(WASM_I64_TRUNC_F64_U)]);
-        assert_eq!(cast(NyarType::Float64, NyarType::Integer32 { signed: false }), vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F64_U)]);
+        assert_eq!(cast(SemanticType::Float64, SemanticType::Integer64 { signed: true }), vec![ScalarCastStep::Opcode(WASM_I64_TRUNC_F64_S)]);
+        assert_eq!(cast(SemanticType::Float64, SemanticType::Integer64 { signed: false }), vec![ScalarCastStep::Opcode(WASM_I64_TRUNC_F64_U)]);
+        assert_eq!(cast(SemanticType::Float64, SemanticType::Integer32 { signed: false }), vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F64_U)]);
         assert_eq!(
-            cast(NyarType::Float64, NyarType::Integer8 { signed: false }),
+            cast(SemanticType::Float64, SemanticType::Integer8 { signed: false }),
             vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F64_U), ScalarCastStep::I32Const(0xFF), ScalarCastStep::Opcode(WasmOpcode::I32And),]
         );
         assert_eq!(
-            cast(NyarType::Float64, NyarType::Integer16 { signed: true }),
+            cast(SemanticType::Float64, SemanticType::Integer16 { signed: true }),
             vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F64_S), ScalarCastStep::Opcode(WASM_I32_EXTEND16_S)]
         );
-        assert_eq!(cast(NyarType::Float64, NyarType::Character), vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F64_U)]);
+        assert_eq!(cast(SemanticType::Float64, SemanticType::Character), vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F64_U)]);
     }
 
     #[test]
     fn float32_casts_are_explicit_single_instruction_conversions() {
         // f32 ↔ f64 是显式单指令，绝不是「同载体恒等」或借 64 位槽。
-        assert_eq!(cast(NyarType::Float32, NyarType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_PROMOTE_F32)]);
-        assert_eq!(cast(NyarType::Float64, NyarType::Float32), vec![ScalarCastStep::Opcode(WASM_F32_DEMOTE_F64)]);
+        assert_eq!(cast(SemanticType::Float32, SemanticType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_PROMOTE_F32)]);
+        assert_eq!(cast(SemanticType::Float64, SemanticType::Float32), vec![ScalarCastStep::Opcode(WASM_F32_DEMOTE_F64)]);
         // 整数↔f32 直接用 f32.convert_* / trunc_f32_*，不先经 f64（避免 double rounding）。
-        assert_eq!(cast(NyarType::Integer32 { signed: true }, NyarType::Float32), vec![ScalarCastStep::Opcode(WASM_F32_CONVERT_I32_S)]);
-        assert_eq!(cast(NyarType::Integer64 { signed: false }, NyarType::Float32), vec![ScalarCastStep::Opcode(WASM_F32_CONVERT_I64_U)]);
-        assert_eq!(cast(NyarType::Character, NyarType::Float32), vec![ScalarCastStep::Opcode(WASM_F32_CONVERT_I32_U)]);
-        assert_eq!(cast(NyarType::Float32, NyarType::Integer64 { signed: true }), vec![ScalarCastStep::Opcode(WASM_I64_TRUNC_F32_S)]);
-        assert_eq!(cast(NyarType::Float32, NyarType::Integer32 { signed: false }), vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F32_U)]);
+        assert_eq!(cast(SemanticType::Integer32 { signed: true }, SemanticType::Float32), vec![ScalarCastStep::Opcode(WASM_F32_CONVERT_I32_S)]);
+        assert_eq!(cast(SemanticType::Integer64 { signed: false }, SemanticType::Float32), vec![ScalarCastStep::Opcode(WASM_F32_CONVERT_I64_U)]);
+        assert_eq!(cast(SemanticType::Character, SemanticType::Float32), vec![ScalarCastStep::Opcode(WASM_F32_CONVERT_I32_U)]);
+        assert_eq!(cast(SemanticType::Float32, SemanticType::Integer64 { signed: true }), vec![ScalarCastStep::Opcode(WASM_I64_TRUNC_F32_S)]);
+        assert_eq!(cast(SemanticType::Float32, SemanticType::Integer32 { signed: false }), vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F32_U)]);
     }
 
     /// 反例：`f32` 不得被当作 `f64` 或整数静默搬运（载体身份不可伪造）。
     #[test]
     fn float32_never_alias_to_f64_or_integer_slots() {
-        assert_ne!(cast(NyarType::Float32, NyarType::Float64), Vec::<ScalarCastStep>::new());
-        assert_ne!(cast(NyarType::Float64, NyarType::Float32), Vec::<ScalarCastStep>::new());
+        assert_ne!(cast(SemanticType::Float32, SemanticType::Float64), Vec::<ScalarCastStep>::new());
+        assert_ne!(cast(SemanticType::Float64, SemanticType::Float32), Vec::<ScalarCastStep>::new());
         // 宽度不匹配：`f32` 当 u64 用必须是结构化失败，不能靠掩码或拓宽蒙混。
-        assert!(scalar_cast_steps(&NyarType::Float32, &NyarType::Boolean).is_err());
-        assert!(scalar_cast_steps(&NyarType::Boolean, &NyarType::Float32).is_err());
+        assert!(scalar_cast_steps(&SemanticType::Float32, &SemanticType::Boolean).is_err());
+        assert!(scalar_cast_steps(&SemanticType::Boolean, &SemanticType::Float32).is_err());
     }
 
     #[test]
     fn unrepresentable_widths_fail_loudly() {
-        assert!(scalar_cast_steps(&NyarType::Integer128 { signed: true }, &NyarType::Integer32 { signed: true }).is_err());
+        assert!(scalar_cast_steps(&SemanticType::Integer128 { signed: true }, &SemanticType::Integer32 { signed: true }).is_err());
         // 布尔/文本与浮点之间没有冻结的 `as` 语义，必须结构化失败。
-        assert!(scalar_cast_steps(&NyarType::Boolean, &NyarType::Float64).is_err());
-        assert!(scalar_cast_steps(&NyarType::Float64, &NyarType::Boolean).is_err());
-        assert!(scalar_cast_steps(&NyarType::Utf8, &NyarType::Float64).is_err());
+        assert!(scalar_cast_steps(&SemanticType::Boolean, &SemanticType::Float64).is_err());
+        assert!(scalar_cast_steps(&SemanticType::Float64, &SemanticType::Boolean).is_err());
+        assert!(scalar_cast_steps(&SemanticType::Utf8, &SemanticType::Float64).is_err());
     }
 }

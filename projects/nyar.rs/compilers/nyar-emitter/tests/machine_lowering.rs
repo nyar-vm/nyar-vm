@@ -21,10 +21,10 @@ use nyar_emitter::{
     testing::lower_fragment_to_machine_image,
 };
 use nyar_emitter::contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef};
-use nyar_types::{ImportIndex, ItemInstanceId, NyarType};
+use nyar_types::{ImportIndex, ItemInstanceId, SemanticType};
 
-const LONG: NyarType = NyarType::Integer64 { signed: true };
-const INTEGER: NyarType = NyarType::Integer32 { signed: true };
+const LONG: SemanticType = SemanticType::Integer64 { signed: true };
+const INTEGER: SemanticType = SemanticType::Integer32 { signed: true };
 
 /// 冻结 native operator 的 import 实例身份（远离函数实例区间）。
 const OPERATOR_INSTANCE_BASE: u32 = 100;
@@ -42,7 +42,7 @@ fn lower_windows_x64(submission: &FragmentSubmission) -> nyar_emitter::Result<ny
     lower_fragment_to_machine_image(submission, windows_x64())
 }
 
-fn function(symbol: &str, return_type: NyarType, parameters: Vec<NyarType>) -> ExecutableFunction {
+fn function(symbol: &str, return_type: SemanticType, parameters: Vec<SemanticType>) -> ExecutableFunction {
     let value_types = parameters.iter().enumerate().map(|(index, ty)| (ValueRef(index as u32), ty.clone())).collect();
     let block_parameters = (0..parameters.len() as u32).map(ValueRef).collect();
     ExecutableFunction {
@@ -89,13 +89,13 @@ fn operator_plan(code: X86_64OperatorCode) -> TargetOperatorPlan<X86_64OperatorC
     }
 }
 
-/// `TargetOperandType` → 声明签名里的 `NyarType`。
-fn carrier_type(operand: TargetOperandType) -> NyarType {
+/// `TargetOperandType` → 声明签名里的 `SemanticType`。
+fn carrier_type(operand: TargetOperandType) -> SemanticType {
     match operand {
         TargetOperandType::I32 => INTEGER,
         TargetOperandType::I64 => LONG,
-        TargetOperandType::F32 => NyarType::Float32,
-        TargetOperandType::F64 => NyarType::Float64,
+        TargetOperandType::F32 => SemanticType::Float32,
+        TargetOperandType::F64 => SemanticType::Float64,
     }
 }
 
@@ -139,7 +139,7 @@ fn mnemonic_of(code: X86_64OperatorCode) -> &'static str {
     }
 }
 
-fn operator_import(code: X86_64OperatorCode, return_type: NyarType) -> BackendImport {
+fn operator_import(code: X86_64OperatorCode, return_type: SemanticType) -> BackendImport {
     BackendImport {
         index: ImportIndex::from_index(0).expect("import index"),
         link: ExternalImportLink::host(Some(Identifier::new("x86_64-operator")), vec![mnemonic_of(code).to_string()]),
@@ -352,7 +352,7 @@ fn branch_through_frozen_compare_runs_natively() {
 /// 产物层必须保留并校验规范四元组的 OS / ABI：PE 不得被包装成 Linux/GNU 产物。
 #[test]
 fn native_backend_rejects_image_container_mismatching_target_os_or_abi() {
-    let main = function("main", NyarType::Unit, Vec::new());
+    let main = function("main", SemanticType::Unit, Vec::new());
     let main_name = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), main)]));
     plan.testing_module_name("native_lowering").testing_entry_operation(main_name);
@@ -387,7 +387,7 @@ fn native_backend_rejects_image_container_mismatching_target_os_or_abi() {
 
 #[test]
 fn unit_return_exits_zero() {
-    let main = function("main", NyarType::Unit, Vec::new());
+    let main = function("main", SemanticType::Unit, Vec::new());
     let main_name = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), main)]));
     plan.testing_module_name("native_lowering").testing_entry_operation(main_name);
@@ -444,7 +444,7 @@ fn operator_signature_mismatch_is_rejected() {
 }
 
 /// 构造 `main() = operator(10, 3)`：调用指定绑定的一次算子。
-fn single_operator_submission(mnemonic: &str, return_type: NyarType) -> FragmentSubmission {
+fn single_operator_submission(mnemonic: &str, return_type: SemanticType) -> FragmentSubmission {
     let mut main = function("main", return_type.clone(), Vec::new());
     main.value_types.insert(ValueRef(0), return_type.clone());
     main.blocks[0].instructions.push(call(operator_instance(0), vec![integer(10), integer(3)], vec![ValueRef(0)]));
@@ -534,7 +534,7 @@ fn integer_operator_runs_natively() {
 /// 未闭合的规范目标四元组必须失败闭合，不得把 `PE`/`ELF` 编码借给其他平台。
 #[test]
 fn unclosed_canonical_targets_are_rejected() {
-    let main = function("main", NyarType::Unit, Vec::new());
+    let main = function("main", SemanticType::Unit, Vec::new());
     let main_name = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), main)]));
     plan.testing_module_name("native_lowering").testing_entry_operation(main_name);
@@ -552,7 +552,7 @@ fn unclosed_canonical_targets_are_rejected() {
 /// Linux 只闭合 SysV64：其他 ABI 不得借用 Win64 编码。
 #[test]
 fn linux_with_unsupported_abi_is_rejected() {
-    let main = function("main", NyarType::Unit, Vec::new());
+    let main = function("main", SemanticType::Unit, Vec::new());
     let main_name = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), main)]));
     plan.testing_module_name("native_lowering").testing_entry_operation(main_name);

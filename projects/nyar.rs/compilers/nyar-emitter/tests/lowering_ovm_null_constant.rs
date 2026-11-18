@@ -11,11 +11,11 @@ use nyar_emitter::{
     contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef},
     testing::lower_fragment_to_nyar_module,
 };
-use nyar_types::NyarType;
+use nyar_types::SemanticType;
 use acorn_odin::{OdinHeadCode, OdinModuleData, decode_at};
 
-fn nullable_slot() -> NyarType {
-    NyarType::Nullable(Box::new(NyarType::Integer64 { signed: true }))
+fn nullable_slot() -> SemanticType {
+    SemanticType::Nullable(Box::new(SemanticType::Integer64 { signed: true }))
 }
 
 fn null_return_function() -> ExecutableFunction {

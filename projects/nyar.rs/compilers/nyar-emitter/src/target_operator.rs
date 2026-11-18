@@ -80,23 +80,23 @@ pub struct TargetOperatorPlan<E> {
 ///
 /// 载体事实只由类型身份决定，与本模块无关；各 lane 的冻结入口共用这一判定，
 /// 避免每个后端重复实现同一形状规则。
-pub fn operand_carrier(ty: &nyar_types::NyarType) -> Option<TargetOperandType> {
+pub fn operand_carrier(ty: &nyar_types::SemanticType) -> Option<TargetOperandType> {
     match ty {
-        nyar_types::NyarType::Integer32 { .. } => Some(TargetOperandType::I32),
+        nyar_types::SemanticType::Integer32 { .. } => Some(TargetOperandType::I32),
         // `char`（u16 code unit）在这些 lane 的物理载体是 i32（ABI 层 `AbiCarrier::I32` 同构）；
         // 等值/比较配方按零扩展后的码位判定，不引入截断语义。
-        nyar_types::NyarType::Character => Some(TargetOperandType::I32),
-        nyar_types::NyarType::Integer64 { .. } => Some(TargetOperandType::I64),
-        nyar_types::NyarType::Float32 => Some(TargetOperandType::F32),
-        nyar_types::NyarType::Float64 => Some(TargetOperandType::F64),
+        nyar_types::SemanticType::Character => Some(TargetOperandType::I32),
+        nyar_types::SemanticType::Integer64 { .. } => Some(TargetOperandType::I64),
+        nyar_types::SemanticType::Float32 => Some(TargetOperandType::F32),
+        nyar_types::SemanticType::Float64 => Some(TargetOperandType::F64),
         _ => None,
     }
 }
 
 /// 返回槽的载体；布尔值在所有当前 lane 都占 `i32` 槽。
-pub(crate) fn result_carrier(ty: &nyar_types::NyarType) -> Option<TargetOperandType> {
+pub(crate) fn result_carrier(ty: &nyar_types::SemanticType) -> Option<TargetOperandType> {
     match ty {
-        nyar_types::NyarType::Boolean => Some(TargetOperandType::I32),
+        nyar_types::SemanticType::Boolean => Some(TargetOperandType::I32),
         _ => operand_carrier(ty),
     }
 }
@@ -110,8 +110,8 @@ pub(crate) fn validate_frozen_operator<E>(
     mnemonic: &str,
     instance: nyar_types::ItemInstanceId,
     function: &str,
-    parameter_types: &[nyar_types::NyarType],
-    return_type: &nyar_types::NyarType,
+    parameter_types: &[nyar_types::SemanticType],
+    return_type: &nyar_types::SemanticType,
     plan: &TargetOperatorPlan<E>,
 ) -> crate::Result<()> {
     if parameter_types.len() != plan.arity {

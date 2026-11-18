@@ -98,7 +98,7 @@ impl<'a> WasmMirLowerer<'a> {
             }
             MirDispatchKind::Indirect => {
                 // callee 是函数值 SSA（闭包对象 anyref，合同 §5.3）。签名事实来自该
-                // SSA 值冻结的 `NyarType::Function`：可见形参 coerce 与返回载体由它
+                // SSA 值冻结的 `SemanticType::Function`：可见形参 coerce 与返回载体由它
                 // 决定，`call_indirect` 的 functype 固定为「可见形参 + 一个尾部 anyref」。
                 // 环境作为普通尾实参压栈，不占 callee 槽；缺事实即结构化失败。
                 let (param_types, return_type, type_index) = self.resolve_indirect_callee_signature(callee)?;
@@ -368,7 +368,7 @@ impl<'a> WasmMirLowerer<'a> {
             .copied()
     }
 
-    /// 间接调用的签名解析：callee SSA 值必须携带冻结的 `NyarType::Function`。
+    /// 间接调用的签名解析：callee SSA 值必须携带冻结的 `SemanticType::Function`。
     /// `call_indirect` 的 functype 固定为「可见形参 + 一个尾部 anyref」（环境槽），
     /// 必须命中模块已注册的 functype（按签名字节反查 typeidx）。缺类型或缺注册
     /// 条目都结构化失败，禁止按参数个数猜签名，也禁止退回无 env 的旧签名。
@@ -377,7 +377,7 @@ impl<'a> WasmMirLowerer<'a> {
         else {
             return Err(format!("WASM 间接调用缺少函数值操作数: {}", self.mir_fn.symbol));
         };
-        let Some(NyarType::Function(signature)) = self.mir_fn.value_types.get(value)
+        let Some(SemanticType::Function(signature)) = self.mir_fn.value_types.get(value)
         else {
             return Err(format!("WASM 间接调用 callee %{} 缺少冻结 Function 签名: {}", value.0, self.mir_fn.symbol));
         };
@@ -387,7 +387,7 @@ impl<'a> WasmMirLowerer<'a> {
             .map(|ty| wasm_function_abi_value_type_for(self.ctx, ty, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref))
             .collect::<crate::Result<Vec<u8>>>()?;
         let return_type = match &signature.return_type {
-            NyarType::Unit | NyarType::Bottom => None,
+            SemanticType::Unit | SemanticType::Bottom => None,
             other => Some(wasm_function_abi_value_type_for(self.ctx, other, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref)?),
         };
         let mut indirect_param_types = visible_param_types.clone();
@@ -436,7 +436,7 @@ impl<'a> WasmMirLowerer<'a> {
 
     /// 操作数在计划中冻结的语义类型；显式 `as` 的转换语义必须由此决定，
     /// 不得退回到只携带位宽的栈类型字节。
-    pub(super) fn operand_semantic_type(&self, operand: &MirOperand) -> Option<&NyarType> {
+    pub(super) fn operand_semantic_type(&self, operand: &MirOperand) -> Option<&SemanticType> {
         match operand {
             MirOperand::Value(value) => self.mir_fn.value_types.get(value),
             _ => None,

@@ -63,26 +63,26 @@ pub(crate) use backend_plan_views::FunctionView;
 /// 构造入口，集中在这里避免各测试模块各写一份名字表。语言表面拼写（`byte`、
 /// `Utf8Text` 等）刻意不在此支持。
 #[cfg(test)]
-pub(crate) fn test_canonical_primitive(spelling: &str) -> nyar_types::NyarType {
+pub(crate) fn test_canonical_primitive(spelling: &str) -> nyar_types::SemanticType {
     match spelling {
-        "bool" => nyar_types::NyarType::Boolean,
-        "i8" => nyar_types::NyarType::Integer8 { signed: true },
-        "u8" => nyar_types::NyarType::Integer8 { signed: false },
-        "i16" => nyar_types::NyarType::Integer16 { signed: true },
-        "u16" => nyar_types::NyarType::Integer16 { signed: false },
-        "i32" => nyar_types::NyarType::Integer32 { signed: true },
-        "u32" => nyar_types::NyarType::Integer32 { signed: false },
-        "i64" => nyar_types::NyarType::Integer64 { signed: true },
-        "u64" => nyar_types::NyarType::Integer64 { signed: false },
-        "i128" => nyar_types::NyarType::Integer128 { signed: true },
-        "u128" => nyar_types::NyarType::Integer128 { signed: false },
-        "f32" => nyar_types::NyarType::Float32,
-        "f64" => nyar_types::NyarType::Float64,
-        "char" => nyar_types::NyarType::Character,
-        "utf8" => nyar_types::NyarType::Utf8,
-        "utf16" => nyar_types::NyarType::Utf16,
-        "unit" => nyar_types::NyarType::Unit,
-        "void" => nyar_types::NyarType::Bottom,
+        "bool" => nyar_types::SemanticType::Boolean,
+        "i8" => nyar_types::SemanticType::Integer8 { signed: true },
+        "u8" => nyar_types::SemanticType::Integer8 { signed: false },
+        "i16" => nyar_types::SemanticType::Integer16 { signed: true },
+        "u16" => nyar_types::SemanticType::Integer16 { signed: false },
+        "i32" => nyar_types::SemanticType::Integer32 { signed: true },
+        "u32" => nyar_types::SemanticType::Integer32 { signed: false },
+        "i64" => nyar_types::SemanticType::Integer64 { signed: true },
+        "u64" => nyar_types::SemanticType::Integer64 { signed: false },
+        "i128" => nyar_types::SemanticType::Integer128 { signed: true },
+        "u128" => nyar_types::SemanticType::Integer128 { signed: false },
+        "f32" => nyar_types::SemanticType::Float32,
+        "f64" => nyar_types::SemanticType::Float64,
+        "char" => nyar_types::SemanticType::Character,
+        "utf8" => nyar_types::SemanticType::Utf8,
+        "utf16" => nyar_types::SemanticType::Utf16,
+        "unit" => nyar_types::SemanticType::Unit,
+        "void" => nyar_types::SemanticType::Bottom,
         other => panic!("测试只支持 canonical 原语拼写: {other}"),
     }
 }
@@ -150,13 +150,13 @@ pub mod testing {
     /// Resolve the JVM carrier descriptor for a frozen platform type (carrier contract tests).
     pub fn jvm_type_descriptor(
         layouts: &nyar_types::AggregateLayoutPlan,
-        ty: &nyar_types::NyarType,
+        ty: &nyar_types::SemanticType,
     ) -> Result<super::nyar_backend_jvm::JvmTypeDescriptor> {
         super::lowering::testing_jvm_type_descriptor(layouts, ty)
     }
 
     /// Resolve the CLR carrier type for a frozen platform type (carrier contract tests).
-    pub fn msil_type(layouts: &nyar_types::AggregateLayoutPlan, ty: &nyar_types::NyarType) -> Result<super::nyar_backend_clr::MsilType> {
+    pub fn msil_type(layouts: &nyar_types::AggregateLayoutPlan, ty: &nyar_types::SemanticType) -> Result<super::nyar_backend_clr::MsilType> {
         super::lowering::testing_msil_type(layouts, ty)
     }
 

@@ -12,11 +12,11 @@ use nyar_emitter::{
     testing::lower_fragment_to_clr_managed_surface,
 };
 use nyar_emitter::contracts::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef};
-use nyar_types::{ItemInstanceId, NyarType};
+use nyar_types::{ItemInstanceId, SemanticType};
 
-const LONG: NyarType = NyarType::Integer64 { signed: true };
+const LONG: SemanticType = SemanticType::Integer64 { signed: true };
 
-fn function(symbol: &str, return_type: NyarType, parameters: Vec<NyarType>) -> ExecutableFunction {
+fn function(symbol: &str, return_type: SemanticType, parameters: Vec<SemanticType>) -> ExecutableFunction {
     let value_types = parameters.iter().enumerate().map(|(index, ty)| (ValueRef(index as u32), ty.clone())).collect();
     let block_parameters = (0..parameters.len() as u32).map(ValueRef).collect();
     ExecutableFunction {
@@ -39,7 +39,7 @@ fn function(symbol: &str, return_type: NyarType, parameters: Vec<NyarType>) -> E
     }
 }
 
-fn identity_fixture(symbol: &str, ty: NyarType) -> ExecutableFunction {
+fn identity_fixture(symbol: &str, ty: SemanticType) -> ExecutableFunction {
     let mut fixture = function(symbol, ty.clone(), vec![ty.clone()]);
     fixture.value_types.insert(ValueRef(1), ty);
     let mut copy = Instruction::from_kind(InstructionKind::Copy { source: Operand::Value(ValueRef(0)) });
@@ -150,7 +150,7 @@ fn different_export_names_produce_different_contract_digests() {
 
 #[test]
 fn unsupported_utf8_carrier_does_not_fabricate_entry() {
-    let fixture = identity_fixture("managed.abi.echo", NyarType::Utf8);
+    let fixture = identity_fixture("managed.abi.echo", SemanticType::Utf8);
     let main = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main, fixture)]));
     plan.testing_module_name("managed_abi_clr");

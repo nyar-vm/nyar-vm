@@ -34,7 +34,7 @@ fn formal_semantic_path_forbids_semantic_reconstruction_patterns() {
         ("SMIR-G005", "System.String"),
         ("SMIR-G005", "JS string"),
         ("SMIR-G005", "WASM_GC_ANYREF"),
-        ("SMIR-G006", "unwrap_or(NyarType::Integer32"),
+        ("SMIR-G006", "unwrap_or(SemanticType::Integer32"),
         ("SMIR-G006", "unwrap_or(ValkyrieType::Integer32"),
         ("SMIR-G006", "default_i32"),
         ("SMIR-G006", "default_void"),

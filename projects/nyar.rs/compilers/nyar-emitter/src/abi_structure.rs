@@ -22,7 +22,7 @@
 
 use std::collections::BTreeMap;
 
-use nyar_types::{AggregateLayoutPlan, Identifier, LayoutId, NominalInstanceId, NyarType, StorageKind, SumTypeLayout};
+use nyar_types::{AggregateLayoutPlan, Identifier, LayoutId, NominalInstanceId, SemanticType, StorageKind, SumTypeLayout};
 
 use crate::{Result, backend_plan_views::ExecutableFunction, contracts::ValueOrigin};
 
@@ -191,51 +191,51 @@ impl AbiStructure {
     }
 }
 
-/// 把 `NyarType` 派生为纯身份结构（不读取任何布局事实）。
+/// 把 `SemanticType` 派生为纯身份结构（不读取任何布局事实）。
 ///
 /// 该入口只用于“签名身份”场景：具名类型不展开字段，宿主拿到身份后必须
 /// 查注册表或失败闭合，不能按名字猜字段。
-pub fn abi_structure_for_type(ty: &NyarType) -> AbiStructure {
+pub fn abi_structure_for_type(ty: &SemanticType) -> AbiStructure {
     match ty {
-        NyarType::Bottom => AbiStructure::Unsupported { reason: "`void` / bottom 类型不能出现在库导出 ABI 位置".to_string() },
-        NyarType::Unit => AbiStructure::Unit,
+        SemanticType::Bottom => AbiStructure::Unsupported { reason: "`void` / bottom 类型不能出现在库导出 ABI 位置".to_string() },
+        SemanticType::Unit => AbiStructure::Unit,
 
-        NyarType::Boolean => AbiStructure::Bool,
-        NyarType::Character => AbiStructure::Char,
+        SemanticType::Boolean => AbiStructure::Bool,
+        SemanticType::Character => AbiStructure::Char,
 
-        NyarType::Integer8 { .. } | NyarType::Integer16 { .. } | NyarType::Integer32 { .. } => AbiStructure::I32,
-        NyarType::Integer64 { .. } => AbiStructure::I64,
-        NyarType::Integer128 { .. } => {
+        SemanticType::Integer8 { .. } | SemanticType::Integer16 { .. } | SemanticType::Integer32 { .. } => AbiStructure::I32,
+        SemanticType::Integer64 { .. } => AbiStructure::I64,
+        SemanticType::Integer128 { .. } => {
             AbiStructure::Unsupported { reason: "`i128` 没有稳定的库导出载体，需要显式拆分合同".to_string() }
         }
 
-        NyarType::Float32 => AbiStructure::F32,
-        NyarType::Float64 => AbiStructure::F64,
+        SemanticType::Float32 => AbiStructure::F32,
+        SemanticType::Float64 => AbiStructure::F64,
 
-        NyarType::Utf8 => AbiStructure::Utf8,
-        NyarType::Utf16 => {
+        SemanticType::Utf8 => AbiStructure::Utf8,
+        SemanticType::Utf16 => {
             AbiStructure::Unsupported { reason: crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI.to_string() }
         }
 
-        NyarType::Array(element) => {
+        SemanticType::Array(element) => {
             AbiStructure::Array { element: Box::new(abi_structure_for_type(element)), element_key: canonical_type_spelling(element) }
         }
-        NyarType::FixedArray { element, length } => {
+        SemanticType::FixedArray { element, length } => {
             AbiStructure::FixedArray { element: Box::new(abi_structure_for_type(element)), length: *length }
         }
 
-        NyarType::Nullable(inner) => AbiStructure::Option { inner: Box::new(abi_structure_for_type(inner)) },
+        SemanticType::Nullable(inner) => AbiStructure::Option { inner: Box::new(abi_structure_for_type(inner)) },
 
-        NyarType::Tuple(fields) => AbiStructure::Tuple { fields: fields.iter().map(abi_structure_for_type).collect() },
+        SemanticType::Tuple(fields) => AbiStructure::Tuple { fields: fields.iter().map(abi_structure_for_type).collect() },
 
-        NyarType::Named(id) => identity_aggregate(simple_name_of(id), module_path_of(id), Vec::new()),
-        NyarType::Nominal { spelling, .. } => identity_aggregate(simple_name_of(spelling), module_path_of(spelling), Vec::new()),
+        SemanticType::Named(id) => identity_aggregate(simple_name_of(id), module_path_of(id), Vec::new()),
+        SemanticType::Nominal { spelling, .. } => identity_aggregate(simple_name_of(spelling), module_path_of(spelling), Vec::new()),
 
-        NyarType::Apply(base, args) => {
+        SemanticType::Apply(base, args) => {
             let (name, module_path, base_generic_args) = match base.as_ref() {
-                NyarType::Named(id) => (simple_name_of(id), module_path_of(id), Vec::new()),
-                NyarType::Nominal { spelling, .. } => (simple_name_of(spelling), module_path_of(spelling), Vec::new()),
-                NyarType::Apply(_, _) => flatten_apply_identity(base.as_ref()),
+                SemanticType::Named(id) => (simple_name_of(id), module_path_of(id), Vec::new()),
+                SemanticType::Nominal { spelling, .. } => (simple_name_of(spelling), module_path_of(spelling), Vec::new()),
+                SemanticType::Apply(_, _) => flatten_apply_identity(base.as_ref()),
                 other => {
                     return AbiStructure::Unsupported {
                         reason: format!("Apply 的 Base 必须是 Named 或 Apply，实际是 {other:?}——无法提取语义 identity"),
@@ -247,26 +247,26 @@ pub fn abi_structure_for_type(ty: &NyarType) -> AbiStructure {
             identity_aggregate(name, module_path, generic_args)
         }
 
-        NyarType::Function(_) => AbiStructure::Unsupported { reason: "函数类型不能出现在库导出 ABI 位置".to_string() },
+        SemanticType::Function(_) => AbiStructure::Unsupported { reason: "函数类型不能出现在库导出 ABI 位置".to_string() },
 
-        NyarType::TraitObject(_) => {
+        SemanticType::TraitObject(_) => {
             AbiStructure::Unsupported { reason: "TraitObject（dynamic dispatch）没有稳定的库导出载体".to_string() }
         }
 
-        NyarType::Union(_) => AbiStructure::Unsupported { reason: "匿名 union 的库导出 ABI 合同尚未定义".to_string() },
+        SemanticType::Union(_) => AbiStructure::Unsupported { reason: "匿名 union 的库导出 ABI 合同尚未定义".to_string() },
     }
 }
 
 /// 携带冻结布局事实的结构派生：具名聚合按布局递归展开字段，`Apply` 按
-/// `NyarType → LayoutId` 冻结索引回查布局，unite 按冻结 sum 布局给出变体身份。
+/// `SemanticType → LayoutId` 冻结索引回查布局，unite 按冻结 sum 布局给出变体身份。
 ///
 /// 任一字段没有结构合同、或布局未注册时整个聚合为 `Unsupported`（结构化
 /// 失败，不静默跳过字段），交给目标层拒绝。
 pub fn abi_structure_for_type_with_layouts(
-    ty: &NyarType,
+    ty: &SemanticType,
     layouts: &AggregateLayoutPlan,
-    layout_by_type: &BTreeMap<NyarType, LayoutId>,
-    sums: &BTreeMap<NyarType, SumTypeLayout>,
+    layout_by_type: &BTreeMap<SemanticType, LayoutId>,
+    sums: &BTreeMap<SemanticType, SumTypeLayout>,
 ) -> AbiStructure {
     abi_structure_with_depth(ty, layouts, layout_by_type, sums, 0)
 }
@@ -276,10 +276,10 @@ pub fn abi_structure_for_type_with_layouts(
 const ABI_STRUCTURE_MAX_DEPTH: usize = 32;
 
 fn abi_structure_with_depth(
-    ty: &NyarType,
+    ty: &SemanticType,
     layouts: &AggregateLayoutPlan,
-    layout_by_type: &BTreeMap<NyarType, LayoutId>,
-    sums: &BTreeMap<NyarType, SumTypeLayout>,
+    layout_by_type: &BTreeMap<SemanticType, LayoutId>,
+    sums: &BTreeMap<SemanticType, SumTypeLayout>,
     depth: usize,
 ) -> AbiStructure {
     if depth > ABI_STRUCTURE_MAX_DEPTH {
@@ -310,31 +310,31 @@ fn abi_structure_with_depth(
         };
     }
     match ty {
-        NyarType::Nominal { layout, spelling } => {
+        SemanticType::Nominal { layout, spelling } => {
             aggregate_structure(simple_name_of(spelling), module_path_of(spelling), *layout, layouts, layout_by_type, sums)
         }
         // `Apply` 不携带 `LayoutId`；布局身份只能来自 canonical 计划冻结的
-        // `NyarType → LayoutId` 索引。索引里没有就退回身份结构，目标层据此
+        // `SemanticType → LayoutId` 索引。索引里没有就退回身份结构，目标层据此
         // 结构化失败，绝不按名字猜布局。
-        NyarType::Apply(..) => match layout_by_type.get(ty) {
+        SemanticType::Apply(..) => match layout_by_type.get(ty) {
             Some(layout) => {
                 let (name, module_path, _) = flatten_apply_identity(ty);
                 aggregate_structure(name, module_path, *layout, layouts, layout_by_type, sums)
             }
             None => abi_structure_for_type(ty),
         },
-        NyarType::Array(element) => AbiStructure::Array {
+        SemanticType::Array(element) => AbiStructure::Array {
             element: Box::new(abi_structure_with_depth(element, layouts, layout_by_type, sums, depth + 1)),
             element_key: canonical_type_spelling(element),
         },
-        NyarType::FixedArray { element, length } => AbiStructure::FixedArray {
+        SemanticType::FixedArray { element, length } => AbiStructure::FixedArray {
             element: Box::new(abi_structure_with_depth(element, layouts, layout_by_type, sums, depth + 1)),
             length: *length,
         },
-        NyarType::Nullable(inner) => {
+        SemanticType::Nullable(inner) => {
             AbiStructure::Option { inner: Box::new(abi_structure_with_depth(inner, layouts, layout_by_type, sums, depth + 1)) }
         }
-        NyarType::Tuple(fields) => AbiStructure::Tuple {
+        SemanticType::Tuple(fields) => AbiStructure::Tuple {
             fields: fields.iter().map(|field| abi_structure_with_depth(field, layouts, layout_by_type, sums, depth + 1)).collect(),
         },
         other => abi_structure_for_type(other),
@@ -354,8 +354,8 @@ fn aggregate_structure(
     module_path: String,
     layout_id: LayoutId,
     layouts: &AggregateLayoutPlan,
-    layout_by_type: &BTreeMap<NyarType, LayoutId>,
-    sums: &BTreeMap<NyarType, SumTypeLayout>,
+    layout_by_type: &BTreeMap<SemanticType, LayoutId>,
+    sums: &BTreeMap<SemanticType, SumTypeLayout>,
 ) -> AbiStructure {
     let Some(aggregate) = layouts.layouts.iter().find(|item| item.id == layout_id)
     else {
@@ -392,19 +392,19 @@ fn aggregate_structure(
 /// 类型 canonical 拼写：目标层派生数组物理名字的稳定身份种子。
 ///
 /// 只由类型结构决定，不看模块名或题目形状。
-pub fn canonical_type_spelling(ty: &NyarType) -> String {
+pub fn canonical_type_spelling(ty: &SemanticType) -> String {
     format!("{ty:?}")
 }
 
 /// 布局字段是否为整数计数字段候选。
-fn is_integer_layout_type(ty: &NyarType) -> bool {
-    matches!(ty, NyarType::Integer8 { .. } | NyarType::Integer16 { .. } | NyarType::Integer32 { .. } | NyarType::Integer64 { .. })
+fn is_integer_layout_type(ty: &SemanticType) -> bool {
+    matches!(ty, SemanticType::Integer8 { .. } | SemanticType::Integer16 { .. } | SemanticType::Integer32 { .. } | SemanticType::Integer64 { .. })
 }
 
 /// 字段类型解析出的布局身份（名义字段自带；`Apply` 走 canonical 冻结索引）。
-fn field_layout_id(ty: &NyarType, layout_by_type: &BTreeMap<NyarType, LayoutId>) -> Option<LayoutId> {
+fn field_layout_id(ty: &SemanticType, layout_by_type: &BTreeMap<SemanticType, LayoutId>) -> Option<LayoutId> {
     match ty {
-        NyarType::Nominal { layout, .. } => Some(*layout),
+        SemanticType::Nominal { layout, .. } => Some(*layout),
         other => layout_by_type.get(other).copied(),
     }
 }
@@ -414,7 +414,7 @@ const HOST_PROJECTION_MAX_DEPTH: usize = 8;
 
 /// 为已声明 `[host_projection]` 的聚合构造宿主序列投影。
 ///
-/// 下降规则：每层先按布局事实定位唯一的 backing array 槽位（`NyarType::Array`）
+/// 下降规则：每层先按布局事实定位唯一的 backing array 槽位（`SemanticType::Array`）
 /// 与唯一的整数计数槽位；本层没有数组时，沿唯一携带布局身份的名义字段下降一层。
 /// 任何歧义（数组/计数字段多于一个、名义存储字段多于一个、路径成环、深度超限、
 /// 根层无计数字段）都结构化失败——声明只授权「这是一个宿主序列」，槽位定位仍
@@ -424,8 +424,8 @@ fn host_sequence_projection(
     name: String,
     module_path: String,
     layouts: &AggregateLayoutPlan,
-    layout_by_type: &BTreeMap<NyarType, LayoutId>,
-    sums: &BTreeMap<NyarType, SumTypeLayout>,
+    layout_by_type: &BTreeMap<SemanticType, LayoutId>,
+    sums: &BTreeMap<SemanticType, SumTypeLayout>,
 ) -> AbiStructure {
     let unsupported = |reason: String| AbiStructure::Unsupported { reason: format!("宿主序列投影 `{name}` 失败闭合：{reason}") };
     let mut levels: Vec<SequenceLevel> = Vec::new();
@@ -438,7 +438,7 @@ fn host_sequence_projection(
         if levels.len() >= HOST_PROJECTION_MAX_DEPTH {
             return unsupported(format!("嵌套存储深度超过上限 {HOST_PROJECTION_MAX_DEPTH}"));
         }
-        let items_slots: Vec<usize> = current.fields.iter().enumerate().filter(|(_, field)| matches!(field.ty, NyarType::Array(_))).map(|(index, _)| index).collect();
+        let items_slots: Vec<usize> = current.fields.iter().enumerate().filter(|(_, field)| matches!(field.ty, SemanticType::Array(_))).map(|(index, _)| index).collect();
         if items_slots.len() > 1 {
             return unsupported("同一层存在多个数组字段，无法唯一确定 backing array".to_string());
         }
@@ -450,7 +450,7 @@ fn host_sequence_projection(
         if let Some(items_slot) = items_slots.first().copied() {
             // 叶子层：backing array 就在本层。
             levels.push(SequenceLevel { layout: current.id, field_count: current.fields.len(), items_slot: Some(items_slot), length_slot, inner_slot: None });
-            let NyarType::Array(element) = &current.fields[items_slot].ty else {
+            let SemanticType::Array(element) = &current.fields[items_slot].ty else {
                 return unsupported("叶子层 backing array 字段事实缺失".to_string());
             };
             let element_structure = abi_structure_for_type_with_layouts(element, layouts, layout_by_type, sums);
@@ -581,13 +581,13 @@ pub fn module_path_of(id: &Identifier) -> String {
 
 /// 把嵌套的 `Apply(Apply(Named("A"), ...), ...)` 展平，提取最顶层语义名、
 /// 模块路径与最底层 generic_args 残留（极罕见场景）。
-fn flatten_apply_identity(mut ty: &NyarType) -> (String, String, Vec<NyarType>) {
-    let mut accumulated: Vec<NyarType> = Vec::new();
+fn flatten_apply_identity(mut ty: &SemanticType) -> (String, String, Vec<SemanticType>) {
+    let mut accumulated: Vec<SemanticType> = Vec::new();
     loop {
         match ty {
-            NyarType::Named(id) => return (simple_name_of(id), module_path_of(id), accumulated),
-            NyarType::Nominal { spelling, .. } => return (simple_name_of(spelling), module_path_of(spelling), accumulated),
-            NyarType::Apply(base, args) => {
+            SemanticType::Named(id) => return (simple_name_of(id), module_path_of(id), accumulated),
+            SemanticType::Nominal { spelling, .. } => return (simple_name_of(spelling), module_path_of(spelling), accumulated),
+            SemanticType::Apply(base, args) => {
                 accumulated.extend(args.iter().cloned());
                 ty = base.as_ref();
             }
@@ -606,12 +606,12 @@ mod tests {
 
     use super::*;
 
-    fn nyar(s: &str) -> NyarType {
+    fn nyar(s: &str) -> SemanticType {
         crate::test_canonical_primitive(s)
     }
 
     #[allow(deprecated)]
-    fn identity_function(parameters: &[(usize, &str, NyarType)], return_type: NyarType) -> ExecutableFunction {
+    fn identity_function(parameters: &[(usize, &str, SemanticType)], return_type: SemanticType) -> ExecutableFunction {
         ExecutableFunction {
             symbol: "exported".to_string(),
             return_type,
@@ -639,7 +639,7 @@ mod tests {
 
     #[test]
     fn scalars_keep_semantic_identity() {
-        assert_eq!(abi_structure_for_type(&NyarType::Unit), AbiStructure::Unit);
+        assert_eq!(abi_structure_for_type(&SemanticType::Unit), AbiStructure::Unit);
         assert_eq!(abi_structure_for_type(&nyar("bool")), AbiStructure::Bool);
         assert_eq!(abi_structure_for_type(&nyar("i32")), AbiStructure::I32);
         assert_eq!(abi_structure_for_type(&nyar("i64")), AbiStructure::I64);
@@ -649,14 +649,14 @@ mod tests {
 
     #[test]
     fn unsupported_scalars_fail_closed() {
-        for ty in [nyar("i128"), NyarType::Utf16] {
+        for ty in [nyar("i128"), SemanticType::Utf16] {
             assert!(abi_structure_for_type(&ty).unsupported_reason().is_some(), "`{ty}` 必须结构化失败");
         }
     }
 
     #[test]
     fn identity_aggregate_does_not_guess_fields() {
-        let ty = NyarType::Apply(Box::new(NyarType::Named(Identifier::new("std::collections::ArrayList"))), vec![nyar("i64")]);
+        let ty = SemanticType::Apply(Box::new(SemanticType::Named(Identifier::new("std::collections::ArrayList"))), vec![nyar("i64")]);
         let AbiStructure::Aggregate(aggregate) = abi_structure_for_type(&ty)
         else {
             panic!("Apply 必须有身份结构")

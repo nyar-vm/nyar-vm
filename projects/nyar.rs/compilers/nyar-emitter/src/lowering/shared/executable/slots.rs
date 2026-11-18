@@ -3,10 +3,10 @@
 use std::collections::BTreeMap;
 
 use crate::backend_plan_views::{ExecutableBlockRef, ExecutableFunction, ExecutableValueRef};
-use nyar::NyarType;
+use nyar::SemanticType;
 
 pub struct ExecutableSlotPlan {
-    pub local_types: Vec<NyarType>,
+    pub local_types: Vec<SemanticType>,
     pub value_locals: BTreeMap<ExecutableValueRef, u16>,
     pub block_param_locals: BTreeMap<(ExecutableBlockRef, usize), u16>,
 }
@@ -37,7 +37,7 @@ impl ExecutableSlotPlan {
         plan
     }
 
-    fn alloc_local(&mut self, ty: &NyarType) -> u16 {
+    fn alloc_local(&mut self, ty: &SemanticType) -> u16 {
         let index = u16::try_from(self.local_types.len()).expect("Nyar local count exceeds u16");
         self.local_types.push(ty.clone());
         index

@@ -18,7 +18,7 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    FragmentSubmission, Result, backend_plan_views::NyarType, lowering::sanitize_symbol,
+    FragmentSubmission, Result, backend_plan_views::SemanticType, lowering::sanitize_symbol,
     nyar_backend_machine::HostProperty,
 };
 use nyar_types::ItemInstanceId;
@@ -171,7 +171,7 @@ fn frozen_host_methods(submission: &FragmentSubmission, target: &X64ProductTarge
             ));
         }
         for parameter in &function.param_types {
-            if !matches!(parameter, NyarType::Integer64 { signed: true }) {
+            if !matches!(parameter, SemanticType::Integer64 { signed: true }) {
                 return Err(format!(
                     "宿主边界只闭合完整 `i64` 整数实参：`{export_name}` 的形参类型 `{parameter}` 没有无损宿主载体，拒绝写出"
                 ));
@@ -180,8 +180,8 @@ fn frozen_host_methods(submission: &FragmentSubmission, target: &X64ProductTarge
         // 返回与实参共用同一符号合同：`u64` 的 `2^63..2^64-1` 段没有有符号
         // `i64` 载体可无损承载，在 BigInt 载体接入前与窄整数一样写出前拒绝。
         let returns = match &function.return_type {
-            NyarType::Integer64 { signed: true } => HostValueKind::Int64,
-            NyarType::Boolean => HostValueKind::Bool,
+            SemanticType::Integer64 { signed: true } => HostValueKind::Int64,
+            SemanticType::Boolean => HostValueKind::Bool,
             other => {
                 return Err(format!(
                     "宿主边界尚未闭合返回载体 `{other}`：`{export_name}` 只接受有符号 `i64` 或 `bool` 返回（无符号 `u64` 需 BigInt 无损载体），拒绝写出"

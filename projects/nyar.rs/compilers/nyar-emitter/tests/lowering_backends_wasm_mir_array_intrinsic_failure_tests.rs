@@ -9,12 +9,12 @@ use nyar_emitter::{
     contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef},
     testing::lower_fragment_to_wasm_mir_module,
 };
-use nyar_types::NyarType;
+use nyar_types::SemanticType;
 use std::collections::BTreeMap;
 
-const I32: NyarType = NyarType::Integer32 { signed: true };
+const I32: SemanticType = SemanticType::Integer32 { signed: true };
 
-fn main_function(instructions: Vec<Instruction>, return_value: ValueRef, value_types: Vec<(ValueRef, NyarType)>) -> ExecutableFunction {
+fn main_function(instructions: Vec<Instruction>, return_value: ValueRef, value_types: Vec<(ValueRef, SemanticType)>) -> ExecutableFunction {
     let block = Block {
         id: BlockRef(0),
         label: "entry".to_string(),

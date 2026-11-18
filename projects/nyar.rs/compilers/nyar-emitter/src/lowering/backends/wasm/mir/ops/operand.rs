@@ -9,7 +9,7 @@ use super::super::*;
 #[allow(deprecated)]
 impl<'a> WasmMirLowerer<'a> {
     /// Require MIR `value_types` for an SSA value that needs a storage class.
-    pub(crate) fn require_value_type(&self, value: MirValueRef) -> &NyarType {
+    pub(crate) fn require_value_type(&self, value: MirValueRef) -> &SemanticType {
         self.mir_fn.value_types.get(&value).unwrap_or_else(|| {
             panic!(
                 "WASM emit fail-closed: missing value_types for %{} in `{}`",

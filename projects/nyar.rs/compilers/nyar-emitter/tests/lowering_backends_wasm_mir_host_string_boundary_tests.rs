@@ -27,27 +27,27 @@ use nyar_emitter::{
     contracts::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef},
     testing::lower_fragment_to_wasm_mir_module,
 };
-use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldLayout, ImportIndex, ItemInstanceId, LayoutId, NyarType, StorageKind};
+use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldLayout, ImportIndex, ItemInstanceId, LayoutId, SemanticType, StorageKind};
 use std::collections::BTreeMap;
 
-const UTF8: NyarType = NyarType::Utf8;
-const UTF16: NyarType = NyarType::Utf16;
-const I32: NyarType = NyarType::Integer32 { signed: true };
+const UTF8: SemanticType = SemanticType::Utf8;
+const UTF16: SemanticType = SemanticType::Utf16;
+const I32: SemanticType = SemanticType::Integer32 { signed: true };
 
 const UTF8_TEXT_LAYOUT_ID: LayoutId = 7;
 const NO_BYTES_LAYOUT_ID: LayoutId = 9;
 const HOLDER_LAYOUT_ID: LayoutId = 11;
 
-fn byte_array() -> NyarType {
-    NyarType::Array(Box::new(NyarType::Integer8 { signed: false }))
+fn byte_array() -> SemanticType {
+    SemanticType::Array(Box::new(SemanticType::Integer8 { signed: false }))
 }
 
-fn long_array() -> NyarType {
-    NyarType::Array(Box::new(NyarType::Integer64 { signed: true }))
+fn long_array() -> SemanticType {
+    SemanticType::Array(Box::new(SemanticType::Integer64 { signed: true }))
 }
 
 /// 单字段聚合 layout：`_repr: <bytes_field>`，storage Reference → 必进 gc struct 注册表。
-fn layout_plan(id: LayoutId, name: &str, bytes_field: NyarType) -> AggregateLayoutPlan {
+fn layout_plan(id: LayoutId, name: &str, bytes_field: SemanticType) -> AggregateLayoutPlan {
     AggregateLayoutPlan {
         layouts: vec![AggregateLayout {
             id,
@@ -257,7 +257,7 @@ fn holder_and_text_layouts() -> AggregateLayoutPlan {
 /// `%2 = utf8_length(%1)`；return %2。`bound_layout` 决定字段读结果槽是否携带已登记
 /// gc struct layout——即容器字段读形态的触发开关。
 fn utf8_field_get_main(bound_layout: Option<LayoutId>) -> ExecutableFunction {
-    let holder = NyarType::Nominal { layout: HOLDER_LAYOUT_ID, spelling: Identifier::new("Holder") };
+    let holder = SemanticType::Nominal { layout: HOLDER_LAYOUT_ID, spelling: Identifier::new("Holder") };
     let tuple_get = Instruction::from_kind(InstructionKind::TupleGet {
         object: Operand::Value(ValueRef(0)),
         layout_id: HOLDER_LAYOUT_ID,

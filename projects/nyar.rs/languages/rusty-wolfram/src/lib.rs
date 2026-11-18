@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-use nyar_types::{Id, Loc, NyarContext, NyarError, NyarFrontend, Vfs};
+use nyar_types::{Id, Loc, NyarContext, TypesError, NyarFrontend, Vfs};
 use oak_core::tree::TypedNode;
 use oak_core::{Builder, Source, SourceText};
 use oak_wolfram::{ast::WolframRoot, WolframBuilder, WolframLanguage};
@@ -25,7 +25,7 @@ impl Default for RustyWolframFrontend {
 impl NyarFrontend for RustyWolframFrontend {
     type Language = WolframLanguage;
 
-    fn parse(&self, source: &str) -> Result<WolframRoot, NyarError> {
+    fn parse(&self, source: &str) -> Result<WolframRoot, TypesError> {
         let builder = WolframBuilder::new(&self.language);
         let source_text = SourceText::new(source);
         let mut session = oak_core::parser::ParseSession::<WolframLanguage>::default();
@@ -33,7 +33,7 @@ impl NyarFrontend for RustyWolframFrontend {
         let output = builder.build(&source_text, &[], &mut session);
         output
             .result
-            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
+            .map_err(|e| TypesError::Parse(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs, A: chomsky_uir::Analysis<IKun>>(&self, ast: &WolframRoot, ctx: &mut NyarContext<V, A>) -> Id

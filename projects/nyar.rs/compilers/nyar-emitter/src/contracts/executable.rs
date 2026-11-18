@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 use ordered_float::OrderedFloat;
 
-use nyar_types::{ItemInstanceId, NamePath, NyarType};
+use nyar_types::{ItemInstanceId, NamePath, SemanticType};
 
 /// SSA value reference within an executable function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -131,7 +131,7 @@ pub enum InstructionKind {
         /// Constant payload.
         constant: Constant,
         /// Optional static type.
-        ty: Option<NyarType>,
+        ty: Option<SemanticType>,
     },
     /// Copy an operand into the output.
     Copy {
@@ -146,7 +146,7 @@ pub enum InstructionKind {
         /// 源操作数。
         source: Operand,
         /// 结果类型（Semantic MIR 已冻结 `TypeId` 的目标投影）。
-        ty: NyarType,
+        ty: SemanticType,
     },
     /// Store into a local (`let` binding).
     ///
@@ -156,7 +156,7 @@ pub enum InstructionKind {
         /// Value to store.
         value: Operand,
         /// Optional static type.
-        ty: Option<NyarType>,
+        ty: Option<SemanticType>,
     },
     /// 调用 callee。
     ///
@@ -171,7 +171,7 @@ pub enum InstructionKind {
     },
     /// 具名函数作值：把前端冻结的 callable 实例物化为函数值。
     ///
-    /// 结果 SSA 值的类型是 `NyarType::Function`（Semantic MIR 已登记）；物理载体
+    /// 结果 SSA 值的类型是 `SemanticType::Function`（Semantic MIR 已登记）；物理载体
     /// （如 wasm funcref table 槽位下标）由目标后端决定，不得在此携带任何后端
     /// 私有编码。实例必须已在链接事实中登记，缺失即结构化失败。
     LoadFunctionRef {
@@ -268,7 +268,7 @@ pub enum InstructionKind {
     /// 运行时长度的语言数组构造。使用完整 `array_type`，而非仅元素类型。
     ArrayNew {
         /// Full array type (`Array<T>` / …); transitional stand-in for `TypeId`.
-        array_type: NyarType,
+        array_type: SemanticType,
         /// Runtime length.
         length: Operand,
         /// Prescribed initialization (no silent “fill later”).
@@ -282,7 +282,7 @@ pub enum InstructionKind {
         /// dummy 身份占位。
         layout_id: Option<nyar_types::LayoutId>,
         /// Full array type; fixed length lives in the type, not a parallel `usize`.
-        array_type: NyarType,
+        array_type: SemanticType,
         /// Element values in evaluation order already sequenced by SSA/CFG.
         elements: Vec<Operand>,
     },
@@ -391,11 +391,11 @@ pub struct ExecutableFunction {
     /// Function symbol.
     pub symbol: String,
     /// Return type.
-    pub return_type: NyarType,
+    pub return_type: SemanticType,
     /// Parameter types.
-    pub param_types: Vec<NyarType>,
+    pub param_types: Vec<SemanticType>,
     /// SSA value static types.
-    pub value_types: BTreeMap<ValueRef, NyarType>,
+    pub value_types: BTreeMap<ValueRef, SemanticType>,
     /// Semantic MIR 已绑定的 SSA 值到聚合布局身份映射。
     pub value_layouts: BTreeMap<ValueRef, nyar_types::LayoutId>,
     /// Semantic MIR 已绑定的返回值布局身份（标量/无返回值为 `None`）。

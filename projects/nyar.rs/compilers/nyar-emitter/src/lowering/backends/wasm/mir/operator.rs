@@ -5,7 +5,7 @@
 //! 发射期只消费 [`WasmOperatorBinding`]，不得再从助记符字符串推断 arity 或配方。
 
 use acorn_wasm::WasmOpcode;
-use nyar_types::{ItemInstanceId, NyarType};
+use nyar_types::{ItemInstanceId, SemanticType};
 
 use crate::target_operator::{
     TargetOperatorPlan, WasmGcArrayOperation, WasmGcArrayOperatorPlan, operand_carrier, validate_frozen_operator,
@@ -33,8 +33,8 @@ pub(crate) fn freeze_wasm_operator_binding(
     instance: ItemInstanceId,
     symbol: &str,
     mnemonic: &str,
-    parameter_types: &[NyarType],
-    return_type: &NyarType,
+    parameter_types: &[SemanticType],
+    return_type: &SemanticType,
 ) -> crate::Result<Option<WasmOperatorBinding>> {
     if let Some(plan) = freeze_wasm_numeric_binding(mnemonic) {
         validate_frozen_operator(mnemonic, instance, symbol, parameter_types, return_type, &plan)?;
@@ -57,8 +57,8 @@ fn validate_frozen_array_operator(
     instance: ItemInstanceId,
     function: &str,
     mnemonic: &str,
-    parameter_types: &[NyarType],
-    return_type: &NyarType,
+    parameter_types: &[SemanticType],
+    return_type: &SemanticType,
     plan: &WasmGcArrayOperatorPlan,
 ) -> crate::Result<()> {
     use WasmGcArrayOperation::{Get, Length, New, Set};
@@ -70,13 +70,13 @@ fn validate_frozen_array_operator(
     if parameter_types.len() != plan.arity {
         return fail(format!("expected arity={} actual={}", plan.arity, parameter_types.len()));
     }
-    fn array_element(ty: &NyarType) -> Option<&NyarType> {
+    fn array_element(ty: &SemanticType) -> Option<&SemanticType> {
         match ty {
-            NyarType::Array(element) => Some(element.as_ref()),
+            SemanticType::Array(element) => Some(element.as_ref()),
             _ => None,
         }
     }
-    let index_carrier = |ty: &NyarType| operand_carrier(ty) == Some(crate::target_operator::TargetOperandType::I32);
+    let index_carrier = |ty: &SemanticType| operand_carrier(ty) == Some(crate::target_operator::TargetOperandType::I32);
     match plan.operation {
         New => {
             let Some(length) = parameter_types.first()
@@ -133,7 +133,7 @@ fn validate_frozen_array_operator(
             if value != element {
                 return fail(format!("`array.set` 的值参数必须与数组元素类型一致: element={element:?} actual={value:?}"));
             }
-            if *return_type != NyarType::Unit {
+            if *return_type != SemanticType::Unit {
                 return fail(format!("`array.set` 的返回类型必须是 unit: actual={return_type:?}"));
             }
         }

@@ -320,8 +320,8 @@ impl std::fmt::Display for ValkyrieError {
 
 impl std::error::Error for ValkyrieError {}
 
-impl From<nyar_types::NyarError> for ValkyrieError {
-    fn from(e: nyar_types::NyarError) -> Self {
+impl From<nyar_types::TypesError> for ValkyrieError {
+    fn from(e: nyar_types::TypesError) -> Self {
         let code = e.code;
         let key = e.kind.key().to_string();
         let message = format!("{}", e.kind);

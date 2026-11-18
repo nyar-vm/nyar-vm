@@ -10,7 +10,7 @@ use crate::{
     nyar_backend_wasi::WasiPreview,
 };
 use acorn_wasm::{VALTYPE_I32, VALTYPE_I64};
-use nyar_types::{ItemInstanceId, NyarType};
+use nyar_types::{ItemInstanceId, SemanticType};
 
 use super::{
     WasmOperatorBinding, freeze_wasm_operator_binding,
@@ -194,7 +194,7 @@ pub(super) fn wasm_import_type_from_backend_import(
     // `WasmJsGlue` 边界才按 `declared_text_projection` 把 `utf16` 降为 i32 宿主句柄。
     // 导入签名不在 `validate_text_encoding_projection` 的覆盖范围内，所以这里必须
     // 自己区分边界，不能依赖 verifier 兜底。
-    let abi_value_type = |ty: &NyarType| {
+    let abi_value_type = |ty: &SemanticType| {
         if wasi_mode {
             wasm_param_value_type(ctx, ty, js_glue_utf8_as_anyref)
         }
@@ -204,7 +204,7 @@ pub(super) fn wasm_import_type_from_backend_import(
     };
     let params = import.parameter_types.iter().map(abi_value_type).collect::<crate::Result<Vec<_>>>()?;
     let results = match &import.return_type {
-        NyarType::Unit | NyarType::Bottom => Vec::new(),
+        SemanticType::Unit | SemanticType::Bottom => Vec::new(),
         ty => vec![abi_value_type(ty)?],
     };
     Ok(wasm_function_type(&params, &results))
@@ -344,8 +344,8 @@ mod host_import_signature_tests {
             BackendImport {
                 index: ImportIndex::from_index(0).expect("import index"),
                 link: ExternalImportLink::host(Some(Identifier::new("js_builtin")), vec!["fetch".into()]),
-                parameter_types: vec![NyarType::Integer32 { signed: true }, NyarType::Integer32 { signed: true }],
-                return_type: NyarType::Integer32 { signed: true },
+                parameter_types: vec![SemanticType::Integer32 { signed: true }, SemanticType::Integer32 { signed: true }],
+                return_type: SemanticType::Integer32 { signed: true },
             },
         );
         let submission = FragmentSubmission::from_backend_plan(plan);
@@ -370,8 +370,8 @@ mod host_import_signature_tests {
                 // `env::utf8_length` 同时存在于字段名表（`[i32] -> [i32]`），
                 // 这里由 plan 声明一个不同的签名，验证 plan 胜出。
                 link: ExternalImportLink::host(Some(Identifier::new("js_builtin")), vec!["utf8_length".into()]),
-                parameter_types: vec![NyarType::Integer32 { signed: true }, NyarType::Integer32 { signed: true }],
-                return_type: NyarType::Integer64 { signed: true },
+                parameter_types: vec![SemanticType::Integer32 { signed: true }, SemanticType::Integer32 { signed: true }],
+                return_type: SemanticType::Integer64 { signed: true },
             },
         );
         let submission = FragmentSubmission::from_backend_plan(plan);

@@ -2,23 +2,13 @@
 name = "nyar-types"
 version.workspace = true
 edition.workspace = true
-description = "Stable shared types for the generic Nyar backend platform"
+description = "Consumer facade re-exporting Boost compiler-types for the language frontends"
 authors.workspace = true
 license.workspace = true
 
-[dependencies]
-serde = { workspace = true, optional = true }
-url = { workspace = true }
-ordered-float = { workspace = true }
-sha2 = { workspace = true }
-
 [features]
 default = []
-serde = ["dep:serde", "url/serde", "ordered-float/serde"]
+serde = ["compiler-types/serde"]
 
-[dev-dependencies]
-serde_json = { workspace = true }
-# 自引用 dev-dependency：仅为测试构建启用 serde feature，
-# 使 diagnostic_contract 的 JSON round-trip 用例在 `cargo test -p nyar-types` 下真实执行；
-# 不改变 crate 公开 feature 面（serde 派生仍按设计 feature-gated）。
-nyar-types = { path = ".", features = ["serde"] }
+[dependencies]
+compiler-types = { workspace = true }

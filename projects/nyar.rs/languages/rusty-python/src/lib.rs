@@ -7,7 +7,7 @@ pub use crate::runtime::RustyPythonRuntime;
 
 use chomsky_types::Loc;
 use chomsky_uir::{egraph::HasDebugInfo, Analysis, IKun};
-use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
+use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
 use oak_python::ast::{Expression, Literal, PythonRoot, Statement};
 
 /// Rusty Python 前端
@@ -27,18 +27,18 @@ where
 {
     type Language = oak_python::PythonLanguage;
 
-    fn parse(&self, source: &str) -> Result<PythonRoot, NyarError> {
+    fn parse(&self, source: &str) -> Result<PythonRoot, TypesError> {
         use oak_core::Parser;
         let config = oak_python::PythonLanguage {};
         let parser = oak_python::PythonParser::new(&config);
         let mut cache = oak_core::parser::ParseSession::<oak_python::PythonLanguage>::default();
         let parse_result = parser.parse(source, &[], &mut cache);
 
-        let green_node = parse_result.result.map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
+        let green_node = parse_result.result.map_err(|e| TypesError::Compile(format!("{:?}", e)))?;
 
         let builder = oak_python::PythonBuilder::new(&config);
         let source_text = oak_core::source::SourceText::new(source.to_string());
-        let ast = builder.build_root(green_node, &source_text).map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
+        let ast = builder.build_root(green_node, &source_text).map_err(|e| TypesError::Compile(format!("{:?}", e)))?;
         Ok(ast)
     }
 

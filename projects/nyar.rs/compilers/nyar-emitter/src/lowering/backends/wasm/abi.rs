@@ -7,7 +7,7 @@
 //! 公共 [`crate::TargetExecutionPlan`] 只携带逻辑导出身份与签名；Wasm lane 在
 //! 需要导出 ABI 时按函数签名现场冻结，不把本 lane 的载体缓存写回共享计划。
 
-use nyar_types::{ItemInstanceId, NyarType};
+use nyar_types::{ItemInstanceId, SemanticType};
 
 use crate::{Result, contracts::ExecutableFunction};
 
@@ -71,23 +71,23 @@ pub(crate) fn freeze_wasm_export_abi(function: &ExecutableFunction) -> Result<Wa
     Ok(WasmLibraryExportAbi { params, returns })
 }
 
-fn freeze_wasm_carrier(ty: &NyarType) -> Result<WasmAbiCarrier> {
+fn freeze_wasm_carrier(ty: &SemanticType) -> Result<WasmAbiCarrier> {
     match ty {
-        NyarType::Unit => Ok(WasmAbiCarrier::Void),
-        NyarType::Boolean | NyarType::Character => Ok(WasmAbiCarrier::I32),
-        NyarType::Integer8 { .. } | NyarType::Integer16 { .. } | NyarType::Integer32 { .. } => Ok(WasmAbiCarrier::I32),
-        NyarType::Integer64 { .. } => Ok(WasmAbiCarrier::I64),
-        NyarType::Float32 => Ok(WasmAbiCarrier::F32),
-        NyarType::Float64 => Ok(WasmAbiCarrier::F64),
-        NyarType::Utf8 => Ok(WasmAbiCarrier::I32),
-        NyarType::Array(_) | NyarType::FixedArray { .. } | NyarType::Nullable(_) | NyarType::Tuple(_) => Ok(WasmAbiCarrier::Handle),
-        NyarType::Named(_) | NyarType::Nominal { .. } | NyarType::Apply(_, _) => Ok(WasmAbiCarrier::Handle),
-        NyarType::Integer128 { .. }
-        | NyarType::Utf16
-        | NyarType::Bottom
-        | NyarType::Function(_)
-        | NyarType::TraitObject(_)
-        | NyarType::Union(_) => Err(format!("Wasm 导出面没有该类型的稳定 ABI 载体: {ty}")),
+        SemanticType::Unit => Ok(WasmAbiCarrier::Void),
+        SemanticType::Boolean | SemanticType::Character => Ok(WasmAbiCarrier::I32),
+        SemanticType::Integer8 { .. } | SemanticType::Integer16 { .. } | SemanticType::Integer32 { .. } => Ok(WasmAbiCarrier::I32),
+        SemanticType::Integer64 { .. } => Ok(WasmAbiCarrier::I64),
+        SemanticType::Float32 => Ok(WasmAbiCarrier::F32),
+        SemanticType::Float64 => Ok(WasmAbiCarrier::F64),
+        SemanticType::Utf8 => Ok(WasmAbiCarrier::I32),
+        SemanticType::Array(_) | SemanticType::FixedArray { .. } | SemanticType::Nullable(_) | SemanticType::Tuple(_) => Ok(WasmAbiCarrier::Handle),
+        SemanticType::Named(_) | SemanticType::Nominal { .. } | SemanticType::Apply(_, _) => Ok(WasmAbiCarrier::Handle),
+        SemanticType::Integer128 { .. }
+        | SemanticType::Utf16
+        | SemanticType::Bottom
+        | SemanticType::Function(_)
+        | SemanticType::TraitObject(_)
+        | SemanticType::Union(_) => Err(format!("Wasm 导出面没有该类型的稳定 ABI 载体: {ty}")),
     }
 }
 
@@ -101,7 +101,7 @@ pub(crate) fn freeze_wasm_export_abi_for(plan: &crate::TargetExecutionPlan, inst
 mod tests {
     use super::*;
 
-    fn function_with(return_type: NyarType, param_types: Vec<NyarType>) -> ExecutableFunction {
+    fn function_with(return_type: SemanticType, param_types: Vec<SemanticType>) -> ExecutableFunction {
         ExecutableFunction {
             symbol: "probe".to_string(),
             return_type,
@@ -125,14 +125,14 @@ mod tests {
     /// f32 有独立载体，不得并入 64 位。
     #[test]
     fn float32_has_independent_carrier() {
-        let abi = freeze_wasm_export_abi(&function_with(NyarType::Float32, Vec::new())).expect("f32 有独立 ABI 载体");
+        let abi = freeze_wasm_export_abi(&function_with(SemanticType::Float32, Vec::new())).expect("f32 有独立 ABI 载体");
         assert_eq!(abi.returns, WasmAbiCarrier::F32);
     }
 
     /// `utf16` 在 Wasm 导出面没有稳定载体，必须失败闭合。
     #[test]
     fn utf16_fails_closed() {
-        let error = freeze_wasm_export_abi(&function_with(NyarType::Utf16, Vec::new())).expect_err("utf16 不得有默认载体");
+        let error = freeze_wasm_export_abi(&function_with(SemanticType::Utf16, Vec::new())).expect_err("utf16 不得有默认载体");
         assert!(error.contains("Utf16") || error.contains("utf16"), "{error}");
     }
 }

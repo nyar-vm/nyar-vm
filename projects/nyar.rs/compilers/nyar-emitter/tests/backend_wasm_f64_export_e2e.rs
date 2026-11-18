@@ -21,11 +21,11 @@ use nyar_emitter::{
     lowering::backends::wasm::lower_fragment_to_wasm_module_for,
     nyar_backend_wasi::{WasiPreview, WasmBinaryModule, WasmPackageKind},
 };
-use nyar_types::{InstructionId, NyarType, ProvenanceId};
+use nyar_types::{InstructionId, SemanticType, ProvenanceId};
 
-const I64: NyarType = NyarType::Integer64 { signed: true };
-const U64: NyarType = NyarType::Integer64 { signed: false };
-const F64: NyarType = NyarType::Float64;
+const I64: SemanticType = SemanticType::Integer64 { signed: true };
+const U64: SemanticType = SemanticType::Integer64 { signed: false };
+const F64: SemanticType = SemanticType::Float64;
 
 struct EmittedBridge {
     module: WasmBinaryModule,
@@ -55,7 +55,7 @@ fn emit(function: ExecutableFunction) -> EmittedBridge {
 }
 
 /// `echo(x: source) -> target { x as target }`。
-fn cast_function(source: NyarType, target: NyarType) -> ExecutableFunction {
+fn cast_function(source: SemanticType, target: SemanticType) -> ExecutableFunction {
     ExecutableFunction {
         symbol: "echo".to_string(),
         return_type: target.clone(),

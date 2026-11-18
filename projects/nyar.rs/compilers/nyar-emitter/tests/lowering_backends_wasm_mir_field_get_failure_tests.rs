@@ -9,10 +9,10 @@ use nyar_emitter::{
     contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef},
     testing::lower_fragment_to_wasm_mir_module,
 };
-use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldId, FieldLayout, LayoutId, NyarType, StorageKind};
+use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldId, FieldLayout, LayoutId, SemanticType, StorageKind};
 use std::collections::BTreeMap;
 
-const I32: NyarType = NyarType::Integer32 { signed: true };
+const I32: SemanticType = SemanticType::Integer32 { signed: true };
 
 /// `main()`：%0 = 常量 7（i32 槽）；%1 = `FieldGet(object=%0, field)`；return %1。
 /// 对象槽固定是 i32 标量——用于注入「gc struct 已注册但对象槽非引用」的冲突形状。

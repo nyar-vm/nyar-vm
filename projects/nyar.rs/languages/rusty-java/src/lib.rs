@@ -4,7 +4,7 @@
 
 use chomsky_types::Loc;
 use chomsky_uir::{egraph::HasDebugInfo, Analysis, IKun};
-use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
+use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
 use oak_core::source::SourceText;
 use oak_java::{JavaBuilder, JavaLanguage, JavaRoot};
 
@@ -44,11 +44,11 @@ where
     type Language = JavaLanguage;
 
     /// 解析 Java 源代码
-    fn parse(&self, source: &str) -> Result<JavaRoot, NyarError> {
+    fn parse(&self, source: &str) -> Result<JavaRoot, TypesError> {
         let mut session = oak_core::parser::ParseSession::<JavaLanguage>::default();
         let source_text = SourceText::new(source);
         let output = self.builder.build(&source_text, &[], &mut session);
-        output.result.map_err(|e| NyarError::Compile(format!("{:?}", e)))
+        output.result.map_err(|e| TypesError::Compile(format!("{:?}", e)))
     }
 
     /// 统一的接入接口，支持 EGraph 优化流

@@ -1,6 +1,6 @@
 use chomsky_types::Loc;
 use chomsky_uir::{Analysis, IKun};
-use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
+use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
 use oak_core::source::SourceText;
 use oak_go::{ast, GoBuilder, GoLanguage, GoRoot};
 use std::ops::Range;
@@ -21,14 +21,14 @@ impl RustyGoFrontend {
 impl NyarFrontend<(), GoRoot> for RustyGoFrontend {
     type Language = GoLanguage;
 
-    fn parse(&self, source: &str) -> Result<GoRoot, NyarError> {
+    fn parse(&self, source: &str) -> Result<GoRoot, TypesError> {
         use oak_core::Builder;
         let builder = GoBuilder::new(&self.language);
         let source_text = SourceText::new(source.to_string());
         let mut session = oak_core::parser::ParseSession::<GoLanguage>::default();
         let output = builder.build(&source_text, &[], &mut session);
 
-        output.result.map_err(|e| NyarError::Compile(format!("Build error: {:?}", e)))
+        output.result.map_err(|e| TypesError::Compile(format!("Build error: {:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, ast: &GoRoot, ctx: &mut NyarContext<'_, V, ()>) -> Id {

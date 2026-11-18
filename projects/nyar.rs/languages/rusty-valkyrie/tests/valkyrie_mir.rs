@@ -89,7 +89,7 @@ fn structured_diagnostic_set_rejects_empty() {
     assert!(StructuredDiagnosticSet::from_records(Vec::new()).is_none());
 }
 
-fn aggregate_layout_with_field(ty: NyarType) -> AggregateLayout {
+fn aggregate_layout_with_field(ty: SemanticType) -> AggregateLayout {
     AggregateLayout {
         id: 0,
         name: "Endpoint".into(),
@@ -107,7 +107,7 @@ fn canonical_program_rejects_named_residue_shadowing_registered_layout() {
     linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Nominal { declaration: ty, arguments: Vec::new() } });
     linked.type_surface_spellings.insert(ty, Identifier::new("Endpoint"));
     linked.aggregate_layout_by_type.insert(ty, 0);
-    linked.aggregate_layouts.layouts.push(aggregate_layout_with_field(NyarType::Named(Identifier::new("Endpoint"))));
+    linked.aggregate_layouts.layouts.push(aggregate_layout_with_field(SemanticType::Named(Identifier::new("Endpoint"))));
     match validate_named_residues(&linked) {
         Err(ValkyrieMirError::ShadowedNamedResidue { stage, function, owner, name }) => {
             assert_eq!(stage, "canonical::aggregate_layouts");
@@ -126,7 +126,7 @@ fn canonical_program_allows_named_spelling_without_registered_identity() {
     let mut linked = LinkedSemanticProgram::default();
     linked.types.insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Generic { owner: ItemId::from_index(0).unwrap(), ordinal: 0 } });
     linked.type_surface_spellings.insert(ty, Identifier::new("T"));
-    linked.aggregate_layouts.layouts.push(aggregate_layout_with_field(NyarType::Named(Identifier::new("usize"))));
+    linked.aggregate_layouts.layouts.push(aggregate_layout_with_field(SemanticType::Named(Identifier::new("usize"))));
     validate_named_residues(&linked).expect("无冻结身份的名义拼写允许保留");
 }
 
@@ -138,7 +138,7 @@ fn canonical_program_rejects_named_residue_shadowing_primitive_carrier() {
         .types
         .insert(ty, TypeRecord { declaration: ty, kind: CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 64, signed: true }) });
     linked.type_surface_spellings.insert(ty, Identifier::new("std::primitive::i64"));
-    linked.aggregate_layouts.layouts.push(aggregate_layout_with_field(NyarType::Named(Identifier::new("i64"))));
+    linked.aggregate_layouts.layouts.push(aggregate_layout_with_field(SemanticType::Named(Identifier::new("i64"))));
     assert!(matches!(validate_named_residues(&linked), Err(ValkyrieMirError::ShadowedNamedResidue { .. })));
 }
 
@@ -157,7 +157,7 @@ fn canonical_program_rejects_named_residue_in_sum_payload() {
             id: VariantId::from_index(0).unwrap(),
             name: "Some".into(),
             tag: 0,
-            payload_type: Some(NyarType::Named(Identifier::new("Endpoint"))),
+            payload_type: Some(SemanticType::Named(Identifier::new("Endpoint"))),
         }],
     });
     match validate_named_residues(&linked) {

@@ -13,13 +13,13 @@ use nyar_emitter::{
     testing::lower_fragment_to_wasm_mir_module,
     nyar_backend_wasi::WasmBinaryModule,
 };
-use nyar_types::{ItemInstanceId, NyarType};
+use nyar_types::{ItemInstanceId, SemanticType};
 use std::{collections::BTreeMap, process::Command};
 
-const I32: NyarType = NyarType::Integer32 { signed: true };
-const I64: NyarType = NyarType::Integer64 { signed: true };
+const I32: SemanticType = SemanticType::Integer32 { signed: true };
+const I64: SemanticType = SemanticType::Integer64 { signed: true };
 
-fn empty_function(symbol: &str, param_types: Vec<NyarType>, return_type: NyarType, blocks: Vec<Block>) -> ExecutableFunction {
+fn empty_function(symbol: &str, param_types: Vec<SemanticType>, return_type: SemanticType, blocks: Vec<Block>) -> ExecutableFunction {
     let entry = &blocks[0];
     let mut value_types = BTreeMap::new();
     for parameter in entry.parameters.iter().zip(&param_types) {
@@ -40,7 +40,7 @@ fn empty_function(symbol: &str, param_types: Vec<NyarType>, return_type: NyarTyp
 }
 
 /// `main() -> ty`：结果槽直接载入整型字面量。
-fn constant_function(symbol: &str, ty: NyarType, value: i64) -> ExecutableFunction {
+fn constant_function(symbol: &str, ty: SemanticType, value: i64) -> ExecutableFunction {
     let load = Instruction::from_kind(InstructionKind::LoadConstant { constant: Constant::Int(value), ty: Some(ty.clone()) });
     let block = Block {
         id: BlockRef(0),

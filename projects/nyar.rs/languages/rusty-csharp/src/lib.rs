@@ -2,7 +2,7 @@
 #![feature(new_range_api)]
 //! Rusty CSharp 语言前端
 
-use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
+use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
 use oak_core::source::SourceText;
 use oak_csharp::{ast::CSharpRoot, CSharpBuilder, CSharpLanguage};
 
@@ -32,12 +32,12 @@ impl NyarFrontend<(), CSharpRoot> for RustyCSharpFrontend {
     type Language = CSharpLanguage;
 
     /// 解析 CSharp 源代码
-    fn parse(&self, source: &str) -> Result<CSharpRoot, NyarError> {
+    fn parse(&self, source: &str) -> Result<CSharpRoot, TypesError> {
         let mut session = oak_core::parser::ParseSession::<CSharpLanguage>::default();
         let source_text = SourceText::new(source);
         let builder = CSharpBuilder::new(&self.language);
         let output = builder.build(&source_text, &[], &mut session);
-        output.result.map_err(|e| NyarError::Compile(format!("{:?}", e)))
+        output.result.map_err(|e| TypesError::Compile(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, _ast: &CSharpRoot, _ctx: &mut NyarContext<'_, V, ()>) -> Id {

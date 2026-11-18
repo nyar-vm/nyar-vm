@@ -1,6 +1,6 @@
 #![deny(missing_docs)]
 use chomsky_uir::Id;
-use nyar_types::{NyarContext, NyarError, NyarFrontend};
+use nyar_types::{NyarContext, TypesError, NyarFrontend};
 use oak_core::{Builder, SourceText};
 use oak_nix::{NixBuilder, NixLanguage};
 use oak_vfs::Vfs;
@@ -24,13 +24,13 @@ impl Default for RustyNixFrontend {
 impl NyarFrontend for RustyNixFrontend {
     type Language = NixLanguage;
 
-    fn parse(&self, source: &str) -> Result<(), NyarError> {
+    fn parse(&self, source: &str) -> Result<(), TypesError> {
         let builder = NixBuilder::new(&self.language);
         let source_text = SourceText::new(source);
         let mut session = oak_core::parser::ParseSession::<NixLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
-        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output.result.map_err(|e| TypesError::Parse(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, _ast: &(), ctx: &mut NyarContext<V>) -> Id {

@@ -23,7 +23,7 @@ use nyar_emitter::{
     },
     testing::lower_fragment_to_nyar_module,
 };
-use nyar_types::{AggregateLayout, FieldLayout, LayoutId, NyarType, StorageKind};
+use nyar_types::{AggregateLayout, FieldLayout, LayoutId, SemanticType, StorageKind};
 use acorn_odin::OdinModuleData;
 
 /// 计划冻结的 `utf8` 托管布局身份：单一 `[u8]` 槽配方（与 `Utf8Text` 同形）。
@@ -38,20 +38,20 @@ fn utf8_layout() -> AggregateLayout {
         storage: StorageKind::Reference,
         fields: vec![FieldLayout {
             name: "_repr".to_string(),
-            ty: NyarType::Array(Box::new(NyarType::Integer8 { signed: false })),
+            ty: SemanticType::Array(Box::new(SemanticType::Integer8 { signed: false })),
         }],
     }
 }
 
-fn utf8() -> NyarType {
-    NyarType::Utf8
+fn utf8() -> SemanticType {
+    SemanticType::Utf8
 }
 
-fn i64() -> NyarType {
-    NyarType::Integer64 { signed: true }
+fn i64() -> SemanticType {
+    SemanticType::Integer64 { signed: true }
 }
 
-fn empty_function(symbol: &str, return_type: NyarType, return_layout: Option<LayoutId>, blocks: Vec<Block>) -> ExecutableFunction {
+fn empty_function(symbol: &str, return_type: SemanticType, return_layout: Option<LayoutId>, blocks: Vec<Block>) -> ExecutableFunction {
     ExecutableFunction {
         symbol: symbol.to_string(),
         return_type,

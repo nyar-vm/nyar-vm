@@ -16,7 +16,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use acorn_odin::OdinLayout;
-use nyar_types::{AggregateLayoutPlan, ItemInstanceId, LayoutId, NominalInstanceId, NyarType, combined_content_hash};
+use nyar_types::{AggregateLayoutPlan, ItemInstanceId, LayoutId, NominalInstanceId, SemanticType, combined_content_hash};
 use serde::Serialize;
 
 use crate::{
@@ -305,8 +305,8 @@ impl Projection<'_> {
             [field]
                 if matches!(
                     &field.ty,
-                    NyarType::Array(element) | NyarType::FixedArray { element, .. }
-                        if matches!(element.as_ref(), NyarType::Integer8 { signed: false })
+                    SemanticType::Array(element) | SemanticType::FixedArray { element, .. }
+                        if matches!(element.as_ref(), SemanticType::Integer8 { signed: false })
                 )
         );
         if !is_byte_slice {
@@ -440,12 +440,12 @@ mod tests {
     use super::*;
     use crate::contracts::{Block, BlockRef, Terminator, Value, ValueOrigin, ValueRef};
 
-    fn nyar(s: &str) -> NyarType {
+    fn nyar(s: &str) -> SemanticType {
         crate::test_canonical_primitive(s)
     }
 
     #[allow(deprecated)]
-    fn function(parameters: &[(usize, &str, NyarType)], return_type: NyarType) -> ExecutableFunction {
+    fn function(parameters: &[(usize, &str, SemanticType)], return_type: SemanticType) -> ExecutableFunction {
         let parameter_values =
             parameters.iter().map(|(index, _, _)| ValueRef(u32::try_from(*index).expect("测试参数下标"))).collect::<Vec<_>>();
         ExecutableFunction {
@@ -532,7 +532,7 @@ mod tests {
         derive_with_layouts(plan).map(|(contract, _)| contract)
     }
 
-    fn layout(id: LayoutId, name: &str, storage: StorageKind, fields: Vec<(&str, NyarType)>) -> AggregateLayout {
+    fn layout(id: LayoutId, name: &str, storage: StorageKind, fields: Vec<(&str, SemanticType)>) -> AggregateLayout {
         AggregateLayout {
             id,
             name: name.to_string(),
@@ -553,7 +553,7 @@ mod tests {
 
     #[test]
     fn heap_array_of_i64_projects_elementwise() {
-        let ty = NyarType::Array(Box::new(nyar("i64")));
+        let ty = SemanticType::Array(Box::new(nyar("i64")));
         let plan = plan("take", function(&[(0, "values", ty.clone())], ty));
         let contract = derive(&plan).expect("`[i64]` 必须有 OVM 合同");
         let export = export_of(&contract);
@@ -565,7 +565,7 @@ mod tests {
 
     #[test]
     fn named_struct_projects_layout_slots() {
-        let ty = NyarType::Nominal { layout: 7, spelling: Identifier::new("demo::Point") };
+        let ty = SemanticType::Nominal { layout: 7, spelling: Identifier::new("demo::Point") };
         let mut plan = plan("point", function(&[(0, "point", ty.clone())], ty.clone()));
         plan.testing_register_type_layout(ty, layout(7, "Point", StorageKind::Value, vec![("x", nyar("i64")), ("y", nyar("i64"))]));
         let contract = derive(&plan).expect("具名聚合必须有 OVM 合同");
@@ -584,8 +584,8 @@ mod tests {
 
     #[test]
     fn nested_aggregate_projects_recursively() {
-        let inner_ty = NyarType::Nominal { layout: 8, spelling: Identifier::new("demo::Inner") };
-        let outer_ty = NyarType::Nominal { layout: 7, spelling: Identifier::new("demo::Outer") };
+        let inner_ty = SemanticType::Nominal { layout: 8, spelling: Identifier::new("demo::Inner") };
+        let outer_ty = SemanticType::Nominal { layout: 7, spelling: Identifier::new("demo::Outer") };
         let mut plan = plan("outer", function(&[(0, "value", outer_ty.clone())], outer_ty.clone()));
         plan.testing_register_type_layout(
             inner_ty.clone(),
@@ -608,11 +608,11 @@ mod tests {
 
     #[test]
     fn generic_reference_instance_keeps_identity_despite_array_and_integer_fields() {
-        let list = NyarType::Apply(Box::new(NyarType::Named(Identifier::new("std::collections::ArrayList"))), vec![nyar("i64")]);
+        let list = SemanticType::Apply(Box::new(SemanticType::Named(Identifier::new("std::collections::ArrayList"))), vec![nyar("i64")]);
         let mut plan = plan("list", function(&[(0, "values", list.clone())], list.clone()));
         plan.testing_register_type_layout(
             list,
-            layout(9, "ArrayList", StorageKind::Reference, vec![("_items", NyarType::Array(Box::new(nyar("i64")))), ("_length", nyar("i32"))]),
+            layout(9, "ArrayList", StorageKind::Reference, vec![("_items", SemanticType::Array(Box::new(nyar("i64")))), ("_length", nyar("i32"))]),
         );
         let contract = derive(&plan).expect("泛型实例必须有 OVM 合同");
         let OvmAbiType::InstanceHandle { layout: index, name, .. } = &export_of(&contract).params[0].ty
@@ -662,7 +662,7 @@ mod tests {
     #[test]
     fn raw_and_managed_text_slots_coexist_in_one_contract() {
         let text_ty = nyar("utf8");
-        let text_layout = layout(11, "Utf8Text", StorageKind::Reference, vec![("_repr", NyarType::Array(Box::new(nyar("u8"))))]);
+        let text_layout = layout(11, "Utf8Text", StorageKind::Reference, vec![("_repr", SemanticType::Array(Box::new(nyar("u8"))))]);
         let mut plan = plan_multi(&[
             ("raw", function(&[(0, "name", text_ty.clone())], nyar("unit"))),
             ("managed", function(&[(0, "name", text_ty.clone())], nyar("unit"))),
@@ -695,7 +695,7 @@ mod tests {
         let mut plan = plan("greet", function(&[(0, "name", ty.clone())], nyar("unit")));
         plan.testing_register_type_layout(
             ty,
-            layout(11, "Utf8Text", StorageKind::Reference, vec![("_repr", NyarType::Array(Box::new(nyar("u8"))))]),
+            layout(11, "Utf8Text", StorageKind::Reference, vec![("_repr", SemanticType::Array(Box::new(nyar("u8"))))]),
         );
         let (contract, _) = derive_with_layouts(&plan).expect("合同");
         // 模拟 `.odin` 布局表与合同声明不一致：托管文本槽声明 1 槽，产物却是 2 槽。
@@ -718,7 +718,7 @@ mod tests {
 
     #[test]
     fn option_uses_niche_when_inner_is_not_option() {
-        let ty = NyarType::Nullable(Box::new(nyar("i64")));
+        let ty = SemanticType::Nullable(Box::new(nyar("i64")));
         let plan = plan("maybe", function(&[(0, "value", ty.clone())], ty));
         let contract = derive(&plan).expect("`i64?` 必须有 OVM 合同");
         assert_eq!(export_of(&contract).params[0].ty, OvmAbiType::Option { inner: Box::new(OvmAbiType::I64), boxing: OvmOptionBoxing::Niche });
@@ -726,7 +726,7 @@ mod tests {
 
     #[test]
     fn nested_option_projects_explicit_box_and_three_shapes_are_distinct() {
-        let ty = NyarType::Nullable(Box::new(NyarType::Nullable(Box::new(nyar("i64")))));
+        let ty = SemanticType::Nullable(Box::new(SemanticType::Nullable(Box::new(nyar("i64")))));
         let plan = plan("maybe", function(&[(0, "value", ty.clone())], ty));
         let (contract, _) = derive_with_layouts(&plan).expect("`i64??` 必须有 OVM 合同");
         let returns = &export_of(&contract).returns;
@@ -749,7 +749,7 @@ mod tests {
 
     #[test]
     fn collapsed_nested_option_fails_verification() {
-        let ty = NyarType::Nullable(Box::new(NyarType::Nullable(Box::new(nyar("i64")))));
+        let ty = SemanticType::Nullable(Box::new(SemanticType::Nullable(Box::new(nyar("i64")))));
         let plan = plan("maybe", function(&[(0, "value", ty.clone())], ty));
         let (mut contract, layouts) = derive_with_layouts(&plan).expect("合同");
         // 人为把外层退回 `Niche`：这正是 `Some(None)` 与 `None` 物理同形的塌陷合同。
@@ -784,7 +784,7 @@ mod tests {
         let mut plan = plan("greet", function(&[(0, "name", ty.clone())], nyar("unit")));
         plan.testing_register_type_layout(
             ty,
-            layout(11, "Utf8Text", StorageKind::Reference, vec![("_repr", NyarType::Array(Box::new(nyar("u8"))))]),
+            layout(11, "Utf8Text", StorageKind::Reference, vec![("_repr", SemanticType::Array(Box::new(nyar("u8"))))]),
         );
         let contract = derive(&plan).expect("托管文本必须有 OVM 合同");
         let export = export_of(&contract);
@@ -806,7 +806,7 @@ mod tests {
 
     #[test]
     fn same_layout_facts_derive_same_digest() {
-        let ty = NyarType::Nominal { layout: 7, spelling: Identifier::new("demo::Point") };
+        let ty = SemanticType::Nominal { layout: 7, spelling: Identifier::new("demo::Point") };
         let build = || {
             let mut plan = plan("point", function(&[(0, "point", ty.clone())], ty.clone()));
             plan.testing_register_type_layout(ty.clone(), layout(7, "Point", StorageKind::Value, vec![("x", nyar("i64")), ("y", nyar("i64"))]));
@@ -820,7 +820,7 @@ mod tests {
 
     #[test]
     fn unknown_layout_fails_closed() {
-        let ty = NyarType::Nominal { layout: 99, spelling: Identifier::new("demo::Ghost") };
+        let ty = SemanticType::Nominal { layout: 99, spelling: Identifier::new("demo::Ghost") };
         let plan = plan("ghost", function(&[(0, "ghost", ty.clone())], ty));
         let error = derive(&plan).expect_err("未注册布局必须失败");
         assert!(error.contains("未注册"), "got: {error}");
@@ -830,8 +830,8 @@ mod tests {
     fn unsupported_scalar_export_fails_before_contract() {
         for ty in [
             nyar("i128"),
-            NyarType::Utf16,
-            NyarType::TraitObject(nyar_types::WitnessObject { trait_path: Identifier::new("demo::Shape"), type_arguments: Vec::new() }),
+            SemanticType::Utf16,
+            SemanticType::TraitObject(nyar_types::WitnessObject { trait_path: Identifier::new("demo::Shape"), type_arguments: Vec::new() }),
         ] {
             let plan = plan_with("bad", function(&[(0, "value", nyar("i64"))], ty));
             let error = derive(&plan).expect_err("不支持的导出类型必须失败");
@@ -844,7 +844,7 @@ mod tests {
         // OVM 的导出面来自 `exported_operations` / 程序入口，不在 wasm 冻结缓存里。
         // 零参数、`Void` 返回或完全无可携带内容都必须拿到**空的但存在**的合同，
         // 不能把“没有需要携带的东西”误判成“缺少载体合同”。
-        let cases: [(&str, Vec<(usize, &str, NyarType)>, NyarType, usize, &str); 3] = [
+        let cases: [(&str, Vec<(usize, &str, SemanticType)>, SemanticType, usize, &str); 3] = [
             ("zero_void", Vec::new(), nyar("unit"), 0, "void"),
             ("zero_i64", Vec::new(), nyar("i64"), 0, "i64"),
             ("arg_void", vec![(0, "value", nyar("i64"))], nyar("unit"), 1, "void"),
@@ -871,8 +871,8 @@ mod tests {
     fn unsupported_export_types_fail_derive() {
         for ty in [
             nyar("i128"),
-            NyarType::Utf16,
-            NyarType::TraitObject(nyar_types::WitnessObject { trait_path: Identifier::new("demo::Shape"), type_arguments: Vec::new() }),
+            SemanticType::Utf16,
+            SemanticType::TraitObject(nyar_types::WitnessObject { trait_path: Identifier::new("demo::Shape"), type_arguments: Vec::new() }),
         ] {
             let plan = plan_with("bad", function(&[(0, "value", nyar("i64"))], ty));
             let error = derive(&plan).expect_err("不可携带类型必须结构化失败");
@@ -882,7 +882,7 @@ mod tests {
 
     #[test]
     fn unsupported_aggregate_field_fails_closed() {
-        let ty = NyarType::Nominal { layout: 8, spelling: Identifier::new("demo::Heavy") };
+        let ty = SemanticType::Nominal { layout: 8, spelling: Identifier::new("demo::Heavy") };
         let mut plan = plan("heavy", function(&[(0, "heavy", ty.clone())], ty.clone()));
         plan.testing_register_type_layout(ty, layout(8, "Heavy", StorageKind::Value, vec![("big", nyar("i128")), ("name", nyar("utf8"))]));
         let error = derive(&plan).expect_err("聚合字段不支持必须失败");
@@ -892,8 +892,8 @@ mod tests {
 
     #[test]
     fn digest_changes_with_layout_shape() {
-        let ty = NyarType::Nominal { layout: 7, spelling: Identifier::new("demo::Point") };
-        let build = |fields: Vec<(&str, NyarType)>| {
+        let ty = SemanticType::Nominal { layout: 7, spelling: Identifier::new("demo::Point") };
+        let build = |fields: Vec<(&str, SemanticType)>| {
             let mut plan = plan("point", function(&[(0, "point", ty.clone())], ty.clone()));
             plan.testing_register_type_layout(ty.clone(), layout(7, "Point", StorageKind::Value, fields));
             derive(&plan).expect("合同").digest
@@ -905,7 +905,7 @@ mod tests {
 
     #[test]
     fn unite_projects_variant_payloads_with_frozen_slots() {
-        let sum_ty = NyarType::Nominal { layout: 42, spelling: Identifier::new("demo::Maybe") };
+        let sum_ty = SemanticType::Nominal { layout: 42, spelling: Identifier::new("demo::Maybe") };
         let mut plan = plan("maybe", function(&[(0, "value", sum_ty.clone())], sum_ty.clone()));
         plan.testing_register_sum_layout(
             sum_ty,

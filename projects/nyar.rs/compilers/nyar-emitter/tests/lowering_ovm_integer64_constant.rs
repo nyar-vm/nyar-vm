@@ -16,15 +16,15 @@ use nyar_emitter::{
     },
     testing::lower_fragment_to_nyar_module,
 };
-use nyar_types::{ImportIndex, InstructionId, ItemInstanceId, NyarType, ProvenanceId};
+use nyar_types::{ImportIndex, InstructionId, ItemInstanceId, SemanticType, ProvenanceId};
 use acorn_odin::{OdinConstant, OdinImport, OdinModuleData};
 
-fn integer64() -> NyarType {
-    NyarType::Integer64 { signed: true }
+fn integer64() -> SemanticType {
+    SemanticType::Integer64 { signed: true }
 }
 
 /// 单 entry block：直接返回常量操作数（无指令）。
-fn constant_function(literal: i64, return_type: NyarType) -> ExecutableFunction {
+fn constant_function(literal: i64, return_type: SemanticType) -> ExecutableFunction {
     ExecutableFunction {
         symbol: "main".to_string(),
         return_type,
@@ -45,7 +45,7 @@ fn constant_function(literal: i64, return_type: NyarType) -> ExecutableFunction 
     }
 }
 
-fn try_lower(literal: i64, return_type: NyarType) -> Result<OdinModuleData, String> {
+fn try_lower(literal: i64, return_type: SemanticType) -> Result<OdinModuleData, String> {
     let main_name = QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), constant_function(literal, return_type))]));
     plan.testing_module_name("ovm_integer64_constant").testing_entry_operation(main_name);
@@ -56,7 +56,7 @@ fn lower(literal: i64) -> OdinModuleData {
     try_lower(literal, integer64()).expect("i64 常量必须能完成 OVM lowering")
 }
 
-fn lower_with_return_type(literal: i64, return_type: NyarType) -> OdinModuleData {
+fn lower_with_return_type(literal: i64, return_type: SemanticType) -> OdinModuleData {
     try_lower(literal, return_type).expect("槽类型内可表示的常量必须能完成 OVM lowering")
 }
 
@@ -116,7 +116,7 @@ fn just_above_i32_max_uses_integer64_pool_entry() {
 /// `Integer32` 池，既不能发 `Integer64`（运行期会拒绝），也不能拓宽。
 #[test]
 fn narrow_integer_slot_constant_uses_i32_carrier() {
-    let module = try_lower(104, NyarType::Integer8 { signed: false }).expect("u8 槽可表示 104");
+    let module = try_lower(104, SemanticType::Integer8 { signed: false }).expect("u8 槽可表示 104");
     assert_eq!(pool_integer32(&module), vec![104], "u8 槽常量必须以 i32 进池: {:?}", module.constants);
     assert!(pool_integer64(&module).is_empty(), "u8 槽常量不得进 Integer64 池: {:?}", module.constants);
     assert!(!widens_through_host_import(&module), "u8 槽常量不得拓宽: {:?}", module.imports);
@@ -135,7 +135,7 @@ fn i64_slot_small_value_widens_by_slot_type() {
 /// 同样大小的字面量落在 `Integer32` 槽：不得拓宽，也不得生成 i64 载体。
 #[test]
 fn i32_slot_small_value_does_not_widen() {
-    let module = lower_with_return_type(i64::from(i32::MAX), NyarType::Integer32 { signed: true });
+    let module = lower_with_return_type(i64::from(i32::MAX), SemanticType::Integer32 { signed: true });
     assert_eq!(pool_integer32(&module), vec![i32::MAX], "i32 槽常量必须直接进 Integer32 池: {:?}", module.constants);
     assert!(pool_integer64(&module).is_empty(), "i32 槽不得产生 Integer64 池条目: {:?}", module.constants);
     assert!(!widens_through_host_import(&module), "i32 槽不得拓宽: {:?}", module.imports);
@@ -144,7 +144,7 @@ fn i32_slot_small_value_does_not_widen() {
 /// 槽已规划为 i32 但常量越界：结构化失败，禁止静默回绕。
 #[test]
 fn i32_slot_constant_out_of_range_fails_structured() {
-    let error = try_lower(2_147_483_648, NyarType::Integer32 { signed: true })
+    let error = try_lower(2_147_483_648, SemanticType::Integer32 { signed: true })
         .expect_err("i32 槽装不下 2147483648，必须结构化失败");
     assert!(error.contains("超出目标 Integer32 槽的表示范围"), "错误必须指明槽类型与越界值: {error}");
 }
@@ -152,21 +152,21 @@ fn i32_slot_constant_out_of_range_fails_structured() {
 /// 整数常量送进非整数槽：结构化失败，禁止把整数载荷塞进 Boolean/Utf8 槽。
 #[test]
 fn integer_constant_in_non_integer_slot_fails_structured() {
-    let error = try_lower(7, NyarType::Boolean).expect_err("整数常量不得落进 Boolean 槽");
+    let error = try_lower(7, SemanticType::Boolean).expect_err("整数常量不得落进 Boolean 槽");
     assert!(error.contains("与已规划槽类型不匹配"), "错误必须指明槽类型不匹配: {error}");
 }
 
 /// `LoadConstant` 指令的位宽同样必须来自结果槽，而不是字面量大小。
 #[test]
 fn load_constant_result_slot_decides_width() {
-    for (slot_type, expect_widen) in [(integer64(), true), (NyarType::Integer32 { signed: true }, false)] {
+    for (slot_type, expect_widen) in [(integer64(), true), (SemanticType::Integer32 { signed: true }, false)] {
         let module = try_lower_load_constant(7, slot_type.clone()).expect("槽可表示的常量必须能 lowering");
         assert_eq!(pool_integer32(&module), vec![7], "7 必须进 Integer32 池: {:?}", module.constants);
         assert_eq!(widens_through_host_import(&module), expect_widen, "槽 {slot_type} 的拓宽决策错误: {:?}", module.imports);
     }
 }
 
-fn try_lower_load_constant(literal: i64, slot_type: NyarType) -> Result<OdinModuleData, String> {
+fn try_lower_load_constant(literal: i64, slot_type: SemanticType) -> Result<OdinModuleData, String> {
     let main_name = QualifiedName::new(vec![Identifier::new("main")]);
     let function = ExecutableFunction {
         symbol: "main".to_string(),
@@ -196,8 +196,8 @@ fn try_lower_load_constant(literal: i64, slot_type: NyarType) -> Result<OdinModu
     lower_fragment_to_nyar_module(&FragmentSubmission::from_backend_plan(plan))
 }
 
-fn integer32() -> NyarType {
-    NyarType::Integer32 { signed: true }
+fn integer32() -> SemanticType {
+    SemanticType::Integer32 { signed: true }
 }
 
 /// `echo(a: i32) -> i32`：入口形参即返回值。
@@ -278,12 +278,12 @@ fn i32_parameter_constant_out_of_range_fails_structured() {
 }
 
 /// `odin.host` 边界 + `ovm` 平台标签 + 单段符号的外部导入（测试专用）。
-fn host_echo_import(symbol: &str, parameter_types: Vec<NyarType>) -> BackendImport {
+fn host_echo_import(symbol: &str, parameter_types: Vec<SemanticType>) -> BackendImport {
     BackendImport {
         index: ImportIndex::from_index(0).expect("导入下标"),
         link: ExternalImportLink::host(Some(Identifier::new("ovm")), vec![symbol.to_string()]),
         parameter_types,
-        return_type: NyarType::Integer32 { signed: true },
+        return_type: SemanticType::Integer32 { signed: true },
     }
 }
 
@@ -291,9 +291,9 @@ fn host_echo_import(symbol: &str, parameter_types: Vec<NyarType>) -> BackendImpo
 fn call_host_with_constant(symbol: &str, callee: ItemInstanceId, literal: i64) -> ExecutableFunction {
     ExecutableFunction {
         symbol: symbol.to_string(),
-        return_type: NyarType::Integer32 { signed: true },
+        return_type: SemanticType::Integer32 { signed: true },
         param_types: Vec::new(),
-        value_types: BTreeMap::from([(ValueRef(0), NyarType::Integer32 { signed: true })]),
+        value_types: BTreeMap::from([(ValueRef(0), SemanticType::Integer32 { signed: true })]),
         value_layouts: BTreeMap::new(),
         return_layout: None,
         entry: BlockRef(0),
@@ -314,7 +314,7 @@ fn call_host_with_constant(symbol: &str, callee: ItemInstanceId, literal: i64) -
     }
 }
 
-fn try_lower_host_call(symbol: &str, parameter_types: Vec<NyarType>, literal: i64) -> Result<OdinModuleData, String> {
+fn try_lower_host_call(symbol: &str, parameter_types: Vec<SemanticType>, literal: i64) -> Result<OdinModuleData, String> {
     // `main` 占函数实例 0；导入用独立身份，避免与本地函数混淆。
     let callee = ItemInstanceId::from_index(203).expect("导入实例身份");
     let main_name = QualifiedName::new(vec![Identifier::new("main")]);
@@ -330,7 +330,7 @@ fn try_lower_host_call(symbol: &str, parameter_types: Vec<NyarType>, literal: i6
 /// 外部调用形参声明 `Integer32` + 可表示常量：按 Integer32 发射，不得拓宽。
 #[test]
 fn host_i32_parameter_constant_matches_signature() {
-    let module = try_lower_host_call("echo_i32", vec![NyarType::Integer32 { signed: true }], 7)
+    let module = try_lower_host_call("echo_i32", vec![SemanticType::Integer32 { signed: true }], 7)
         .expect("7 在 i32 外部形参范围内，必须能 lowering");
     assert_eq!(pool_integer32(&module), vec![7], "外部实参必须按签名进 Integer32 池: {:?}", module.constants);
     assert!(pool_integer64(&module).is_empty(), "i32 外部形参不得出现 Integer64 池条目: {:?}", module.constants);
@@ -358,7 +358,7 @@ fn host_i64_parameter_constant_keeps_width() {
 /// 外部调用形参声明 `Integer32` 但常量越界：结构化失败，错误带 import/实参序号/期望与实际类型。
 #[test]
 fn host_i32_parameter_out_of_range_fails_structured() {
-    let error = try_lower_host_call("echo_i32", vec![NyarType::Integer32 { signed: true }], 2_147_483_648)
+    let error = try_lower_host_call("echo_i32", vec![SemanticType::Integer32 { signed: true }], 2_147_483_648)
         .expect_err("i32 外部形参装不下 2147483648，必须结构化失败");
     assert!(error.contains("OVM 外部调用"), "错误必须指明外部调用: {error}");
     assert!(error.contains("echo_i32"), "错误必须带 import 符号: {error}");

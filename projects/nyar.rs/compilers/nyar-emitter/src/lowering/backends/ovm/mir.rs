@@ -6,7 +6,7 @@ use crate::{
     backend_plan_views::{
         ExecutableBlock as MirBlock, ExecutableBlockRef as MirBlockRef, ExecutableConstant as MirConstant, ExecutableFunction as MirFunction,
         ExecutableInstruction as MirInstruction, ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand,
-        ExecutableTerminator as MirTerminator, ExecutableValueRef as MirValueRef, NyarType,
+        ExecutableTerminator as MirTerminator, ExecutableValueRef as MirValueRef, SemanticType,
     },
     lowering::backends::ovm::lir::{OdinLirInstruction, encode_odin_function},
 };
@@ -274,7 +274,7 @@ fn lower_fragment_mir_to_nyar_module_impl(
         .imports()
         .iter()
         .map(|(instance, import)| (*instance, import.parameter_types.clone()))
-        .collect::<BTreeMap<ItemInstanceId, Vec<NyarType>>>();
+        .collect::<BTreeMap<ItemInstanceId, Vec<SemanticType>>>();
     // `[ovm_operator]` 绑定在 OVM 自己的入口按计划导入链接冻结：助记符仅用于诊断，
     // arity、操作数改写与头码全部来自 OvmOperatorBinding。
     let external_opcode_by_instance = {
@@ -453,7 +453,7 @@ fn build_nyar_function_entry_arities(exec: &TargetExecutionPlan, operations: &[I
 ///
 /// 常量实参的位宽必须由它决定；计划侧没有这张表时，Call 操作数位只能回落到
 /// semantic MIR 合同（`Constant::Int` = Integer64），会把 i32 形参静默拓宽。
-fn build_nyar_function_param_types(exec: &TargetExecutionPlan, operations: &[ItemInstanceId]) -> crate::Result<BTreeMap<i32, Vec<NyarType>>> {
+fn build_nyar_function_param_types(exec: &TargetExecutionPlan, operations: &[ItemInstanceId]) -> crate::Result<BTreeMap<i32, Vec<SemanticType>>> {
     let mut map = BTreeMap::new();
     for (index, instance) in operations.iter().enumerate() {
         let Some(view) = exec.get_function(instance)
@@ -483,7 +483,7 @@ fn build_nyar_function_param_types(exec: &TargetExecutionPlan, operations: &[Ite
 ///
 /// 槽布局有两个已冻结来源：`value_layouts` 只登记按 SSA 值类型（TypeId）能找到
 /// 聚合布局的值；文本载体在签名里常被折叠成基类型（`utf8` 形参的 TypeId 是
-/// 折叠后的 `NyarType::Utf8`），该 TypeId 本身没有 `aggregate_layout_by_type`
+/// 折叠后的 `SemanticType::Utf8`），该 TypeId 本身没有 `aggregate_layout_by_type`
 /// 条目，但同一载体布局仍以折叠后类型为键冻结在
 /// `aggregate_layout_by_nyar_type`。
 ///
@@ -550,7 +550,7 @@ fn freeze_nyar_text_representations(
     // 禁止由布局注册表为空反推——上游漏登记整类布局时 missing 会被吸收成合法表示。
     let program_raw = exec.program_text_representation() == Some(ProgramTextRepresentation::Raw);
     let text_values: Vec<MirValueRef> =
-        mir_fn.value_types.iter().filter(|(_, ty)| matches!(**ty, NyarType::Utf8)).map(|(value, _)| *value).collect();
+        mir_fn.value_types.iter().filter(|(_, ty)| matches!(**ty, SemanticType::Utf8)).map(|(value, _)| *value).collect();
     let entry_parameters: Vec<MirValueRef> =
         mir_fn.blocks.iter().find(|block| block.id == mir_fn.entry).map(|block| block.parameters.clone()).unwrap_or_default();
     let entry_layouts = crate::ovm_abi::frozen_entry_parameter_layouts(exec, mir_fn);
@@ -582,7 +582,7 @@ fn freeze_nyar_text_representations(
                 pending_moves.push(*value);
                 continue;
             }
-            Some(MirInstructionKind::Cast { ty, .. }) if matches!(ty, NyarType::Utf8) => {
+            Some(MirInstructionKind::Cast { ty, .. }) if matches!(ty, SemanticType::Utf8) => {
                 pending_moves.push(*value);
                 continue;
             }
@@ -733,10 +733,10 @@ fn lower_mir_function_to_bytecode(
     mir_fn: &MirFunction,
     function_index_by_instance: &BTreeMap<ItemInstanceId, i32>,
     function_entry_arities: &BTreeMap<i32, usize>,
-    param_types_by_function_index: &BTreeMap<i32, Vec<NyarType>>,
+    param_types_by_function_index: &BTreeMap<i32, Vec<SemanticType>>,
     param_layouts_by_function_index: &BTreeMap<i32, Vec<Option<LayoutId>>>,
     external_link_by_instance: &BTreeMap<ItemInstanceId, ExternalImportLink>,
-    external_param_types_by_instance: &BTreeMap<ItemInstanceId, Vec<NyarType>>,
+    external_param_types_by_instance: &BTreeMap<ItemInstanceId, Vec<SemanticType>>,
     external_opcode_by_instance: &BTreeMap<ItemInstanceId, (String, OvmOperatorBinding)>,
     sum_layout_index_by_nominal: &BTreeMap<NominalInstanceId, i32>,
     emitter: &mut BytecodeEmitter<'_>,
@@ -792,10 +792,10 @@ struct NyarMirLowerer<'a, 'e> {
     emitter: &'a mut BytecodeEmitter<'e>,
     function_index_by_instance: &'a BTreeMap<ItemInstanceId, i32>,
     function_entry_arities: &'a BTreeMap<i32, usize>,
-    param_types_by_function_index: &'a BTreeMap<i32, Vec<NyarType>>,
+    param_types_by_function_index: &'a BTreeMap<i32, Vec<SemanticType>>,
     param_layouts_by_function_index: &'a BTreeMap<i32, Vec<Option<LayoutId>>>,
     external_link_by_instance: &'a BTreeMap<ItemInstanceId, ExternalImportLink>,
-    external_param_types_by_instance: &'a BTreeMap<ItemInstanceId, Vec<NyarType>>,
+    external_param_types_by_instance: &'a BTreeMap<ItemInstanceId, Vec<SemanticType>>,
     external_opcode_by_instance: &'a BTreeMap<ItemInstanceId, (String, OvmOperatorBinding)>,
     sum_layout_index_by_nominal: &'a BTreeMap<NominalInstanceId, i32>,
     layouts: &'a mut Vec<OdinLayout>,
@@ -853,7 +853,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     &object,
                     0,
                     &MirOperand::Constant(MirConstant::Int(index as i64)),
-                    Some(&NyarType::Integer32 { signed: true }),
+                    Some(&SemanticType::Integer32 { signed: true }),
                 )?;
                 self.emitter.emit_plain(OdinHeadCode::Pop);
                 // 槽 1：环境聚合或显式 null（无捕获也必须仍是闭包对象）。
@@ -971,7 +971,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 // 合成的定长数组布局身份不保证进入 `AggregateLayoutPlan`；Odin 布局只记录
                 // 字段数且槽位无类型，所以按元素个数铸造后端私有布局，禁止依赖未冻结的
                 // `layout_id`，更不允许 panic 杀进程。
-                if let NyarType::FixedArray { length, .. } = array_type
+                if let SemanticType::FixedArray { length, .. } = array_type
                     && *length != elements.len()
                 {
                     return Err(format!(
@@ -984,7 +984,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     format!("OVM ArrayFromElements 元素个数超出 i32 布局槽位：{}（symbol=`{}`）", elements.len(), self.mir_fn.symbol)
                 })?;
                 let element_ty = match array_type {
-                    NyarType::FixedArray { element, .. } | NyarType::Array(element) => Some((**element).clone()),
+                    SemanticType::FixedArray { element, .. } | SemanticType::Array(element) => Some((**element).clone()),
                     _ => None,
                 };
                 let layout_index = self.ensure_nyar_layout_for_field_count(field_count);
@@ -1073,7 +1073,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                         self.mir_fn.symbol
                     )
                 })?;
-                let tag_ty = NyarType::Integer32 { signed: true };
+                let tag_ty = SemanticType::Integer32 { signed: true };
                 self.emit_field_set_slot(&object, 0, &MirOperand::Constant(MirConstant::Int(i64::from(tag_value))), Some(&tag_ty))?;
                 self.emitter.emit_plain(OdinHeadCode::Pop);
                 if let Some(payload) = payload {
@@ -1142,7 +1142,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     return Err(format!("OVM Call 的 callee 既不是可调用实例也不是函数值：{callee:?}（symbol=`{}`）", self.mir_fn.symbol));
                 };
                 let semantic = self.value_semantic_type(*callee_value);
-                let Some(NyarType::Function(signature)) = semantic.clone()
+                let Some(SemanticType::Function(signature)) = semantic.clone()
                 else {
                     let actual = semantic.as_ref().map(ToString::to_string).unwrap_or_else(|| "<未冻结>".to_string());
                     return Err(format!(
@@ -1188,7 +1188,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             }
             MirInstructionKind::ArrayGet { array, index } => {
                 self.emit_call_operand(array)?;
-                let index_ty = NyarType::Integer32 { signed: true };
+                let index_ty = SemanticType::Integer32 { signed: true };
                 self.emit_operand_typed(index, Some(&index_ty))?;
                 self.emitter.emit_call_intrinsic(IntrinsicOpcode::ArrayGet, 2);
                 if let Some(output) = output {
@@ -1197,12 +1197,12 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             }
             MirInstructionKind::ArraySet { array, index, value } => {
                 self.emit_call_operand(array)?;
-                let index_ty = NyarType::Integer32 { signed: true };
+                let index_ty = SemanticType::Integer32 { signed: true };
                 self.emit_operand_typed(index, Some(&index_ty))?;
                 let value_ty = self.array_element_type(array);
                 // 数组元素槽是嵌套文本槽：目标合同固定 raw 宿主串，托管实参先抽取成 raw 再入槽。
-                if value_ty.as_ref() == Some(&NyarType::Utf8) {
-                    self.emit_text_boundary_operand(value, &NyarType::Utf8, TextSlotTarget::Raw, "数组元素槽")?;
+                if value_ty.as_ref() == Some(&SemanticType::Utf8) {
+                    self.emit_text_boundary_operand(value, &SemanticType::Utf8, TextSlotTarget::Raw, "数组元素槽")?;
                 }
                 else {
                     self.emit_operand_typed(value, value_ty.as_ref())?;
@@ -1253,7 +1253,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 if let Some(value) = value {
                     // 返回槽类型是函数签名的冻结事实；常量必须按它选位宽。
                     let return_ty = self.mir_fn.return_type.clone();
-                    if matches!(return_ty, NyarType::Utf8) {
+                    if matches!(return_ty, SemanticType::Utf8) {
                         let Some(return_layout) = self.mir_fn.return_layout
                         else {
                             return Err(format!(
@@ -1279,7 +1279,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 self.emitter.emit_jump_to_block(OdinHeadCode::Jump, *target);
             }
             MirTerminator::Branch { condition, then_target, else_target } => {
-                let condition_ty = NyarType::Boolean;
+                let condition_ty = SemanticType::Boolean;
                 self.emit_operand_typed(condition, Some(&condition_ty))?;
                 self.emitter.emit_jump_to_block(OdinHeadCode::JumpIfFalse, *else_target);
                 self.emit_block_argument_copies(*then_target, &[])?;
@@ -1441,7 +1441,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                      禁止回落到 semantic MIR 的 `Integer64` 默认"
                 ));
             };
-            if matches!(expected, NyarType::Utf8) {
+            if matches!(expected, SemanticType::Utf8) {
                 let site = format!("OVM 外部调用 `{callee_name}`（import={import_symbol} instance={instance:?}）的实参 #{index}");
                 // 宿主边界 ABI：实参槽是 raw 宿主串，托管文本必须先抽取成 raw。
                 self.emit_text_boundary_operand(argument, &expected, TextSlotTarget::Raw, &site)?;
@@ -1490,7 +1490,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             // 常量实参的位宽来自被调函数已冻结的入口形参槽类型；没有该槽时
             // 才回落到 semantic MIR 合同，绝不按字面量大小选位宽。
             let param_ty = self.param_types_by_function_index.get(&function_index).and_then(|types| types.get(index)).cloned();
-            if param_ty.as_ref() == Some(&NyarType::Utf8) {
+            if param_ty.as_ref() == Some(&SemanticType::Utf8) {
                 let slot_layout =
                     self.param_layouts_by_function_index.get(&function_index).and_then(|layouts| layouts.get(index)).copied().flatten();
                 // 入口槽没有布局身份时，只有程序级表示计划显式声明 raw 才是合法的
@@ -1508,7 +1508,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     None => TextSlotTarget::Raw,
                 };
                 let site = format!("内部调用 `{path:?}` 实参 #{index}");
-                self.emit_text_boundary_operand(argument, &NyarType::Utf8, target, &site)?;
+                self.emit_text_boundary_operand(argument, &SemanticType::Utf8, target, &site)?;
                 continue;
             }
             match argument {
@@ -1625,14 +1625,14 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         object: &MirOperand,
         field_slot: i32,
         value: &MirOperand,
-        value_ty: Option<&NyarType>,
+        value_ty: Option<&SemanticType>,
     ) -> crate::Result<()> {
         self.emit_operand(object)?;
         // 嵌套槽是 raw 宿主串（目标合同显式声明，读取侧由表示冻结规则 2 同源分类）：
         // 托管文本实参入槽前必须抽取成 raw；否则字段槽里混入托管对象，读取方按
         // raw 解释就会在运行期炸出类型错。
-        if value_ty == Some(&NyarType::Utf8) {
-            self.emit_text_boundary_operand(value, &NyarType::Utf8, TextSlotTarget::Raw, "嵌套文本槽")?;
+        if value_ty == Some(&SemanticType::Utf8) {
+            self.emit_text_boundary_operand(value, &SemanticType::Utf8, TextSlotTarget::Raw, "嵌套文本槽")?;
         }
         else {
             self.emit_operand_typed(value, value_ty)?;
@@ -1651,7 +1651,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             // 拼接产出的托管文本对象时，块参数槽按目标计划冻结的载体事实决定其物理表示。与
             // `Return`／内部调用实参共用 `emit_text_boundary_operand`，让 raw 入边物化为托管对象，
             // 否则下游 `self._repr` 字段访问会以 `expected object, got string` 崩溃。
-            if matches!(param_ty, NyarType::Utf8) {
+            if matches!(param_ty, SemanticType::Utf8) {
                 let parameter = target_block.parameters[index];
                 let target = match self.text_representations.get(&parameter).copied() {
                     Some(TextCarrier::Managed(layout)) => TextSlotTarget::Managed(layout),
@@ -1683,10 +1683,10 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     /// - `None`（操作数位没有槽上下文）：回落到 semantic MIR 合同
     ///   `Constant::Int(_) => Integer64 { signed: true }`，**不按数值大小选位宽**；
     /// - 其它槽类型：结构化失败。
-    fn emit_load_constant(&mut self, constant: &MirConstant, slot_ty: Option<&NyarType>) -> crate::Result<()> {
+    fn emit_load_constant(&mut self, constant: &MirConstant, slot_ty: Option<&SemanticType>) -> crate::Result<()> {
         match constant {
             MirConstant::Int(value) => match slot_ty {
-                Some(NyarType::Integer32 { .. }) => {
+                Some(SemanticType::Integer32 { .. }) => {
                     let narrowed = i32::try_from(*value).map_err(|_| {
                         format!(
                             "OVM 整数常量 {value} 超出目标 Integer32 槽的表示范围（slot={}, symbol=`{}`）",
@@ -1696,7 +1696,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     })?;
                     self.emitter.emit_const_i32(narrowed);
                 }
-                Some(NyarType::Integer64 { .. }) | None => {
+                Some(SemanticType::Integer64 { .. }) | None => {
                     self.emitter.emit_const_i64(*value);
                 }
                 // 窄整数（`u8`/`i8`/`u16`/`i16`）与字符码位槽在 OVM 里以 i32 载体承载；
@@ -1746,7 +1746,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         self.emit_operand_typed(operand, None)
     }
 
-    fn emit_operand_typed(&mut self, operand: &MirOperand, slot_ty: Option<&NyarType>) -> crate::Result<()> {
+    fn emit_operand_typed(&mut self, operand: &MirOperand, slot_ty: Option<&SemanticType>) -> crate::Result<()> {
         match operand {
             MirOperand::Value(value) => {
                 let local = self
@@ -1765,12 +1765,12 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     }
 
     /// SSA 值的物理槽类型（来自 `ExecutableSlotPlan` 的冻结类型）。
-    fn value_slot_type(&self, value: MirValueRef) -> Option<NyarType> {
+    fn value_slot_type(&self, value: MirValueRef) -> Option<SemanticType> {
         self.slots.value_locals.get(&value).and_then(|local| self.slots.local_types.get(usize::from(*local))).cloned()
     }
 
     /// SSA 值的语义类型（操作数位常量回落用的同一张冻结表）。
-    fn value_semantic_type(&self, value: MirValueRef) -> Option<NyarType> {
+    fn value_semantic_type(&self, value: MirValueRef) -> Option<SemanticType> {
         self.mir_fn.value_types.get(&value).cloned()
     }
 
@@ -1797,11 +1797,11 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     fn emit_text_boundary_operand(
         &mut self,
         operand: &MirOperand,
-        expected: &NyarType,
+        expected: &SemanticType,
         target: TextSlotTarget,
         site: &str,
     ) -> crate::Result<()> {
-        if !matches!(expected, NyarType::Utf8) {
+        if !matches!(expected, SemanticType::Utf8) {
             return self.emit_operand_typed(operand, Some(expected));
         }
         let Some(carrier) = self.operand_text_carrier(operand)
@@ -1829,7 +1829,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
 
     /// 发射 raw 载体操作数（Value 读槽，常量按 `Utf8` 发射）。
     fn emit_text_raw_operand(&mut self, operand: &MirOperand, _site: &str) -> crate::Result<()> {
-        self.emit_operand_typed(operand, Some(&NyarType::Utf8))
+        self.emit_operand_typed(operand, Some(&SemanticType::Utf8))
     }
 
     /// raw → 托管：`ObjectNew(layout)` → raw 串 → `utf8.to_bytes` → `FieldSet 0`。
@@ -1868,8 +1868,8 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             [field]
                 if matches!(
                     &field.ty,
-                    NyarType::Array(element) | NyarType::FixedArray { element, .. }
-                        if matches!(element.as_ref(), NyarType::Integer8 { signed: false })
+                    SemanticType::Array(element) | SemanticType::FixedArray { element, .. }
+                        if matches!(element.as_ref(), SemanticType::Integer8 { signed: false })
                 )
         );
         if !is_byte_slice {
@@ -1884,18 +1884,18 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     }
 
     /// 制品字段的冻结类型；Odin 槽无类型，常量位宽只能由布局合同给出。
-    fn field_value_type(&self, field: nyar_types::FieldId) -> Option<NyarType> {
+    fn field_value_type(&self, field: nyar_types::FieldId) -> Option<SemanticType> {
         self.ctx.field_layout_by_id(field).map(|(_, layout, _)| layout.ty.clone())
     }
 
     /// 数组元素类型：只从 SSA 值的冻结语义类型读取，不回查名字。
-    fn array_element_type(&self, array: &MirOperand) -> Option<NyarType> {
+    fn array_element_type(&self, array: &MirOperand) -> Option<SemanticType> {
         let MirOperand::Value(value) = array
         else {
             return None;
         };
         match self.mir_fn.value_types.get(value)? {
-            NyarType::Array(element) | NyarType::FixedArray { element, .. } => Some((**element).clone()),
+            SemanticType::Array(element) | SemanticType::FixedArray { element, .. } => Some((**element).clone()),
             _ => None,
         }
     }
@@ -1921,18 +1921,18 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     ///
     /// `Value` 读 [`Self::value_semantic_type`]；常量回落 `semantic_mir_contract`
     /// 的同一张合同（`Int → Integer64{signed}` 等），符号/实例身份没有源类型。
-    fn operand_semantic_type(&self, operand: &MirOperand) -> crate::Result<NyarType> {
+    fn operand_semantic_type(&self, operand: &MirOperand) -> crate::Result<SemanticType> {
         match operand {
             MirOperand::Value(value) => self
                 .value_semantic_type(*value)
                 .ok_or_else(|| format!("OVM `Cast` 源 SSA 值缺少冻结语义类型：%{}（symbol=`{}`）", value.0, self.mir_fn.symbol)),
             MirOperand::Constant(constant) => match constant {
-                MirConstant::Int(_) => Ok(NyarType::Integer64 { signed: true }),
-                MirConstant::Float64(_) => Ok(NyarType::Float64),
-                MirConstant::Bool(_) => Ok(NyarType::Boolean),
-                MirConstant::Utf8(_) => Ok(NyarType::Utf8),
-                MirConstant::Utf16(_) => Ok(NyarType::Utf16),
-                MirConstant::Unit => Ok(NyarType::Unit),
+                MirConstant::Int(_) => Ok(SemanticType::Integer64 { signed: true }),
+                MirConstant::Float64(_) => Ok(SemanticType::Float64),
+                MirConstant::Bool(_) => Ok(SemanticType::Boolean),
+                MirConstant::Utf8(_) => Ok(SemanticType::Utf8),
+                MirConstant::Utf16(_) => Ok(SemanticType::Utf16),
+                MirConstant::Unit => Ok(SemanticType::Unit),
                 MirConstant::Null => Err(format!("OVM `Cast` 的空值操作数没有源类型，无法确定转换语义（symbol=`{}`）", self.mir_fn.symbol)),
             },
             MirOperand::Symbol(path) => Err(format!("OVM `Cast` 源操作数不支持符号引用 {path:?}（symbol=`{}`）", self.mir_fn.symbol)),
@@ -1946,7 +1946,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     /// 整数↔整数（含 `Character` 的 32 位无符号码位）、整数↔`f64` 与 `f32`↔`f64`
     /// 有确定语义；布尔/文本↔数值与整数↔`f32` 没有目标合同，必须结构化拒绝，
     /// 禁止编造近似转换或借另一宽度载体中转。
-    fn emit_cast_conversion(&mut self, source_ty: &NyarType, target_ty: &NyarType) -> crate::Result<()> {
+    fn emit_cast_conversion(&mut self, source_ty: &SemanticType, target_ty: &SemanticType) -> crate::Result<()> {
         if source_ty == target_ty {
             return Ok(());
         }
@@ -1954,24 +1954,24 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         // `f64 → f32` 用 `F32DemoteF64`（RNE，溢出 `inf`、下溢 0/次正规）；
         // `f32 → f64` 用 `F64PromoteF32`（精确无损）。两者都不经过其他精度。
         match (source_ty, target_ty) {
-            (NyarType::Float32, NyarType::Float64) => {
+            (SemanticType::Float32, SemanticType::Float64) => {
                 self.emitter.emit_plain(OdinHeadCode::F64PromoteF32);
                 return Ok(());
             }
-            (NyarType::Float64, NyarType::Float32) => {
+            (SemanticType::Float64, SemanticType::Float32) => {
                 self.emitter.emit_plain(OdinHeadCode::F32DemoteF64);
                 return Ok(());
             }
             // 整数↔f32 的 `as` 需要独立的转换指令/宿主合同，本轮未冻结；
             // 必须响亮失败，不得先转 f64 再降（double rounding）或借 i32 载体冒充。
-            (_, NyarType::Float32) => {
+            (_, SemanticType::Float32) => {
                 return Err(format!(
                     "OVM 后端没有 `{source_ty}` → `f32` 的确定转换语义（symbol=`{}`）：\
                      整数→`f32` 的精确单步转换尚未冻结，禁止先转 `f64` 再降回（double rounding）",
                     self.mir_fn.symbol
                 ));
             }
-            (NyarType::Float32, _) => {
+            (SemanticType::Float32, _) => {
                 return Err(format!(
                     "OVM 后端没有 `f32` → `{target_ty}` 的确定转换语义（symbol=`{}`）：\
                      `f32` 是独立载体，禁止借 `f64` 中转或按 i32 位模式冒充数值转换",
@@ -1980,13 +1980,13 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             }
             _ => {}
         }
-        if matches!(target_ty, NyarType::Float64) {
+        if matches!(target_ty, SemanticType::Float64) {
             if let Some(source) = ovm_int_shape(source_ty) {
                 self.emit_int_to_f64(source);
                 return Ok(());
             }
         }
-        if matches!(source_ty, NyarType::Float64) {
+        if matches!(source_ty, SemanticType::Float64) {
             if let Some(target) = ovm_int_shape(target_ty) {
                 self.emit_f64_to_int(target);
                 return Ok(());
@@ -2117,20 +2117,20 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
 
 /// 整数表示形状：只携带位宽与符号性，`Character` 视为 32 位无符号码位。
 ///
-/// 转换规则必须由这两项决定，不得按 `NyarType` 变体名逐条特判。
+/// 转换规则必须由这两项决定，不得按 `SemanticType` 变体名逐条特判。
 #[derive(Clone, Copy)]
 struct OvmIntShape {
     bits: u16,
     signed: bool,
 }
 
-fn ovm_int_shape(ty: &NyarType) -> Option<OvmIntShape> {
+fn ovm_int_shape(ty: &SemanticType) -> Option<OvmIntShape> {
     match ty {
-        NyarType::Integer8 { signed } => Some(OvmIntShape { bits: 8, signed: *signed }),
-        NyarType::Integer16 { signed } => Some(OvmIntShape { bits: 16, signed: *signed }),
-        NyarType::Integer32 { signed } => Some(OvmIntShape { bits: 32, signed: *signed }),
-        NyarType::Integer64 { signed } => Some(OvmIntShape { bits: 64, signed: *signed }),
-        NyarType::Character => Some(OvmIntShape { bits: 32, signed: false }),
+        SemanticType::Integer8 { signed } => Some(OvmIntShape { bits: 8, signed: *signed }),
+        SemanticType::Integer16 { signed } => Some(OvmIntShape { bits: 16, signed: *signed }),
+        SemanticType::Integer32 { signed } => Some(OvmIntShape { bits: 32, signed: *signed }),
+        SemanticType::Integer64 { signed } => Some(OvmIntShape { bits: 64, signed: *signed }),
+        SemanticType::Character => Some(OvmIntShape { bits: 32, signed: false }),
         _ => None,
     }
 }
@@ -2182,8 +2182,8 @@ pub(crate) fn freeze_ovm_operator(
     link: &nyar::ExternalImportLink,
     instance: nyar_types::ItemInstanceId,
     symbol: &str,
-    parameter_types: &[nyar_types::NyarType],
-    return_type: &nyar_types::NyarType,
+    parameter_types: &[nyar_types::SemanticType],
+    return_type: &nyar_types::SemanticType,
 ) -> crate::Result<Option<OvmOperatorBinding>> {
     let Some(mnemonic) = crate::lowering::shared::interop::ovm_operator_target(link)
     else {

@@ -13,7 +13,7 @@ use nyar_emitter::{
     },
 };
 use nyar_types::{
-    CanonicalPrimitiveType, CanonicalTypeKind, ItemInstanceId, NyarFunctionType, NyarType,
+    CanonicalPrimitiveType, CanonicalTypeKind, ItemInstanceId, FunctionType, SemanticType,
     semantic_ids::{MirValueId, NominalInstanceId, TypeId, VariantId},
 };
 
@@ -263,15 +263,15 @@ fn build_plan(
             }
         }
         // 文本载体声明（`std.text::Utf8Text`/`Utf16Text`）在签名里折叠成编码基元，
-        // 槽类型是 `NyarType::Utf8`/`Utf16` 而不是名义拼写；托管布局必须同时以
+        // 槽类型是 `SemanticType::Utf8`/`Utf16` 而不是名义拼写；托管布局必须同时以
         // 折叠后的编码身份为键登记，否则按编码身份取槽的 ABI 派生点查不到布局，
         // 会把托管槽误解释成 raw 串。键来源是 canonical 已冻结的
         // `text_encoding_types`（01 §5.4：文本身份只来自唯一已冻结编码身份），
         // 不按名字拼写回查。
         if let Some(encoding) = canonical.linked.text_encoding_types.get(type_id) {
             let folded = match encoding {
-                CanonicalPrimitiveType::Utf8 => NyarType::Utf8,
-                CanonicalPrimitiveType::Utf16 => NyarType::Utf16,
+                CanonicalPrimitiveType::Utf8 => SemanticType::Utf8,
+                CanonicalPrimitiveType::Utf16 => SemanticType::Utf16,
                 other => {
                     return Err(TargetPlanError::unsound(
                         AdapterStage::Representation,
@@ -715,10 +715,10 @@ fn lower_operation(
 }
 
 /// 文本常量的编码身份由常量变体自身决定；整数/浮点/空值没有在这里声称的编码身份。
-fn constant_encoding_type(constant: &ValkyrieMirConstant) -> Option<NyarType> {
+fn constant_encoding_type(constant: &ValkyrieMirConstant) -> Option<SemanticType> {
     match constant {
-        ValkyrieMirConstant::Utf8(_) => Some(NyarType::Utf8),
-        ValkyrieMirConstant::Utf16(_) => Some(NyarType::Utf16),
+        ValkyrieMirConstant::Utf8(_) => Some(SemanticType::Utf8),
+        ValkyrieMirConstant::Utf16(_) => Some(SemanticType::Utf16),
         _ => None,
     }
 }
@@ -773,34 +773,34 @@ fn type_contains_generic_deep(program: &ValkyrieMirProgram, id: nyar_types::Type
 /// （`byte`/`sbyte`/`Utf8Text` 等）：那些必须在语言前端按 `[primitive]` 身份
 /// 结算，目标计划不得再按名字猜载体。`usize`/`isize`/`f128` 没有稳定宽度，
 /// 刻意缺席并失败闭合。
-fn canonical_primitive_carrier(spelling: &str) -> Option<NyarType> {
+fn canonical_primitive_carrier(spelling: &str) -> Option<SemanticType> {
     let simple = spelling.rsplit([':', '.']).next().unwrap_or(spelling);
     Some(match simple {
-        "bool" => NyarType::Boolean,
-        "u8" => NyarType::Integer8 { signed: false },
-        "i8" => NyarType::Integer8 { signed: true },
-        "u16" => NyarType::Integer16 { signed: false },
-        "i16" => NyarType::Integer16 { signed: true },
-        "u32" => NyarType::Integer32 { signed: false },
-        "i32" => NyarType::Integer32 { signed: true },
-        "u64" => NyarType::Integer64 { signed: false },
-        "i64" => NyarType::Integer64 { signed: true },
-        "u128" => NyarType::Integer128 { signed: false },
-        "i128" => NyarType::Integer128 { signed: true },
-        "f32" => NyarType::Float32,
-        "f64" => NyarType::Float64,
-        "char" => NyarType::Character,
-        "utf8" => NyarType::Utf8,
-        "utf16" => NyarType::Utf16,
-        "unit" => NyarType::Unit,
-        "void" => NyarType::Bottom,
+        "bool" => SemanticType::Boolean,
+        "u8" => SemanticType::Integer8 { signed: false },
+        "i8" => SemanticType::Integer8 { signed: true },
+        "u16" => SemanticType::Integer16 { signed: false },
+        "i16" => SemanticType::Integer16 { signed: true },
+        "u32" => SemanticType::Integer32 { signed: false },
+        "i32" => SemanticType::Integer32 { signed: true },
+        "u64" => SemanticType::Integer64 { signed: false },
+        "i64" => SemanticType::Integer64 { signed: true },
+        "u128" => SemanticType::Integer128 { signed: false },
+        "i128" => SemanticType::Integer128 { signed: true },
+        "f32" => SemanticType::Float32,
+        "f64" => SemanticType::Float64,
+        "char" => SemanticType::Character,
+        "utf8" => SemanticType::Utf8,
+        "utf16" => SemanticType::Utf16,
+        "unit" => SemanticType::Unit,
+        "void" => SemanticType::Bottom,
         _ => return None,
     })
 }
 
 
 /// 按 canonical 类型图重建布局计划使用的**未结算**类型形态（`Nominal` 基 + `Apply` 实参）。
-fn lower_unsettled_contract_key(program: &ValkyrieMirProgram, id: nyar_types::TypeId) -> Result<NyarType> {
+fn lower_unsettled_contract_key(program: &ValkyrieMirProgram, id: nyar_types::TypeId) -> Result<SemanticType> {
     let kind = &program.linked.types.get(&id).ok_or_else(|| "canonical 类型事实缺失".to_string())?.kind;
     match kind {
         CanonicalTypeKind::Nominal { declaration, arguments } => {
@@ -812,20 +812,20 @@ fn lower_unsettled_contract_key(program: &ValkyrieMirProgram, id: nyar_types::Ty
             // 嵌套层查找必然 miss，投影失败闭合退化成 `InstanceHandle`。
             if let Some(encoding) = program.linked.text_encoding_types.get(&id) {
                 return match encoding {
-                    CanonicalPrimitiveType::Utf8 => Ok(NyarType::Utf8),
-                    CanonicalPrimitiveType::Utf16 => Ok(NyarType::Utf16),
+                    CanonicalPrimitiveType::Utf8 => Ok(SemanticType::Utf8),
+                    CanonicalPrimitiveType::Utf16 => Ok(SemanticType::Utf16),
                     other => Err(format!("文本载体 `TypeId` 登记了非文本编码身份: {other:?}")),
                 };
             }
             let base = match program.linked.aggregate_layout_by_type.get(declaration) {
-                Some(layout) => NyarType::Nominal { layout: *layout, spelling: nyar_types::Identifier::new("") },
+                Some(layout) => SemanticType::Nominal { layout: *layout, spelling: nyar_types::Identifier::new("") },
                 None => lower_type(program, *declaration)?.contract_key(),
             };
             if arguments.is_empty() {
                 Ok(base)
             }
             else {
-                Ok(NyarType::Apply(
+                Ok(SemanticType::Apply(
                     Box::new(base),
                     arguments.iter().map(|argument| lower_unsettled_contract_key(program, *argument)).collect::<Result<Vec<_>>>()?,
                 ))
@@ -834,58 +834,58 @@ fn lower_unsettled_contract_key(program: &ValkyrieMirProgram, id: nyar_types::Ty
         CanonicalTypeKind::Array { element, length } => {
             let element = lower_unsettled_contract_key(program, *element)?;
             Ok(match length {
-                None => NyarType::Array(Box::new(element)),
-                Some(length) => NyarType::FixedArray {
+                None => SemanticType::Array(Box::new(element)),
+                Some(length) => SemanticType::FixedArray {
                     element: Box::new(element),
                     length: usize::try_from(*length).map_err(|_| "固定数组长度溢出".to_string())?,
                 },
             })
         }
         CanonicalTypeKind::Tuple(items) => {
-            Ok(NyarType::Tuple(items.iter().map(|item| lower_unsettled_contract_key(program, *item)).collect::<Result<Vec<_>>>()?))
+            Ok(SemanticType::Tuple(items.iter().map(|item| lower_unsettled_contract_key(program, *item)).collect::<Result<Vec<_>>>()?))
         }
-        CanonicalTypeKind::Nullable(element) => Ok(NyarType::Nullable(Box::new(lower_unsettled_contract_key(program, *element)?))),
+        CanonicalTypeKind::Nullable(element) => Ok(SemanticType::Nullable(Box::new(lower_unsettled_contract_key(program, *element)?))),
         CanonicalTypeKind::Union(items) => {
-            Ok(NyarType::Union(items.iter().map(|item| lower_unsettled_contract_key(program, *item)).collect::<Result<Vec<_>>>()?))
+            Ok(SemanticType::Union(items.iter().map(|item| lower_unsettled_contract_key(program, *item)).collect::<Result<Vec<_>>>()?))
         }
         _ => Ok(lower_type(program, id)?.contract_key()),
     }
 }
 
-fn lower_type(program: &ValkyrieMirProgram, id: nyar_types::TypeId) -> Result<NyarType> {
+fn lower_type(program: &ValkyrieMirProgram, id: nyar_types::TypeId) -> Result<SemanticType> {
     let kind = &program.linked.types.get(&id).ok_or_else(|| format!("canonical 类型事实缺失"))?.kind;
     match kind {
         CanonicalTypeKind::Primitive(kind) => match kind {
-            nyar_types::CanonicalPrimitiveType::Void => Ok(NyarType::Bottom),
-            nyar_types::CanonicalPrimitiveType::Unit => Ok(NyarType::Unit),
-            nyar_types::CanonicalPrimitiveType::Bool => Ok(NyarType::Boolean),
+            nyar_types::CanonicalPrimitiveType::Void => Ok(SemanticType::Bottom),
+            nyar_types::CanonicalPrimitiveType::Unit => Ok(SemanticType::Unit),
+            nyar_types::CanonicalPrimitiveType::Bool => Ok(SemanticType::Boolean),
             // 窄整数保留宽度与符号，不能在计划层提前抹成 i32：表示转换的扩展/截断
             // 配方由两端语义类型决定，抹平宽度后无法区分 `i32.and 0xFF` 与 `i32.extend8_s`。
-            nyar_types::CanonicalPrimitiveType::Integer { bits: 8, signed } => Ok(NyarType::Integer8 { signed: *signed }),
-            nyar_types::CanonicalPrimitiveType::Integer { bits: 16, signed } => Ok(NyarType::Integer16 { signed: *signed }),
-            nyar_types::CanonicalPrimitiveType::Integer { bits: 32, signed } => Ok(NyarType::Integer32 { signed: *signed }),
-            nyar_types::CanonicalPrimitiveType::Integer { bits: 64, signed } => Ok(NyarType::Integer64 { signed: *signed }),
+            nyar_types::CanonicalPrimitiveType::Integer { bits: 8, signed } => Ok(SemanticType::Integer8 { signed: *signed }),
+            nyar_types::CanonicalPrimitiveType::Integer { bits: 16, signed } => Ok(SemanticType::Integer16 { signed: *signed }),
+            nyar_types::CanonicalPrimitiveType::Integer { bits: 32, signed } => Ok(SemanticType::Integer32 { signed: *signed }),
+            nyar_types::CanonicalPrimitiveType::Integer { bits: 64, signed } => Ok(SemanticType::Integer64 { signed: *signed }),
             // 浮点各自保留独立载体：`Value` 有 `F64` 与 `F32` 两个变体，
             // `bits: 32` 不得落到 64 位槽（那会让「32 位类型」实际承载 64 位载荷）。
-            nyar_types::CanonicalPrimitiveType::Float { bits: 32 } => Ok(NyarType::Float32),
-            nyar_types::CanonicalPrimitiveType::Float { bits: 64 } => Ok(NyarType::Float64),
-            nyar_types::CanonicalPrimitiveType::Character => Ok(NyarType::Character),
-            nyar_types::CanonicalPrimitiveType::Utf8 => Ok(NyarType::Utf8),
-            nyar_types::CanonicalPrimitiveType::Utf16 => Ok(NyarType::Utf16),
+            nyar_types::CanonicalPrimitiveType::Float { bits: 32 } => Ok(SemanticType::Float32),
+            nyar_types::CanonicalPrimitiveType::Float { bits: 64 } => Ok(SemanticType::Float64),
+            nyar_types::CanonicalPrimitiveType::Character => Ok(SemanticType::Character),
+            nyar_types::CanonicalPrimitiveType::Utf8 => Ok(SemanticType::Utf8),
+            nyar_types::CanonicalPrimitiveType::Utf16 => Ok(SemanticType::Utf16),
             unsupported => Err(format!("primitive 尚无目标合同: {unsupported:?}")),
         },
-        CanonicalTypeKind::Tuple(items) => Ok(NyarType::Tuple(items.iter().map(|id| lower_type(program, *id)).collect::<Result<_>>()?)),
-        // 唯一标签擦除点：标签只属于 canonical 身份，目标层按位置布局，`NyarType`
+        CanonicalTypeKind::Tuple(items) => Ok(SemanticType::Tuple(items.iter().map(|id| lower_type(program, *id)).collect::<Result<_>>()?)),
+        // 唯一标签擦除点：标签只属于 canonical 身份，目标层按位置布局，`SemanticType`
         // 与 `LayoutKey` 保持无标签。类型身份不等但布局相同的元组在 ABI 上允许。
         CanonicalTypeKind::LabeledTuple { fields } => {
-            Ok(NyarType::Tuple(fields.iter().map(|(_, ty)| lower_type(program, *ty)).collect::<Result<_>>()?))
+            Ok(SemanticType::Tuple(fields.iter().map(|(_, ty)| lower_type(program, *ty)).collect::<Result<_>>()?))
         }
-        CanonicalTypeKind::Array { element, length: None } => Ok(NyarType::Array(Box::new(lower_type(program, *element)?))),
-        CanonicalTypeKind::Array { element, length: Some(length) } => Ok(NyarType::FixedArray {
+        CanonicalTypeKind::Array { element, length: None } => Ok(SemanticType::Array(Box::new(lower_type(program, *element)?))),
+        CanonicalTypeKind::Array { element, length: Some(length) } => Ok(SemanticType::FixedArray {
             element: Box::new(lower_type(program, *element)?),
             length: usize::try_from(*length).map_err(|_| format!("固定数组长度溢出"))?,
         }),
-        CanonicalTypeKind::Nullable(element) => Ok(NyarType::Nullable(Box::new(lower_type(program, *element)?))),
+        CanonicalTypeKind::Nullable(element) => Ok(SemanticType::Nullable(Box::new(lower_type(program, *element)?))),
         CanonicalTypeKind::Nominal { declaration, arguments } => {
             if !arguments.is_empty() {
                 // 实例级布局已由 canonical 冻结时，泛型实例必须在计划边界结算为携带
@@ -900,9 +900,9 @@ fn lower_type(program: &ValkyrieMirProgram, id: nyar_types::TypeId) -> Result<Ny
                         .or_else(|| program.linked.type_surface_spellings.get(declaration))
                         .cloned()
                         .unwrap_or_else(|| nyar_types::Identifier::new("Apply"));
-                    return Ok(NyarType::Nominal { layout, spelling });
+                    return Ok(SemanticType::Nominal { layout, spelling });
                 }
-                return Ok(NyarType::Apply(
+                return Ok(SemanticType::Apply(
                     Box::new(lower_type(program, *declaration)?),
                     arguments.iter().map(|argument| lower_type(program, *argument)).collect::<Result<Vec<_>>>()?,
                 ));
@@ -911,8 +911,8 @@ fn lower_type(program: &ValkyrieMirProgram, id: nyar_types::TypeId) -> Result<Ny
             // 回查；折叠后的 `Utf8`/`Utf16` 是后续托管布局与宿主边界的共同键。
             if let Some(encoding) = program.linked.text_encoding_types.get(&id).copied() {
                 return match encoding {
-                    CanonicalPrimitiveType::Utf8 => Ok(NyarType::Utf8),
-                    CanonicalPrimitiveType::Utf16 => Ok(NyarType::Utf16),
+                    CanonicalPrimitiveType::Utf8 => Ok(SemanticType::Utf8),
+                    CanonicalPrimitiveType::Utf16 => Ok(SemanticType::Utf16),
                     other => Err(format!("文本载体 `TypeId` 登记了非文本编码身份: {other:?}")),
                 };
             }
@@ -935,10 +935,10 @@ fn lower_type(program: &ValkyrieMirProgram, id: nyar_types::TypeId) -> Result<Ny
                 // 闭合 nominal 有实例记录却无任何布局绑定时必须失败关闭，
                 // 不得压回裸 `Named` 让下游按名字猜实现。
                 if let Some(layout) = layout {
-                    return Ok(NyarType::Nominal { layout, spelling: name.clone() });
+                    return Ok(SemanticType::Nominal { layout, spelling: name.clone() });
                 }
                 if is_generic_declaration(program, *declaration) {
-                    return Ok(NyarType::Named(name.clone()));
+                    return Ok(SemanticType::Named(name.clone()));
                 }
                 return Err(format!("nominal type `{name}` 缺少目标 layout 或 carrier 合同"));
             }
@@ -956,19 +956,19 @@ fn lower_type(program: &ValkyrieMirProgram, id: nyar_types::TypeId) -> Result<Ny
                     Some(layout) => layout.name.clone(),
                     None => format!("Nominal({id:?})"),
                 };
-                return Ok(NyarType::Nominal { layout: layout_id, spelling: nyar_types::Identifier::new(&spelling) });
+                return Ok(SemanticType::Nominal { layout: layout_id, spelling: nyar_types::Identifier::new(&spelling) });
             }
             Err(format!(
                 "canonical 类型尚无目标合同: Nominal {{ declaration: {declaration:?}, arguments: [], {} }}",
                 nominal_contract_context(program, id, *declaration)
             ))
         }
-        CanonicalTypeKind::Function { parameters, return_type } => Ok(NyarType::Function(Box::new(NyarFunctionType {
+        CanonicalTypeKind::Function { parameters, return_type } => Ok(SemanticType::Function(Box::new(FunctionType {
             params: parameters.iter().map(|parameter| lower_type(program, *parameter)).collect::<Result<Vec<_>>>()?,
             return_type: lower_type(program, *return_type)?,
         }))),
         CanonicalTypeKind::Union(items) => {
-            Ok(NyarType::Union(items.iter().map(|item| lower_type(program, *item)).collect::<Result<Vec<_>>>()?))
+            Ok(SemanticType::Union(items.iter().map(|item| lower_type(program, *item)).collect::<Result<Vec<_>>>()?))
         }
         // `Intersection` 必须在进入平台表示计划前由 frontend 擦除（见
         // `frontend_contract::nyar_type` 的 `ConcretizeError`）。把它静默降成 `Union`
@@ -1131,9 +1131,9 @@ mod tests {
             (type_id(1), CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Integer { bits: 16, signed: true })),
             (type_id(2), CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Character)),
         ]);
-        assert_eq!(lower_type(&program, type_id(0)).expect("u8"), NyarType::Integer8 { signed: false });
-        assert_eq!(lower_type(&program, type_id(1)).expect("i16"), NyarType::Integer16 { signed: true });
-        assert_eq!(lower_type(&program, type_id(2)).expect("Character"), NyarType::Character);
+        assert_eq!(lower_type(&program, type_id(0)).expect("u8"), SemanticType::Integer8 { signed: false });
+        assert_eq!(lower_type(&program, type_id(1)).expect("i16"), SemanticType::Integer16 { signed: true });
+        assert_eq!(lower_type(&program, type_id(2)).expect("Character"), SemanticType::Character);
     }
 
     /// 零实参 nominal 的 `Self` 别名 `TypeId` 未持有布局时，必须按声明身份回退；
@@ -1154,7 +1154,7 @@ mod tests {
             namespace: String::new(),
             key: None,
             storage: nyar_types::StorageKind::Value,
-            fields: vec![nyar_types::FieldLayout { name: "code".into(), ty: NyarType::Integer64 { signed: true } }],
+            fields: vec![nyar_types::FieldLayout { name: "code".into(), ty: SemanticType::Integer64 { signed: true } }],
         });
         program.linked.nominal_instances.insert(
             nyar_types::NominalInstanceId::from_index(0).expect("测试名义实例身份"),
@@ -1167,7 +1167,7 @@ mod tests {
         );
         assert_eq!(
             lower_type(&program, alias).expect("声明身份布局"),
-            NyarType::Nominal { layout: 0, spelling: nyar_types::Identifier::new("Endpoint") }
+            SemanticType::Nominal { layout: 0, spelling: nyar_types::Identifier::new("Endpoint") }
         );
     }
 
@@ -1213,10 +1213,10 @@ mod tests {
                 fields: Vec::new(),
             },
         );
-        assert_eq!(lower_type(&program, declaration).expect("泛型声明拼写"), NyarType::Named(nyar_types::Identifier::new("ArrayList")));
+        assert_eq!(lower_type(&program, declaration).expect("泛型声明拼写"), SemanticType::Named(nyar_types::Identifier::new("ArrayList")));
     }
 
-    /// 浮点宽度与目标载体一一对应：`Float{bits:32}` 必须登记为独立的 `NyarType::Float32`
+    /// 浮点宽度与目标载体一一对应：`Float{bits:32}` 必须登记为独立的 `SemanticType::Float32`
     /// 与 `TargetOperandType::F32`，不得静默并入 64 位载体。
     #[test]
     fn float_primitive_registers_width_matched_target_contract() {
@@ -1224,11 +1224,11 @@ mod tests {
             (type_id(0), CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Float { bits: 64 })),
             (type_id(1), CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Float { bits: 32 })),
         ]);
-        assert_eq!(lower_type(&program, type_id(0)).expect("f64 必须有目标合同"), NyarType::Float64);
+        assert_eq!(lower_type(&program, type_id(0)).expect("f64 必须有目标合同"), SemanticType::Float64);
         let float32 = lower_type(&program, type_id(1)).expect("f32 必须有目标合同");
-        assert_eq!(float32, NyarType::Float32);
+        assert_eq!(float32, SemanticType::Float32);
         assert_eq!(operand_carrier(&float32), Some(TargetOperandType::F32));
-        assert_ne!(operand_carrier(&float32), operand_carrier(&NyarType::Float64), "f32 不得复用 f64 载体");
+        assert_ne!(operand_carrier(&float32), operand_carrier(&SemanticType::Float64), "f32 不得复用 f64 载体");
     }
 
     /// canonical 用 `u64` 位模式承载 float64，计划层必须按位重建：`-0.0` 的符号位
@@ -1278,8 +1278,8 @@ mod tests {
     /// canonical 层不保存名称，不能在这里回落 `None` 让后端再猜。
     #[test]
     fn text_constants_carry_their_encoding_identity() {
-        assert_eq!(constant_encoding_type(&ValkyrieMirConstant::Utf8("文本".to_string())), Some(NyarType::Utf8));
-        assert_eq!(constant_encoding_type(&ValkyrieMirConstant::Utf16("文本".to_string())), Some(NyarType::Utf16));
+        assert_eq!(constant_encoding_type(&ValkyrieMirConstant::Utf8("文本".to_string())), Some(SemanticType::Utf8));
+        assert_eq!(constant_encoding_type(&ValkyrieMirConstant::Utf16("文本".to_string())), Some(SemanticType::Utf16));
         assert_eq!(constant_encoding_type(&ValkyrieMirConstant::Int(1)), None, "整数宽度不由常量变体单独声称");
         assert_eq!(constant_encoding_type(&ValkyrieMirConstant::Unit), None, "Unit 不声称文本编码");
     }
@@ -1353,7 +1353,7 @@ mod tests {
         let key = lower_unsettled_contract_key(&program, storage_of_utf8).expect("闭合实例必须能派生 unsettled 键");
         assert_eq!(
             key,
-            NyarType::Apply(Box::new(NyarType::Named(nyar_types::Identifier::new("std::collection::ArrayStorage"))), vec![NyarType::Utf8]),
+            SemanticType::Apply(Box::new(SemanticType::Named(nyar_types::Identifier::new("std::collection::ArrayStorage"))), vec![SemanticType::Utf8]),
             "文本载体实参必须折叠成 `Utf8`，与语言布局字段事实同键: {key:?}"
         );
     }

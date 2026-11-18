@@ -15,13 +15,13 @@ use nyar_emitter::{
     testing::lower_fragment_to_nyar_module,
 };
 use nyar_emitter::{SumRepresentation, SumVariantRepresentation};
-use nyar_types::{NyarType, NominalInstanceId, TypeId, VariantId};
+use nyar_types::{SemanticType, NominalInstanceId, TypeId, VariantId};
 use acorn_odin::{decode_at, OdinConstant, OdinHeadCode, OdinInstruction, OdinModuleData};
 
 // 返回类型只起「非 unit」占位作用；文本 carrier 在 OVM 返回边界要求冻结的
 // `return_layout`（`d3a8f0b7`），与 sum 表示无关，故用整型载体。
-const SUM_TYPE: NyarType = NyarType::Integer32 { signed: true };
-const I32: NyarType = NyarType::Integer32 { signed: true };
+const SUM_TYPE: SemanticType = SemanticType::Integer32 { signed: true };
+const I32: SemanticType = SemanticType::Integer32 { signed: true };
 
 fn nominal() -> NominalInstanceId {
     NominalInstanceId::from_index(0).expect("测试 nominal 身份")
@@ -47,7 +47,7 @@ fn representation(nominal: NominalInstanceId, tag_width: u32, with_payload: bool
 }
 
 /// 单 entry block：指令序列后返回 `ValueRef(0)`。
-fn sum_function(instructions: Vec<Instruction>, value_types: BTreeMap<ValueRef, NyarType>) -> ExecutableFunction {
+fn sum_function(instructions: Vec<Instruction>, value_types: BTreeMap<ValueRef, SemanticType>) -> ExecutableFunction {
     ExecutableFunction {
         symbol: "main".to_string(),
         return_type: SUM_TYPE,

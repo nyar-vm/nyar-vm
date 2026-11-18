@@ -15,7 +15,7 @@ use nyar_emitter::{
 };
 use nyar_types::{
     CanonicalFragment, CanonicalPrimitiveType, CanonicalTypeKind, InstructionId, ItemId, ItemInstanceId, ItemInstanceRecord,
-    LinkedSemanticProgram, MirValueId, NyarType, TypeId, TypeRecord, ValueIdentity,
+    LinkedSemanticProgram, MirValueId, SemanticType, TypeId, TypeRecord, ValueIdentity,
 };
 use rusty_valkyrie::compiler::emitter::pipeline::target_plan::from_compiled_program;
 use rusty_valkyrie::compiler::valkyrie_mir::{
@@ -196,7 +196,7 @@ fn typed_reference_function_value_callee_lowers_to_value_callee_call() {
     assert_eq!(callee, Operand::Value(ValueRef(0)), "函数值 callee 必须降为按 SSA 值的间接调用");
     assert_eq!(arguments, vec![Operand::Value(ValueRef(1))]);
     let lowered = &plan.testing_functions()[&caller];
-    assert!(matches!(lowered.value_types[&ValueRef(0)], NyarType::Function(_)), "callee 值必须携带冻结的 Function 签名供 wasm 反查 typeidx");
+    assert!(matches!(lowered.value_types[&ValueRef(0)], SemanticType::Function(_)), "callee 值必须携带冻结的 Function 签名供 wasm 反查 typeidx");
 }
 
 #[test]

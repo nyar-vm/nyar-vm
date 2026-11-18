@@ -14,19 +14,19 @@ use nyar_emitter::{
     contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef},
     testing::lower_fragment_to_nyar_module,
 };
-use nyar_types::{ItemInstanceId, NyarFunctionType, NyarType};
+use nyar_types::{ItemInstanceId, FunctionType, SemanticType};
 use acorn_odin::{OdinHeadCode, OdinInstruction, OdinModuleData, decode_at};
 
-fn function_type() -> NyarType {
-    NyarType::Function(Box::new(NyarFunctionType { params: Vec::new(), return_type: NyarType::Integer32 { signed: true } }))
+fn function_type() -> SemanticType {
+    SemanticType::Function(Box::new(FunctionType { params: Vec::new(), return_type: SemanticType::Integer32 { signed: true } }))
 }
 
 fn callee_function() -> ExecutableFunction {
     ExecutableFunction {
         symbol: "callee".to_string(),
-        return_type: NyarType::Integer32 { signed: true },
+        return_type: SemanticType::Integer32 { signed: true },
         param_types: Vec::new(),
-        value_types: BTreeMap::from([(ValueRef(0), NyarType::Integer32 { signed: true })]),
+        value_types: BTreeMap::from([(ValueRef(0), SemanticType::Integer32 { signed: true })]),
         value_layouts: BTreeMap::new(),
         return_layout: None,
         entry: BlockRef(0),
@@ -40,7 +40,7 @@ fn callee_function() -> ExecutableFunction {
                 results: vec![ValueRef(0)],
                 ..Instruction::from_kind(InstructionKind::LoadConstant {
                     constant: Constant::Int(7),
-                    ty: Some(NyarType::Integer32 { signed: true }),
+                    ty: Some(SemanticType::Integer32 { signed: true }),
                 })
             }],
             terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
@@ -52,9 +52,9 @@ fn callee_function() -> ExecutableFunction {
 fn caller_function(instance: ItemInstanceId) -> ExecutableFunction {
     ExecutableFunction {
         symbol: "main".to_string(),
-        return_type: NyarType::Integer32 { signed: true },
+        return_type: SemanticType::Integer32 { signed: true },
         param_types: Vec::new(),
-        value_types: BTreeMap::from([(ValueRef(0), function_type()), (ValueRef(1), NyarType::Integer32 { signed: true })]),
+        value_types: BTreeMap::from([(ValueRef(0), function_type()), (ValueRef(1), SemanticType::Integer32 { signed: true })]),
         value_layouts: BTreeMap::new(),
         return_layout: None,
         entry: BlockRef(0),

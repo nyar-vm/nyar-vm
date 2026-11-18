@@ -10,7 +10,7 @@ use crate::{
     contracts::{Constant, ValueOrigin},
 };
 use nyar::QualifiedName;
-use nyar_types::NyarType;
+use nyar_types::SemanticType;
 
 /// Semantic MIR 合同拒绝的错误定位（集成测试专用）。
 #[doc(hidden)]
@@ -104,10 +104,10 @@ fn validate_aggregate_layouts(submission: &FragmentSubmission) -> Result<(), Sem
 /// 解析一个冻结类型形态的物理布局身份。
 ///
 /// `Nominal` 自带 `LayoutId`；构造器形态（`Apply` / `Named`）由计划冻结的
-/// `NyarType → LayoutId` 索引解析。索引同时登记结算、归一键与未结算三种形态，
+/// `SemanticType → LayoutId` 索引解析。索引同时登记结算、归一键与未结算三种形态，
 /// 因此同一实例的不同冻结形态命中同一布局；都不命中即无布局身份，不做名字回查。
-fn resolve_layout_identity(submission: &FragmentSubmission, ty: &NyarType) -> Option<nyar_types::LayoutId> {
-    if let NyarType::Nominal { layout, .. } = ty {
+fn resolve_layout_identity(submission: &FragmentSubmission, ty: &SemanticType) -> Option<nyar_types::LayoutId> {
+    if let SemanticType::Nominal { layout, .. } = ty {
         return Some(*layout);
     }
     let index = submission.backend_plan.aggregate_layout_by_nyar_type();
@@ -118,7 +118,7 @@ fn resolve_layout_identity(submission: &FragmentSubmission, ty: &NyarType) -> Op
     // 层被吸收），声明侧的构造器形态只能回落到基结构的布局身份。基结构仍须是
     // 已冻结布局，`Named` 基不提供身份，失败闭合。
     match ty {
-        NyarType::Apply(base, _) => resolve_layout_identity(submission, base),
+        SemanticType::Apply(base, _) => resolve_layout_identity(submission, base),
         _ => None,
     }
 }
@@ -128,7 +128,7 @@ fn resolve_layout_identity(submission: &FragmentSubmission, ty: &NyarType) -> Op
 /// 字段声明值类型的布局身份已由 canonical 冻结在计划里（`field_type_layouts`）。
 /// 声明是聚合时只比较布局身份；声明不是聚合（标量 / 合成容器 / 函数）时按结构
 /// 逐层比较，名义叶子仍按布局身份判等。两侧都不得按拼写或名字回查。
-fn same_frozen_field_type(submission: &FragmentSubmission, field: &nyar_types::FieldId, declared: &NyarType, actual: &NyarType) -> bool {
+fn same_frozen_field_type(submission: &FragmentSubmission, field: &nyar_types::FieldId, declared: &SemanticType, actual: &SemanticType) -> bool {
     if declared == actual {
         return true;
     }
@@ -139,26 +139,26 @@ fn same_frozen_field_type(submission: &FragmentSubmission, field: &nyar_types::F
 }
 
 /// 无字段身份可用时的结构化比较：容器逐层展开，名义叶子按布局身份判等。
-fn same_frozen_shape(submission: &FragmentSubmission, declared: &NyarType, actual: &NyarType) -> bool {
+fn same_frozen_shape(submission: &FragmentSubmission, declared: &SemanticType, actual: &SemanticType) -> bool {
     if declared == actual {
         return true;
     }
     match (declared, actual) {
-        (NyarType::Array(declared), NyarType::Array(actual)) => same_frozen_shape(submission, declared, actual),
+        (SemanticType::Array(declared), SemanticType::Array(actual)) => same_frozen_shape(submission, declared, actual),
         (
-            NyarType::FixedArray { element: declared, length: declared_length },
-            NyarType::FixedArray { element: actual, length: actual_length },
+            SemanticType::FixedArray { element: declared, length: declared_length },
+            SemanticType::FixedArray { element: actual, length: actual_length },
         ) => declared_length == actual_length && same_frozen_shape(submission, declared, actual),
-        (NyarType::Tuple(declared), NyarType::Tuple(actual)) => {
+        (SemanticType::Tuple(declared), SemanticType::Tuple(actual)) => {
             declared.len() == actual.len()
                 && declared.iter().zip(actual).all(|(declared, actual)| same_frozen_shape(submission, declared, actual))
         }
-        (NyarType::Nullable(declared), NyarType::Nullable(actual)) => same_frozen_shape(submission, declared, actual),
-        (NyarType::Union(declared), NyarType::Union(actual)) => {
+        (SemanticType::Nullable(declared), SemanticType::Nullable(actual)) => same_frozen_shape(submission, declared, actual),
+        (SemanticType::Union(declared), SemanticType::Union(actual)) => {
             declared.len() == actual.len()
                 && declared.iter().zip(actual).all(|(declared, actual)| same_frozen_shape(submission, declared, actual))
         }
-        (NyarType::Function(declared), NyarType::Function(actual)) => {
+        (SemanticType::Function(declared), SemanticType::Function(actual)) => {
             declared.params.len() == actual.params.len()
                 && declared.params.iter().zip(&actual.params).all(|(declared, actual)| same_frozen_shape(submission, declared, actual))
                 && same_frozen_shape(submission, &declared.return_type, &actual.return_type)
@@ -354,14 +354,14 @@ fn validate_static_call_resolution(submission: &FragmentSubmission, function: &E
                     });
                 }
                 ExecutableOperand::Value(value) => {
-                    // 一等函数值 callee：仅接受冻结 SSA 类型事实携带 `NyarType::Function` 的值。
+                    // 一等函数值 callee：仅接受冻结 SSA 类型事实携带 `SemanticType::Function` 的值。
                     // 本门只消费 `value_types` 中的既有事实，不重新推导签名；其余 Value callee 失败闭合。
-                    if !function.value_types.get(value).is_some_and(|ty| matches!(ty, NyarType::Function(_))) {
+                    if !function.value_types.get(value).is_some_and(|ty| matches!(ty, SemanticType::Function(_))) {
                         return Err(SemanticMirContractError {
                             code: "SMIR003",
                             function: function.symbol.clone(),
                             location,
-                            detail: "call callee value must carry a frozen `NyarType::Function` SSA type fact".to_string(),
+                            detail: "call callee value must carry a frozen `SemanticType::Function` SSA type fact".to_string(),
                         });
                     }
                 }
@@ -482,10 +482,10 @@ pub fn validate_function(function: &ExecutableFunction) -> Result<(), SemanticMi
     Ok(())
 }
 
-fn text_constant_type(constant: &Constant) -> Option<NyarType> {
+fn text_constant_type(constant: &Constant) -> Option<SemanticType> {
     match constant {
-        Constant::Utf8(_) => Some(NyarType::Utf8),
-        Constant::Utf16(_) => Some(NyarType::Utf16),
+        Constant::Utf8(_) => Some(SemanticType::Utf8),
+        Constant::Utf16(_) => Some(SemanticType::Utf16),
         _ => None,
     }
 }
@@ -530,19 +530,19 @@ fn instruction_operands(kind: &ExecutableInstructionKind) -> Vec<&ExecutableOper
 }
 
 /// 目标无关的可赋值判定：`T` 可隐式提升为 `T?`（非空值就是同一引用的 Some 侧）。
-fn executable_types_compatible(actual: &NyarType, expected: &NyarType) -> bool {
-    actual == expected || matches!(expected, NyarType::Nullable(inner) if executable_types_compatible(actual, inner))
+fn executable_types_compatible(actual: &SemanticType, expected: &SemanticType) -> bool {
+    actual == expected || matches!(expected, SemanticType::Nullable(inner) if executable_types_compatible(actual, inner))
 }
 
-fn terminator_operand_type(function: &ExecutableFunction, operand: &ExecutableOperand) -> Option<NyarType> {
+fn terminator_operand_type(function: &ExecutableFunction, operand: &ExecutableOperand) -> Option<SemanticType> {
     match operand {
         ExecutableOperand::Value(value) => function.value_types.get(value).cloned(),
-        ExecutableOperand::Constant(Constant::Bool(_)) => Some(NyarType::Boolean),
-        ExecutableOperand::Constant(Constant::Int(_)) => Some(NyarType::Integer64 { signed: true }),
-        ExecutableOperand::Constant(Constant::Float64(_)) => Some(NyarType::Float64),
-        ExecutableOperand::Constant(Constant::Utf8(_)) => Some(NyarType::Utf8),
-        ExecutableOperand::Constant(Constant::Utf16(_)) => Some(NyarType::Utf16),
-        ExecutableOperand::Constant(Constant::Unit) => Some(NyarType::Unit),
+        ExecutableOperand::Constant(Constant::Bool(_)) => Some(SemanticType::Boolean),
+        ExecutableOperand::Constant(Constant::Int(_)) => Some(SemanticType::Integer64 { signed: true }),
+        ExecutableOperand::Constant(Constant::Float64(_)) => Some(SemanticType::Float64),
+        ExecutableOperand::Constant(Constant::Utf8(_)) => Some(SemanticType::Utf8),
+        ExecutableOperand::Constant(Constant::Utf16(_)) => Some(SemanticType::Utf16),
+        ExecutableOperand::Constant(Constant::Unit) => Some(SemanticType::Unit),
         // 空值没有独立名义类型；裸空值操作数缺少 `T?` 上下文，按未定型失败关闭。
         ExecutableOperand::Constant(Constant::Null) => None,
         ExecutableOperand::Symbol(_) => None,
@@ -642,7 +642,7 @@ fn validate_terminator(function: &ExecutableFunction, block: &crate::contracts::
                 }
             }
         }
-        crate::contracts::Terminator::Return { value: None } if !matches!(function.return_type, NyarType::Unit | NyarType::Bottom) => {
+        crate::contracts::Terminator::Return { value: None } if !matches!(function.return_type, SemanticType::Unit | SemanticType::Bottom) => {
             return Err(SemanticMirContractError {
                 code: "SMIR007",
                 function: function.symbol.clone(),
@@ -651,7 +651,7 @@ fn validate_terminator(function: &ExecutableFunction, block: &crate::contracts::
             });
         }
         crate::contracts::Terminator::Branch { condition, then_target, else_target } => {
-            if value_type(condition).as_ref() != Some(&NyarType::Boolean) {
+            if value_type(condition).as_ref() != Some(&SemanticType::Boolean) {
                 return Err(SemanticMirContractError {
                     code: "SMIR007",
                     function: function.symbol.clone(),

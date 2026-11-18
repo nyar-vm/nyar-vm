@@ -3,7 +3,7 @@
 use chomsky_cost::DefaultCostModel;
 use chomsky_extract::IKunExtractor;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, Id, IntentBuilder};
-use nyar_types::{Loc, NyarError};
+use nyar_types::{Loc, TypesError};
 use oak_kotlin::{ast::*, kind::KotlinSyntaxKind, language::KotlinLanguage};
 
 pub struct NyarTranslator;
@@ -13,7 +13,7 @@ impl NyarTranslator {
         Self
     }
 
-    pub fn translate_to_tree(&self, root: &KotlinRoot) -> Result<IKunTree, NyarError> {
+    pub fn translate_to_tree(&self, root: &KotlinRoot) -> Result<IKunTree, TypesError> {
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
         let mut builder = IntentBuilder::new(&mut egraph);
         let root_id = self.translate_to_id(root, &mut builder)?;
@@ -21,7 +21,7 @@ impl NyarTranslator {
         Ok(extractor.extract(root_id))
     }
 
-    pub fn translate_to_id(&self, root: &KotlinRoot, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, NyarError> {
+    pub fn translate_to_id(&self, root: &KotlinRoot, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, TypesError> {
         let mut members = Vec::new();
 
         for decl in &root.declarations {
@@ -32,7 +32,7 @@ impl NyarTranslator {
         Ok(root_id)
     }
 
-    fn translate_declaration(&self, decl: &Declaration, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, NyarError> {
+    fn translate_declaration(&self, decl: &Declaration, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, TypesError> {
         let loc = Loc::default();
         match decl {
             Declaration::Class { name, members, .. } => {
@@ -71,7 +71,7 @@ impl NyarTranslator {
         }
     }
 
-    fn translate_statement(&self, stmt: &Statement, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, NyarError> {
+    fn translate_statement(&self, stmt: &Statement, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, TypesError> {
         let loc = Loc::default();
         match stmt {
             Statement::Return(expr) => {

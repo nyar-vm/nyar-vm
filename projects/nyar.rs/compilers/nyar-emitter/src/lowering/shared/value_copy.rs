@@ -6,7 +6,7 @@
 //!
 //! 各后端只消费本模块给出的分类，并保留自己的对象分配与字段编码。
 
-use nyar_types::{AggregateLayout, AggregateLayoutPlan, LayoutId, NyarType, StorageKind};
+use nyar_types::{AggregateLayout, AggregateLayoutPlan, LayoutId, SemanticType, StorageKind};
 
 /// 单次值聚合复制允许的最大嵌套深度。
 ///
@@ -18,8 +18,8 @@ pub(crate) const MAX_VALUE_AGGREGATE_COPY_DEPTH: u32 = 32;
 ///
 /// 返回嵌套布局身份；标量、引用语义聚合、空聚合与数组/闭包等返回 `None`
 /// （按引用共享或本来就按值搬运）。
-pub(crate) fn nested_value_aggregate_layout(plan: &AggregateLayoutPlan, ty: &NyarType) -> Option<LayoutId> {
-    let NyarType::Nominal { layout, .. } = ty
+pub(crate) fn nested_value_aggregate_layout(plan: &AggregateLayoutPlan, ty: &SemanticType) -> Option<LayoutId> {
+    let SemanticType::Nominal { layout, .. } = ty
     else {
         return None;
     };

@@ -14,17 +14,17 @@ use nyar_emitter::{
 };
 use nyar_emitter::contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef};
 use nyar_types::{
-    AggregateLayout, AggregateLayoutPlan, FieldId, FieldLayout, ItemInstanceId, NominalInstanceId, NyarType, StorageKind,
+    AggregateLayout, AggregateLayoutPlan, FieldId, FieldLayout, ItemInstanceId, NominalInstanceId, SemanticType, StorageKind,
 };
 
-const INTEGER64: NyarType = NyarType::Integer64 { signed: true };
-const INTEGER32: NyarType = NyarType::Integer32 { signed: true };
+const INTEGER64: SemanticType = SemanticType::Integer64 { signed: true };
+const INTEGER32: SemanticType = SemanticType::Integer32 { signed: true };
 
-fn array_of_integer64() -> NyarType {
-    NyarType::Array(Box::new(INTEGER64))
+fn array_of_integer64() -> SemanticType {
+    SemanticType::Array(Box::new(INTEGER64))
 }
 
-fn function(symbol: &str, return_type: NyarType, parameters: Vec<NyarType>) -> ExecutableFunction {
+fn function(symbol: &str, return_type: SemanticType, parameters: Vec<SemanticType>) -> ExecutableFunction {
     let value_types = parameters.iter().enumerate().map(|(index, ty)| (ValueRef(index as u32), ty.clone())).collect();
     let block_parameters = (0..parameters.len() as u32).map(ValueRef).collect();
     ExecutableFunction {
@@ -89,7 +89,7 @@ fn lowers_array_list_construction_length_and_index_with_primitive_elements() {
 
     let mut fixture = function("jvm.array_list", INTEGER64, Vec::new());
     fixture.value_types.insert(ValueRef(0), array_of_integer64());
-    fixture.value_types.insert(ValueRef(1), NyarType::Nominal { layout: layout.id, spelling: Identifier::new("ArrayList") });
+    fixture.value_types.insert(ValueRef(1), SemanticType::Nominal { layout: layout.id, spelling: Identifier::new("ArrayList") });
     fixture.value_types.insert(ValueRef(2), INTEGER32);
     fixture.value_types.insert(ValueRef(3), INTEGER64);
     fixture.blocks[0].instructions.push(instr(
@@ -163,8 +163,8 @@ fn zero_field_reference_aggregate_copy_does_not_allocate() {
         storage: StorageKind::Reference,
         fields: Vec::new(),
     };
-    let nominal_type = NyarType::Nominal { layout: layout.id, spelling: Identifier::new("Marker") };
-    let mut fixture = function("jvm.marker", NyarType::Unit, vec![nominal_type.clone(), nominal_type]);
+    let nominal_type = SemanticType::Nominal { layout: layout.id, spelling: Identifier::new("Marker") };
+    let mut fixture = function("jvm.marker", SemanticType::Unit, vec![nominal_type.clone(), nominal_type]);
     fixture.blocks[0].instructions.push(instr(
         InstructionKind::AggregateCopy { layout_id: layout.id, source: Operand::Value(ValueRef(0)), dest: Operand::Value(ValueRef(1)) },
         Vec::new(),
@@ -185,9 +185,9 @@ fn zero_field_reference_aggregate_copy_does_not_allocate() {
 
 #[test]
 fn integer128_array_element_is_rejected_structurally() {
-    let element = NyarType::Integer128 { signed: true };
-    let array_type = NyarType::Array(Box::new(element));
-    let mut fixture = function("jvm.invalid_array", NyarType::Unit, Vec::new());
+    let element = SemanticType::Integer128 { signed: true };
+    let array_type = SemanticType::Array(Box::new(element));
+    let mut fixture = function("jvm.invalid_array", SemanticType::Unit, Vec::new());
     fixture.value_types.insert(ValueRef(0), array_type.clone());
     fixture.blocks[0].instructions.push(instr(
         InstructionKind::ArrayFromElements {
@@ -205,8 +205,8 @@ fn integer128_array_element_is_rejected_structurally() {
 
 #[test]
 fn array_fill_initialization_is_rejected_structurally() {
-    let array_type = NyarType::Array(Box::new(INTEGER32));
-    let mut fixture = function("jvm.fill", NyarType::Unit, vec![INTEGER32]);
+    let array_type = SemanticType::Array(Box::new(INTEGER32));
+    let mut fixture = function("jvm.fill", SemanticType::Unit, vec![INTEGER32]);
     fixture.value_types.insert(ValueRef(1), array_type.clone());
     fixture.blocks[0].instructions.push(instr(
         InstructionKind::ArrayNew {

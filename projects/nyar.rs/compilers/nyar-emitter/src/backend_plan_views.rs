@@ -4,7 +4,7 @@
 //! consume it through this query surface and the helper types defined here.
 
 /// 语言类型视图别名。
-pub type NyarType = nyar::NyarType;
+pub type SemanticType = nyar::SemanticType;
 /// 可执行值引用。
 pub type ExecutableValueRef = crate::contracts::ValueRef;
 /// 基本块引用。

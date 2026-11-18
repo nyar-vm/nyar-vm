@@ -23,12 +23,12 @@ use nyar_emitter::{
     transitional::binary::pe::{ClrImageKind, PeWriter, PeWriterOptions},
 };
 use nyar_emitter::contracts::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef};
-use nyar_types::{ImportIndex, ItemInstanceId, NyarType};
+use nyar_types::{ImportIndex, ItemInstanceId, SemanticType};
 
-const LONG: NyarType = NyarType::Integer64 { signed: true };
-const INTEGER: NyarType = NyarType::Integer32 { signed: true };
+const LONG: SemanticType = SemanticType::Integer64 { signed: true };
+const INTEGER: SemanticType = SemanticType::Integer32 { signed: true };
 
-fn function(symbol: &str, return_type: NyarType, parameters: Vec<NyarType>) -> ExecutableFunction {
+fn function(symbol: &str, return_type: SemanticType, parameters: Vec<SemanticType>) -> ExecutableFunction {
     let value_types = parameters.iter().enumerate().map(|(index, ty)| (ValueRef(index as u32), ty.clone())).collect();
     let block_parameters = (0..parameters.len() as u32).map(ValueRef).collect();
     ExecutableFunction {
@@ -59,8 +59,8 @@ fn instr(kind: InstructionKind, results: Vec<ValueRef>) -> Instruction {
 
 fn operator_import(
     mnemonic: &str,
-    parameter_types: Vec<NyarType>,
-    return_type: NyarType,
+    parameter_types: Vec<SemanticType>,
+    return_type: SemanticType,
     _plan: TargetOperatorPlan<MsilOpcode>,
 ) -> BackendImport {
     BackendImport {
@@ -97,8 +97,8 @@ fn shift_plan(encoding: MsilOpcode, operand_type: TargetOperandType, result_type
 /// 构造只调用一个冻结 operator 的导出函数，降低成带 `managed_entry` 的托管模块。
 fn lower_exported_operator(
     export: &str,
-    parameter_types: Vec<NyarType>,
-    result_type: NyarType,
+    parameter_types: Vec<SemanticType>,
+    result_type: SemanticType,
     mnemonic: &str,
     operator: TargetOperatorPlan<MsilOpcode>,
 ) -> MsilModule {

@@ -273,7 +273,7 @@ pub fn compute_aggregate_layout_plan(module: &HirModule, diagnostics: &mut Vec<M
             continue;
         };
         // sum 声明在 canonical `register_declaration_spellings` 中如实保留简单名
-        // （sum 没有 namespace 事实）；这里必须同口径，否则 `NyarType::Nominal`
+        // （sum 没有 namespace 事实）；这里必须同口径，否则 `SemanticType::Nominal`
         // 的 spelling 与 `lower_type` 产出不一致，含 sum 字段的聚合在 SMIR010 处失败。
         declaration_spellings.insert(declaration, hir_enum.name.as_str().to_string());
     }
@@ -509,7 +509,7 @@ fn layout_field_type(
     ty: &ValkyrieType,
     declaration_spellings: &BTreeMap<nyar_types::ItemId, String>,
     plan: &AggregateLayoutPlan,
-) -> Option<nyar_types::NyarType> {
+) -> Option<nyar_types::SemanticType> {
     if let Ok(concrete) = concretize_type(ty) {
         return Some(concrete);
     }
@@ -529,33 +529,33 @@ fn layout_field_type(
             if arguments.is_empty() {
                 return Some(base);
             }
-            Some(nyar_types::NyarType::Apply(
+            Some(nyar_types::SemanticType::Apply(
                 Box::new(base),
                 arguments.iter().map(|argument| layout_field_type(argument, declaration_spellings, plan)).collect::<Option<Vec<_>>>()?,
             ))
         }
-        ValkyrieType::Apply(base, arguments) => Some(nyar_types::NyarType::Apply(
+        ValkyrieType::Apply(base, arguments) => Some(nyar_types::SemanticType::Apply(
             Box::new(layout_field_type(base, declaration_spellings, plan)?),
             arguments.iter().map(|argument| layout_field_type(argument, declaration_spellings, plan)).collect::<Option<Vec<_>>>()?,
         )),
-        ValkyrieType::Array(element) => Some(nyar_types::NyarType::Array(Box::new(layout_field_type(element, declaration_spellings, plan)?))),
-        ValkyrieType::FixedArray { element, length } => Some(nyar_types::NyarType::FixedArray {
+        ValkyrieType::Array(element) => Some(nyar_types::SemanticType::Array(Box::new(layout_field_type(element, declaration_spellings, plan)?))),
+        ValkyrieType::FixedArray { element, length } => Some(nyar_types::SemanticType::FixedArray {
             element: Box::new(layout_field_type(element, declaration_spellings, plan)?),
             length: *length,
         }),
-        ValkyrieType::Tuple(items) => Some(nyar_types::NyarType::Tuple(
+        ValkyrieType::Tuple(items) => Some(nyar_types::SemanticType::Tuple(
             items.iter().map(|item| layout_field_type(item, declaration_spellings, plan)).collect::<Option<Vec<_>>>()?,
         )),
         ValkyrieType::Nullable(element) => {
-            Some(nyar_types::NyarType::Nullable(Box::new(layout_field_type(element, declaration_spellings, plan)?)))
+            Some(nyar_types::SemanticType::Nullable(Box::new(layout_field_type(element, declaration_spellings, plan)?)))
         }
-        ValkyrieType::Union(items) => Some(nyar_types::NyarType::Union(
+        ValkyrieType::Union(items) => Some(nyar_types::SemanticType::Union(
             items.iter().map(|item| layout_field_type(item, declaration_spellings, plan)).collect::<Option<Vec<_>>>()?,
         )),
         // 函数类型字段的实参可能含名义类型（如 `BinaryHeap<T>._cmp: micro(T, T) -> i32`）：
         // `concretize_type` 在 Nominal 处失败关闭，这里按同一口径递归代入参数与返回，
         // 载体仍是平台函数形状，不许退化成裸引用槽。
-        ValkyrieType::Function(function) => Some(nyar_types::NyarType::Function(Box::new(nyar_types::NyarFunctionType {
+        ValkyrieType::Function(function) => Some(nyar_types::SemanticType::Function(Box::new(nyar_types::FunctionType {
             params: function.params.iter().map(|param| layout_field_type(param, declaration_spellings, plan)).collect::<Option<Vec<_>>>()?,
             return_type: layout_field_type(&function.return_type, declaration_spellings, plan)?,
         }))),
@@ -730,24 +730,24 @@ fn apply_primitive_carriers(ty: &ValkyrieType, carriers: &BTreeMap<nyar_types::I
 ///
 /// 数值短名（`i32`/`usize`/`byte` …）即使拼写与内建同名也不得经此桥，
 /// 数值载体只认规范身份；`usize`/`isize` 由 std 的指针宽度别名结算成定宽整数。
-pub(crate) fn encoding_spelling_carrier(spelling: &str) -> Option<nyar_types::NyarType> {
+pub(crate) fn encoding_spelling_carrier(spelling: &str) -> Option<nyar_types::SemanticType> {
     // 只认语言表面的文本/字符编码拼写；数值短名即使与内建同名也不得经此桥，
     // 数值载体只认规范 `[primitive]` 身份。
     let simple = spelling.rsplit([':', '.']).next().unwrap_or(spelling);
     match simple {
-        "char" => Some(nyar_types::NyarType::Character),
-        "utf8" | "Utf8Text" => Some(nyar_types::NyarType::Utf8),
-        "utf16" | "Utf16Text" => Some(nyar_types::NyarType::Utf16),
+        "char" => Some(nyar_types::SemanticType::Character),
+        "utf8" | "Utf8Text" => Some(nyar_types::SemanticType::Utf8),
+        "utf16" | "Utf16Text" => Some(nyar_types::SemanticType::Utf16),
         _ => None,
     }
 }
 
 /// 无平台载体、也无 surface spelling 桥时的名义声明基形状：已登记布局提升为
 /// `Nominal` 身份，缺布局保留裸 `Named` 残差，由预发射门禁拒绝。
-fn nominal_layout_base(plan: &AggregateLayoutPlan, declaration: nyar_types::ItemId, spelling: &str) -> nyar_types::NyarType {
+fn nominal_layout_base(plan: &AggregateLayoutPlan, declaration: nyar_types::ItemId, spelling: &str) -> nyar_types::SemanticType {
     match plan.declaration_to_layout.get(&declaration).copied() {
-        Some(layout) => nyar_types::NyarType::Nominal { layout, spelling: nyar_types::Identifier::new(spelling) },
-        None => nyar_types::NyarType::Named(nyar_types::Identifier::new(spelling)),
+        Some(layout) => nyar_types::SemanticType::Nominal { layout, spelling: nyar_types::Identifier::new(spelling) },
+        None => nyar_types::SemanticType::Named(nyar_types::Identifier::new(spelling)),
     }
 }
 

@@ -21,13 +21,13 @@ use nyar_emitter::{
     testing::{compile_lowered_backend_input, lower_fragment_to_machine_extension},
 };
 use nyar_emitter::contracts::{Block, BlockRef, ExecutableFunction, Instruction};
-use nyar_types::{ImportIndex, ItemInstanceId, NyarType};
+use nyar_types::{ImportIndex, ItemInstanceId, SemanticType};
 
-const LONG: NyarType = NyarType::Integer64 { signed: true };
-const INTEGER: NyarType = NyarType::Integer32 { signed: true };
+const LONG: SemanticType = SemanticType::Integer64 { signed: true };
+const INTEGER: SemanticType = SemanticType::Integer32 { signed: true };
 const OPERATOR_INSTANCE_BASE: u32 = 100;
 
-fn function(symbol: &str, return_type: NyarType, parameters: Vec<NyarType>) -> ExecutableFunction {
+fn function(symbol: &str, return_type: SemanticType, parameters: Vec<SemanticType>) -> ExecutableFunction {
     let value_types = parameters.iter().enumerate().map(|(index, ty)| (ValueRef(index as u32), ty.clone())).collect();
     let block_parameters = (0..parameters.len() as u32).map(ValueRef).collect();
     ExecutableFunction {
@@ -78,7 +78,7 @@ fn with_function_mut(plan: &mut TargetExecutionPlan, symbol: &str, mutate: impl 
     mutate(function);
 }
 
-fn operator_import(code: X86_64OperatorCode, return_type: NyarType) -> nyar_emitter::BackendImport {
+fn operator_import(code: X86_64OperatorCode, return_type: SemanticType) -> nyar_emitter::BackendImport {
     let mnemonic = match code {
         X86_64OperatorCode::I64Add => "long.add",
         _ => "long.add",
@@ -277,7 +277,7 @@ fn host_extension_rejects_parameters_beyond_the_abi_window() {
 /// 无符号 `u64` 返回没有有符号 `i64` 无损载体：与实参合同对齐，写出前拒绝。
 #[test]
 fn host_extension_rejects_unsigned_return_without_bigint_carrier() {
-    let unsigned = NyarType::Integer64 { signed: false };
+    let unsigned = SemanticType::Integer64 { signed: false };
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(
         nyar::QualifiedName::new(vec![Identifier::new("bits")]),
         function("bits", unsigned, Vec::new()),
@@ -300,7 +300,7 @@ fn host_extension_rejects_unsigned_return_without_bigint_carrier() {
 fn host_extension_rejects_string_return() {
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(
         nyar::QualifiedName::new(vec![Identifier::new("text")]),
-        function("text", NyarType::Utf8, Vec::new()),
+        function("text", SemanticType::Utf8, Vec::new()),
     )]));
     plan.testing_module_name("native_extension");
     let instance = instance_of(&plan, "text");

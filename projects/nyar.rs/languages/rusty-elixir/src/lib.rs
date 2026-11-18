@@ -8,7 +8,7 @@
 
 pub mod codegen;
 
-use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
+use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
 use oak_elixir::{ElixirLanguage, ElixirRoot};
 
 /// Rusty Elixir 前端
@@ -32,7 +32,7 @@ impl RustyElixirFrontend {
 impl NyarFrontend<(), ElixirRoot> for RustyElixirFrontend {
     type Language = ElixirLanguage;
 
-    fn parse(&self, source: &str) -> Result<ElixirRoot, NyarError> {
+    fn parse(&self, source: &str) -> Result<ElixirRoot, TypesError> {
         use oak_core::builder::Builder;
         use oak_elixir::builder::ElixirBuilder;
 
@@ -44,7 +44,7 @@ impl NyarFrontend<(), ElixirRoot> for RustyElixirFrontend {
 
         match result.result {
             Ok(root) => Ok(root),
-            Err(e) => Err(NyarError::Compile(format!("{:?}", e))),
+            Err(e) => Err(TypesError::Compile(format!("{:?}", e))),
         }
     }
 

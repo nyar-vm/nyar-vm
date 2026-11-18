@@ -16,7 +16,7 @@ use crate::{
     FragmentSubmission, Result,
     backend_plan_views::{
         ExecutableBlock as MirBlock, ExecutableBlockRef as MirBlockRef, ExecutableFunction as MirFunction,
-        ExecutableInstruction as MirInstruction, ExecutableValueRef as MirValueRef, NyarType,
+        ExecutableInstruction as MirInstruction, ExecutableValueRef as MirValueRef, SemanticType,
     },
     contracts::{ArrayInitialization, Constant, InstructionKind, Operand, Terminator},
     lowering::shared::{
@@ -427,7 +427,7 @@ fn function_signature(layouts: &AggregateLayoutPlan, function: &MirFunction) -> 
 }
 
 /// 局部 / 形参位置的 CLR 载体：`Unit`/`Bottom` 没有值槽。
-fn msil_parameter_type(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<MsilType> {
+fn msil_parameter_type(layouts: &AggregateLayoutPlan, ty: &SemanticType) -> Result<MsilType> {
     let msil_type = msil_type(layouts, ty)?;
     if msil_type == MsilType::Void {
         return Err(format!("CLR 最小 lowering：`{ty}` 是 void 形态，不能作为方法形参或局部值"));
@@ -435,7 +435,7 @@ fn msil_parameter_type(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<M
     Ok(msil_type)
 }
 
-fn msil_return_type(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<MsilType> {
+fn msil_return_type(layouts: &AggregateLayoutPlan, ty: &SemanticType) -> Result<MsilType> {
     msil_type(layouts, ty)
 }
 
@@ -572,10 +572,10 @@ fn reject_duplicate_type_names(types: &[MsilTypeDef]) -> Result<()> {
 }
 
 /// 数组类型 `Array<T>` / `FixedArray { element, .. }` 的元素类型。
-fn clr_array_element_type(array_type: &NyarType) -> Result<&NyarType> {
+fn clr_array_element_type(array_type: &SemanticType) -> Result<&SemanticType> {
     match array_type {
-        NyarType::Array(element) => Ok(element),
-        NyarType::FixedArray { element, .. } => Ok(element),
+        SemanticType::Array(element) => Ok(element),
+        SemanticType::FixedArray { element, .. } => Ok(element),
         other => Err(format!("CLR 最小 lowering：`{other}` 不是数组形态，缺少元素类型合同")),
     }
 }
@@ -602,27 +602,27 @@ fn clr_array_store_opcode(element: &MsilType) -> MsilOpcode {
 ///
 /// acorn-pe 没有 `ldelem.i8`/`stelem.i8`，i64 元素由块 4 用
 /// `ldelem.any`/`stelem.any` + `Type("int64")` 存取；载体本身仍是 `Int64`。
-fn msil_array_element_type(layouts: &AggregateLayoutPlan, element: &NyarType) -> Result<MsilType> {
+fn msil_array_element_type(layouts: &AggregateLayoutPlan, element: &SemanticType) -> Result<MsilType> {
     Ok(match element {
-        NyarType::Boolean => MsilType::Bool,
-        NyarType::Integer8 { signed } => MsilType::Int8 { signed: *signed },
-        NyarType::Integer16 { signed } => MsilType::Int16 { signed: *signed },
-        NyarType::Integer32 { signed } => MsilType::Int32 { signed: *signed },
+        SemanticType::Boolean => MsilType::Bool,
+        SemanticType::Integer8 { signed } => MsilType::Int8 { signed: *signed },
+        SemanticType::Integer16 { signed } => MsilType::Int16 { signed: *signed },
+        SemanticType::Integer32 { signed } => MsilType::Int32 { signed: *signed },
         // V 的 `char` 是 u32 码位载体；CLR `Char` 只有 16 位，物理载体固定 32 位 int32。
-        NyarType::Character => MsilType::Int32 { signed: false },
-        NyarType::Integer64 { signed } => MsilType::Int64 { signed: *signed },
-        NyarType::Float32 => MsilType::Float32,
-        NyarType::Float64 => MsilType::Float64,
-        NyarType::Utf8 | NyarType::Utf16 => MsilType::String,
+        SemanticType::Character => MsilType::Int32 { signed: false },
+        SemanticType::Integer64 { signed } => MsilType::Int64 { signed: *signed },
+        SemanticType::Float32 => MsilType::Float32,
+        SemanticType::Float64 => MsilType::Float64,
+        SemanticType::Utf8 | SemanticType::Utf16 => MsilType::String,
         // 泛型实例必须携带 canonical 冻结的实例级布局；计划边界会把它结算成
         // `Nominal`。走到这里的 `Apply` 说明实例表示未结算，禁止按引用擦除掩盖缺口。
-        NyarType::Apply(..) => {
+        SemanticType::Apply(..) => {
             return Err(format!(
                 "CLR 最小 lowering：泛型实例 `{element}` 缺少实例级布局结算：canonical 未冻结该实例的布局身份，拒绝按引用擦除"
             ));
         }
         // 名义布局按冻结身份取类型定义名；值存储聚合没有单槽 CLR 载体。
-        NyarType::Nominal { layout, spelling } => {
+        SemanticType::Nominal { layout, spelling } => {
             let Some(layout) = layouts.layouts.iter().find(|candidate| candidate.id == *layout)
             else {
                 return Err(format!("CLR 最小 lowering：`{spelling}` 的布局身份 `{layout}` 未在计划中注册：缺少数组元素 CLR 载体合同"));
@@ -634,9 +634,9 @@ fn msil_array_element_type(layouts: &AggregateLayoutPlan, element: &NyarType) ->
                 return Err(format!("CLR 最小 lowering 不支持值存储聚合 `{spelling}` 作为数组元素：缺少单槽 CLR 载体合同"));
             }
         }
-        NyarType::Array(inner) | NyarType::FixedArray { element: inner, .. } => MsilType::sz_array(msil_array_element_type(layouts, inner)?),
+        SemanticType::Array(inner) | SemanticType::FixedArray { element: inner, .. } => MsilType::sz_array(msil_array_element_type(layouts, inner)?),
         // 可空元素只能复用引用载体（`null` 表示空）；标量需要 sum 表示。
-        NyarType::Nullable(inner) => {
+        SemanticType::Nullable(inner) => {
             let ty = msil_array_element_type(layouts, inner)?;
             if matches!(ty, MsilType::String | MsilType::Object | MsilType::Named(_) | MsilType::SzArray(_)) {
                 ty
@@ -652,31 +652,31 @@ fn msil_array_element_type(layouts: &AggregateLayoutPlan, element: &NyarType) ->
 }
 
 /// 类型的 CLR 载体：标量取原生类型，数组取 `SzArray`，引用布局取类型定义名。
-pub(crate) fn msil_type(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<MsilType> {
+pub(crate) fn msil_type(layouts: &AggregateLayoutPlan, ty: &SemanticType) -> Result<MsilType> {
     Ok(match ty {
-        NyarType::Bottom | NyarType::Unit => MsilType::Void,
-        NyarType::Boolean => MsilType::Bool,
+        SemanticType::Bottom | SemanticType::Unit => MsilType::Void,
+        SemanticType::Boolean => MsilType::Bool,
         // V 的 `char` 是 u32 码位，载体固定 32 位；不得用宿主 16 位 `Char`。
-        NyarType::Character => MsilType::Int32 { signed: false },
-        NyarType::Integer8 { signed } => MsilType::Int8 { signed: *signed },
-        NyarType::Integer16 { signed } => MsilType::Int16 { signed: *signed },
-        NyarType::Integer32 { signed } => MsilType::Int32 { signed: *signed },
-        NyarType::Integer64 { signed } => MsilType::Int64 { signed: *signed },
-        NyarType::Float32 => MsilType::Float32,
-        NyarType::Float64 => MsilType::Float64,
-        NyarType::Utf8 | NyarType::Utf16 => MsilType::String,
+        SemanticType::Character => MsilType::Int32 { signed: false },
+        SemanticType::Integer8 { signed } => MsilType::Int8 { signed: *signed },
+        SemanticType::Integer16 { signed } => MsilType::Int16 { signed: *signed },
+        SemanticType::Integer32 { signed } => MsilType::Int32 { signed: *signed },
+        SemanticType::Integer64 { signed } => MsilType::Int64 { signed: *signed },
+        SemanticType::Float32 => MsilType::Float32,
+        SemanticType::Float64 => MsilType::Float64,
+        SemanticType::Utf8 | SemanticType::Utf16 => MsilType::String,
         // 栈/堆数组的载体是元素载体数组；`[T; N]` 的长度由 `ArrayFromElements` 表达。
-        NyarType::Array(element) => MsilType::sz_array(msil_array_element_type(layouts, element)?),
-        NyarType::FixedArray { element, .. } => MsilType::sz_array(msil_array_element_type(layouts, element)?),
+        SemanticType::Array(element) => MsilType::sz_array(msil_array_element_type(layouts, element)?),
+        SemanticType::FixedArray { element, .. } => MsilType::sz_array(msil_array_element_type(layouts, element)?),
         // 布局身份只经 `TupleNew`/`AggregateCopy` 的 `layout_id` 进入后端，类型描述符
         // 没有该事实，禁止按形状猜布局。
-        NyarType::Tuple(..) => {
+        SemanticType::Tuple(..) => {
             return Err(format!(
                 "CLR 最小 lowering：裸 tuple `{ty}` 没有布局身份：布局身份只经 `TupleNew`/`AggregateCopy` 的 `layout_id` 进入后端，类型描述符没有该事实"
             ));
         }
         // 可空引用直接复用引用载体（`null` 表示空）；标量需要 sum 表示，不得静默装箱。
-        NyarType::Nullable(inner) => {
+        SemanticType::Nullable(inner) => {
             let ty = msil_type(layouts, inner)?;
             if matches!(ty, MsilType::String | MsilType::Object | MsilType::Named(_) | MsilType::SzArray(_)) {
                 ty
@@ -690,13 +690,13 @@ pub(crate) fn msil_type(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<
         }
         // 泛型实例的实例表示必须在计划边界结算为携带布局身份的 `Nominal`；
         // 缺少冻结布局身份即缺载体合同，禁止按引用擦除。
-        NyarType::Apply(..) => {
+        SemanticType::Apply(..) => {
             return Err(format!("CLR 最小 lowering：泛型实例 `{ty}` 缺少实例级布局结算：canonical 未冻结该实例的布局身份，拒绝按引用擦除"));
         }
         // 携带身份的名义类型：存储类按 `layout` 身份解析，引用/值存储都指向
         // 布局类型定义。CLR 没有内联结构体，逐字段拷贝由 `AggregateCopy` 承担，
         // 它是唯一允许的复制路径；零字段值布局与 wasm 标量语义一致，维持结构化失败。
-        NyarType::Nominal { layout, spelling } => {
+        SemanticType::Nominal { layout, spelling } => {
             let Some(layout) = layouts.layouts.iter().find(|candidate| candidate.id == *layout)
             else {
                 return Err(format!("CLR 最小 lowering：`{spelling}` 的布局身份 `{layout}` 未在计划中注册：缺少该形状的 CLR 载体合同"));
@@ -1335,7 +1335,7 @@ impl ClrMethodEmitter<'_> {
         Ok((self.layout_by_id(layout_id)?, slot))
     }
 
-    fn operand_type(&self, operand: &Operand) -> Result<NyarType> {
+    fn operand_type(&self, operand: &Operand) -> Result<SemanticType> {
         match operand {
             Operand::Value(value) => self
                 .function
@@ -1344,10 +1344,10 @@ impl ClrMethodEmitter<'_> {
                 .cloned()
                 .ok_or_else(|| format!("CLR 最小 lowering：SSA 值 {:?} 缺少冻结类型: function={}", value, self.function.symbol)),
             Operand::Constant(constant) => Ok(match constant {
-                Constant::Int(_) => NyarType::Integer32 { signed: true },
-                Constant::Float64(_) => NyarType::Float64,
-                Constant::Bool(_) => NyarType::Boolean,
-                Constant::Utf8(_) | Constant::Utf16(_) => NyarType::Utf8,
+                Constant::Int(_) => SemanticType::Integer32 { signed: true },
+                Constant::Float64(_) => SemanticType::Float64,
+                Constant::Bool(_) => SemanticType::Boolean,
+                Constant::Utf8(_) | Constant::Utf16(_) => SemanticType::Utf8,
                 other => {
                     return Err(format!("CLR 最小 lowering：常量 `{other:?}` 没有可装箱的冻结类型: function={}", self.function.symbol));
                 }
@@ -1356,7 +1356,7 @@ impl ClrMethodEmitter<'_> {
         }
     }
 
-    fn output_type(&self, instruction: &MirInstruction) -> Result<Option<NyarType>> {
+    fn output_type(&self, instruction: &MirInstruction) -> Result<Option<SemanticType>> {
         let Some(value) = self.slots.instruction_output(instruction)
         else {
             return Ok(None);
@@ -1528,7 +1528,7 @@ impl ClrMethodEmitter<'_> {
     }
 
     /// 发射一个可能已处于标量槽的 payload/元素，并按目标类型按需装箱。
-    fn emit_boxed_operand(&mut self, operand: &Operand, ty: &NyarType) -> Result<()> {
+    fn emit_boxed_operand(&mut self, operand: &Operand, ty: &SemanticType) -> Result<()> {
         let carrier = msil_type(self.submission.backend_plan.aggregate_layouts(), ty)
             .map_err(|error| format!("{error}: function={}", self.function.symbol))?;
         match &carrier {
@@ -1546,7 +1546,7 @@ impl ClrMethodEmitter<'_> {
     }
 
     /// 发射数组元素值：标量进入引用元素槽时按槽的精确保鲜载体装箱。
-    fn emit_array_element_value(&mut self, operand: &Operand, element: &NyarType) -> Result<()> {
+    fn emit_array_element_value(&mut self, operand: &Operand, element: &SemanticType) -> Result<()> {
         let element_carrier = msil_array_element_type(self.submission.backend_plan.aggregate_layouts(), element)
             .map_err(|error| format!("{error}: function={}", self.function.symbol))?;
         let element_kind = ClrValueKind::of_msil_type(&element_carrier)?;
@@ -1719,7 +1719,7 @@ impl ClrMethodEmitter<'_> {
         }
     }
 
-    fn emit_array_from_elements(&mut self, instruction: &MirInstruction, array_type: &NyarType, elements: &[Operand]) -> Result<()> {
+    fn emit_array_from_elements(&mut self, instruction: &MirInstruction, array_type: &SemanticType, elements: &[Operand]) -> Result<()> {
         let element = clr_array_element_type(array_type).map_err(|error| format!("{error}: function={}", self.function.symbol))?.clone();
         let carrier = msil_array_element_type(self.submission.backend_plan.aggregate_layouts(), &element)
             .map_err(|error| format!("{error}: function={}", self.function.symbol))?;
@@ -1750,7 +1750,7 @@ impl ClrMethodEmitter<'_> {
         }
     }
 
-    fn emit_array_new(&mut self, instruction: &MirInstruction, array_type: &NyarType, length: &Operand) -> Result<()> {
+    fn emit_array_new(&mut self, instruction: &MirInstruction, array_type: &SemanticType, length: &Operand) -> Result<()> {
         let element = clr_array_element_type(array_type).map_err(|error| format!("{error}: function={}", self.function.symbol))?.clone();
         let carrier = msil_array_element_type(self.submission.backend_plan.aggregate_layouts(), &element)
             .map_err(|error| format!("{error}: function={}", self.function.symbol))?;

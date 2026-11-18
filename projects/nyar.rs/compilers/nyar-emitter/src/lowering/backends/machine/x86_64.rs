@@ -26,7 +26,7 @@ use crate::{
     FragmentSubmission, Result,
     backend_plan_views::{
         ExecutableBlock as MirBlock, ExecutableBlockRef as MirBlockRef, ExecutableFunction as MirFunction,
-        ExecutableInstruction as MirInstruction, ExecutableValueRef as MirValueRef, NyarType,
+        ExecutableInstruction as MirInstruction, ExecutableValueRef as MirValueRef, SemanticType,
     },
     contracts::{Constant, InstructionKind, Operand, Terminator},
     lowering::shared::executable::{collect_reachable_blocks, slots::ExecutableSlotPlan},
@@ -566,7 +566,7 @@ impl FunctionLowerer<'_> {
     }
 
     fn emit_return(&mut self, value: Option<&Operand>) -> Result<()> {
-        let returns_unit = matches!(self.function.return_type, NyarType::Unit | NyarType::Bottom);
+        let returns_unit = matches!(self.function.return_type, SemanticType::Unit | SemanticType::Bottom);
         match (value, returns_unit) {
             (None, true) => self.push(X64TextInstruction::LoadI64(0)),
             (None, false) => {
@@ -686,7 +686,7 @@ impl FunctionLowerer<'_> {
         }
         self.push(X64TextInstruction::Call(name));
 
-        if matches!(callee_function.return_type, NyarType::Unit | NyarType::Bottom) {
+        if matches!(callee_function.return_type, SemanticType::Unit | SemanticType::Bottom) {
             if self.output_local(instruction)?.is_some() {
                 return Err(format!(
                     "x86_64 lowering：void 调用 `{}` 不得绑定结果槽: function={}",
@@ -857,21 +857,21 @@ impl FunctionLowerer<'_> {
 }
 
 /// 可作为 native 8 字节标量槽的类型。
-fn is_slot_type(ty: &NyarType) -> bool {
+fn is_slot_type(ty: &SemanticType) -> bool {
     matches!(
         ty,
-        NyarType::Boolean
-            | NyarType::Character
-            | NyarType::Integer8 { .. }
-            | NyarType::Integer16 { .. }
-            | NyarType::Integer32 { .. }
-            | NyarType::Integer64 { .. }
+        SemanticType::Boolean
+            | SemanticType::Character
+            | SemanticType::Integer8 { .. }
+            | SemanticType::Integer16 { .. }
+            | SemanticType::Integer32 { .. }
+            | SemanticType::Integer64 { .. }
     )
 }
 
 /// 可直接作为进程退出码的返回类型。
-fn is_exit_code_type(ty: &NyarType) -> bool {
-    matches!(ty, NyarType::Unit | NyarType::Bottom) || is_slot_type(ty)
+fn is_exit_code_type(ty: &SemanticType) -> bool {
+    matches!(ty, SemanticType::Unit | SemanticType::Bottom) || is_slot_type(ty)
 }
 
 /// 唯一 x86-64 operator 配方表。未知名字返回 `None`。
@@ -970,8 +970,8 @@ pub(crate) fn freeze_x86_64_operator(
     link: &nyar::ExternalImportLink,
     instance: nyar_types::ItemInstanceId,
     symbol: &str,
-    parameter_types: &[nyar_types::NyarType],
-    return_type: &nyar_types::NyarType,
+    parameter_types: &[nyar_types::SemanticType],
+    return_type: &nyar_types::SemanticType,
 ) -> crate::Result<Option<X86OperatorBinding>> {
     let Some(mnemonic) = crate::lowering::shared::interop::x86_64_operator_target(link)
     else {

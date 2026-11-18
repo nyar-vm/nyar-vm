@@ -1,7 +1,7 @@
 //! Fortran 到 Nyar 字节码的翻译器
 
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, IntentBuilder};
-use nyar_types::{Loc, NyarError};
+use nyar_types::{Loc, TypesError};
 use oak_fortran::ast::*;
 
 /// Fortran 翻译器上下文
@@ -32,12 +32,12 @@ impl NyarTranslator {
         &self,
         ast: &FortranRoot,
         egraph: &mut EGraph<IKun, ConstraintAnalysis>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let mut ctx = TranslatorContext::new(egraph);
         self.translate_root(ast, &mut ctx)
     }
 
-    pub fn translate_to_tree(&self, ast: &FortranRoot) -> Result<IKunTree, NyarError> {
+    pub fn translate_to_tree(&self, ast: &FortranRoot) -> Result<IKunTree, TypesError> {
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
         let root_id = self.translate_to_graph(ast, &mut egraph)?;
 
@@ -50,7 +50,7 @@ impl NyarTranslator {
         &self,
         root: &FortranRoot,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let mut items = Vec::new();
         for unit in &root.units {
             if let Some(id) = self.translate_program_unit(unit, ctx)? {
@@ -65,7 +65,7 @@ impl NyarTranslator {
         &self,
         unit: &ProgramUnitKind,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<Option<chomsky_uir::egraph::Id>, NyarError> {
+    ) -> Result<Option<chomsky_uir::egraph::Id>, TypesError> {
         match unit {
             ProgramUnitKind::MainProgram(main) => Ok(Some(self.translate_main_program(main, ctx)?)),
             ProgramUnitKind::Subroutine(sub) => Ok(Some(self.translate_subroutine(sub, ctx)?)),
@@ -80,7 +80,7 @@ impl NyarTranslator {
         &self,
         main: &MainProgramNode,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let mut items = Vec::new();
         // 翻译 specification_part
         for spec in &main.specification_part {
@@ -106,7 +106,7 @@ impl NyarTranslator {
         &self,
         spec: &SpecificationStmt,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<Option<chomsky_uir::egraph::Id>, NyarError> {
+    ) -> Result<Option<chomsky_uir::egraph::Id>, TypesError> {
         let loc = Loc::default();
         match spec {
             SpecificationStmt::TypeDeclaration(node) => {
@@ -144,7 +144,7 @@ impl NyarTranslator {
         &self,
         exec: &ExecutableStmt,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let loc = Loc::default();
         match exec {
             ExecutableStmt::Assignment(node) => {
@@ -265,7 +265,7 @@ impl NyarTranslator {
         &self,
         expr: &ExprNode,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let loc = Loc::default();
         match expr {
             ExprNode::Literal(lit) => match lit {
@@ -343,7 +343,7 @@ impl NyarTranslator {
         &self,
         sub: &SubroutineNode,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let mut items = Vec::new();
         // 翻译 specification_part
         for spec in &sub.specification_part {
@@ -368,7 +368,7 @@ impl NyarTranslator {
         &self,
         func: &FunctionNode,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let mut items = Vec::new();
         // 翻译 specification_part
         for spec in &func.specification_part {
@@ -393,7 +393,7 @@ impl NyarTranslator {
         &self,
         module: &ModuleNode,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let mut items = Vec::new();
         // 翻译 specification_part
         for spec in &module.specification_part {
@@ -414,7 +414,7 @@ impl NyarTranslator {
         &self,
         submodule: &SubmoduleNode,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let items = Vec::new();
         // TODO
         Ok(ctx.builder.module(&submodule.name, items, Loc::default()))
@@ -424,7 +424,7 @@ impl NyarTranslator {
         &self,
         block_data: &BlockDataNode,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let items = Vec::new();
         // TODO
         let name = block_data.name.as_deref().unwrap_or("block_data");

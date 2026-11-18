@@ -21,7 +21,7 @@ fn physical_contract_is_free_of_legacy_semantic_fallbacks() {
         "java.lang.String",
         "System.String",
         "WASM_GC_ANYREF",
-        "unwrap_or(NyarType::",
+        "unwrap_or(SemanticType::",
         "default_i32",
         "default_void",
         "default_object",

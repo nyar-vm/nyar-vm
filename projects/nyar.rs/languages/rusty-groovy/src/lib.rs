@@ -11,7 +11,7 @@ pub mod tagless;
 pub mod visitor;
 
 use chomsky_uir::ConstraintAnalysis;
-use nyar_types::{Id, Loc, NyarContext, NyarError, NyarFrontend, Vfs};
+use nyar_types::{Id, Loc, NyarContext, TypesError, NyarFrontend, Vfs};
 use oak_core::{parser::Parser, source::SourceText};
 use oak_groovy::{language::GroovyLanguage, parser::GroovyParser};
 
@@ -37,7 +37,7 @@ impl RustyGroovyFrontend {
 impl NyarFrontend<ConstraintAnalysis, ()> for RustyGroovyFrontend {
     type Language = GroovyLanguage;
 
-    fn parse(&self, source: &str) -> Result<(), NyarError> {
+    fn parse(&self, source: &str) -> Result<(), TypesError> {
         let parser = GroovyParser::new(&self.language);
         let source_text = SourceText::new(source);
         let mut cache = oak_core::parser::ParseSession::<GroovyLanguage>::default();
@@ -45,7 +45,7 @@ impl NyarFrontend<ConstraintAnalysis, ()> for RustyGroovyFrontend {
         if output.result.is_ok() {
             println!("Parsed Groovy source");
         }
-        output.result.map(|_| ()).map_err(|e| NyarError::Compile(format!("{:?}", e)))
+        output.result.map(|_| ()).map_err(|e| TypesError::Compile(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, ast: &(), ctx: &mut NyarContext<'_, V, ConstraintAnalysis>) -> Id {

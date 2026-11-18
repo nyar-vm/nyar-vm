@@ -5,7 +5,7 @@
 //! 都必须通过槽规划。
 
 use acorn_wasm::{WasmBinaryModule, WasmOpcode};
-use nyar::{Identifier, NyarType, QualifiedName};
+use nyar::{Identifier, SemanticType, QualifiedName};
 use nyar_emitter::{
     FragmentSubmission, TargetExecutionPlan,
     contracts::{Block, BlockRef, ExecutableFunction, Terminator, ValueRef},
@@ -17,10 +17,10 @@ use std::{collections::BTreeMap, process::Command};
 /// 指定的形参数并 `return`。
 fn raising_function(with_resume_param: bool) -> ExecutableFunction {
     let resume_parameters = if with_resume_param { vec![ValueRef(0)] } else { Vec::new() };
-    let value_types = if with_resume_param { BTreeMap::from([(ValueRef(0), NyarType::Unit)]) } else { BTreeMap::new() };
+    let value_types = if with_resume_param { BTreeMap::from([(ValueRef(0), SemanticType::Unit)]) } else { BTreeMap::new() };
     ExecutableFunction {
         symbol: "main".to_string(),
-        return_type: NyarType::Unit,
+        return_type: SemanticType::Unit,
         param_types: Vec::new(),
         value_types,
         value_layouts: BTreeMap::new(),

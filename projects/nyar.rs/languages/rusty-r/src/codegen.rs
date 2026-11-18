@@ -1,6 +1,6 @@
 use chomsky_types::Loc;
 use chomsky_uir::{egraph::Id, intent::IKun};
-use nyar_types::NyarError;
+use nyar_types::TypesError;
 use oak_r::{
     ast::{Expr, RRoot, Statement},
     kind::RSyntaxKind,
@@ -28,7 +28,7 @@ impl NyarTranslator {
         Loc::new(0, span.start as u32, span.end as u32)
     }
 
-    pub fn translate_root<A: chomsky_uir::Analysis<IKun>>(&self, root: &RRoot, ctx: &mut TranslatorContext<'_, A>) -> Result<Id, NyarError> {
+    pub fn translate_root<A: chomsky_uir::Analysis<IKun>>(&self, root: &RRoot, ctx: &mut TranslatorContext<'_, A>) -> Result<Id, TypesError> {
         let mut items = Vec::new();
         for stmt in &root.statements {
             items.push(self.translate_statement(stmt, ctx)?);
@@ -40,7 +40,7 @@ impl NyarTranslator {
         &self,
         stmt: &Statement,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<Id, NyarError> {
+    ) -> Result<Id, TypesError> {
         match stmt {
             Statement::Assignment { name, expr, span } => {
                 let val_id = self.translate_expr(expr, ctx)?;
@@ -60,7 +60,7 @@ impl NyarTranslator {
         }
     }
 
-    fn translate_expr<A: chomsky_uir::Analysis<IKun>>(&self, expr: &Expr, ctx: &mut TranslatorContext<'_, A>) -> Result<Id, NyarError> {
+    fn translate_expr<A: chomsky_uir::Analysis<IKun>>(&self, expr: &Expr, ctx: &mut TranslatorContext<'_, A>) -> Result<Id, TypesError> {
         match expr {
             Expr::Ident(id) => Ok(ctx.builder.symbol(&id.name, self.to_loc(&id.span))),
             Expr::Literal { value, span } => {

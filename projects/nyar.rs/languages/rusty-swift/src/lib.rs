@@ -4,7 +4,7 @@
 pub mod codegen;
 
 use chomsky_uir::ConstraintAnalysis;
-use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
+use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
 use oak_core::source::SourceText;
 use oak_swift::{
     ast::{Expression, Literal, Statement, SwiftRoot},
@@ -32,13 +32,13 @@ impl RustySwiftFrontend {
 impl NyarFrontend<ConstraintAnalysis, SwiftRoot> for RustySwiftFrontend {
     type Language = SwiftLanguage;
 
-    fn parse(&self, source: &str) -> Result<SwiftRoot, NyarError> {
+    fn parse(&self, source: &str) -> Result<SwiftRoot, TypesError> {
         let builder = SwiftBuilder::new(&self.language);
         let source_text = SourceText::new(source);
         let mut session = oak_core::parser::ParseSession::<SwiftLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
-        output.result.map_err(|e| NyarError::Compile(format!("{:?}", e)))
+        output.result.map_err(|e| TypesError::Compile(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, ast: &SwiftRoot, ctx: &mut NyarContext<'_, V, ConstraintAnalysis>) -> Id {

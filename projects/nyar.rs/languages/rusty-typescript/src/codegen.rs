@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id};
-use nyar_types::NyarError;
+use nyar_types::TypesError;
 use odin_vm::bytecode::{
     format::{Chunk, Constant, ExportInfo, ImportInfo, NyarModule},
     opcode::{I32Ext, Opcode},
@@ -128,7 +128,7 @@ impl NyarTranslator {
     }
 
     /// 生成 NyarModule
-    pub fn generate(&mut self, egraph: &EGraph<IKun, ConstraintAnalysis>, root: Id) -> Result<NyarModule, NyarError> {
+    pub fn generate(&mut self, egraph: &EGraph<IKun, ConstraintAnalysis>, root: Id) -> Result<NyarModule, TypesError> {
         let mut functions_info = Vec::new();
         let mut imports_info = Vec::new();
         let mut exports_info = Vec::new();
@@ -295,7 +295,7 @@ impl NyarTranslator {
         })
     }
 
-    fn generate_main_chunk(&mut self, egraph: &EGraph<IKun, ConstraintAnalysis>, statements: &[Id]) -> Result<(), NyarError> {
+    fn generate_main_chunk(&mut self, egraph: &EGraph<IKun, ConstraintAnalysis>, statements: &[Id]) -> Result<(), TypesError> {
         self.reset_for_function();
 
         for &stmt in statements {
@@ -330,7 +330,7 @@ impl NyarTranslator {
         _name: &str,
         parameters: &[String],
         body: Id,
-    ) -> Result<(), NyarError> {
+    ) -> Result<(), TypesError> {
         self.reset_for_function();
 
         // 处理参数
@@ -367,7 +367,7 @@ impl NyarTranslator {
         Ok(())
     }
 
-    fn generate_node(&mut self, egraph: &EGraph<IKun, ConstraintAnalysis>, id: Id, is_statement: bool) -> Result<(), NyarError> {
+    fn generate_node(&mut self, egraph: &EGraph<IKun, ConstraintAnalysis>, id: Id, is_statement: bool) -> Result<(), TypesError> {
         let node_class = egraph.get_class(id);
 
         // Try to find a node we can handle

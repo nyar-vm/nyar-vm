@@ -25,7 +25,7 @@ pub(super) use crate::backend_plan_views::{
     ExecutableDispatchKind as MirDispatchKind, ExecutableFunction as MirFunction, ExecutableInstruction as MirInstruction,
     ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand, ExecutableReceiverPassingKind as ReceiverPassingKind,
     ExecutableStorageKind as MirStorageKind, ExecutableStorageKind as StorageKind, ExecutableTerminator as MirTerminator,
-    ExecutableValueRef as MirValueRef, NyarType,
+    ExecutableValueRef as MirValueRef, SemanticType,
 };
 
 /// `f32` 在 wasm 侧的唯一 valtype 常量（`0x7D`）；权威定义见 `wasm::gc::VALTYPE_F32`。

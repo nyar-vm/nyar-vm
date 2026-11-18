@@ -17,7 +17,7 @@ use crate::{
     FragmentSubmission, Result,
     backend_plan_views::{
         ExecutableBlock as MirBlock, ExecutableBlockRef as MirBlockRef, ExecutableFunction as MirFunction,
-        ExecutableInstruction as MirInstruction, ExecutableValueRef as MirValueRef, NyarType,
+        ExecutableInstruction as MirInstruction, ExecutableValueRef as MirValueRef, SemanticType,
     },
     contracts::{Constant, InstructionKind, Operand, Terminator},
     lowering::shared::{
@@ -154,7 +154,7 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
 
     let mut used_names = BTreeMap::<String, ()>::new();
     let mut method_plans = BTreeMap::<ItemInstanceId, JvmMethodPlan>::new();
-    let mut logical_signatures = BTreeMap::<ItemInstanceId, (Vec<NyarType>, NyarType)>::new();
+    let mut logical_signatures = BTreeMap::<ItemInstanceId, (Vec<SemanticType>, SemanticType)>::new();
     for (ordinal, instance) in operations.iter().enumerate() {
         let view = plan.get_function(instance).ok_or_else(|| format!("JVM 最小 lowering：可达操作 `{instance:?}` 缺少函数体"))?;
         logical_signatures.insert(*instance, (view.function.param_types.clone(), view.function.return_type.clone()));
@@ -224,7 +224,7 @@ fn build_managed_abi_surface(
     class_file: &JvmClassFile,
     export_names: &BTreeMap<ItemInstanceId, String>,
     method_plans: &BTreeMap<ItemInstanceId, JvmMethodPlan>,
-    logical_signatures: &BTreeMap<ItemInstanceId, (Vec<NyarType>, NyarType)>,
+    logical_signatures: &BTreeMap<ItemInstanceId, (Vec<SemanticType>, SemanticType)>,
     entry: Option<(ItemInstanceId, String)>,
 ) -> Result<(Vec<JvmClassFile>, Option<ManagedAbiContract>, Option<String>)> {
     let mut entries = Vec::with_capacity(export_names.len());
@@ -246,7 +246,7 @@ fn build_managed_abi_surface(
                 method.name
             ));
         }
-        // 逻辑 ABI 类型来自冻结的 `NyarType` 签名，物理 descriptor 另存；不得从
+        // 逻辑 ABI 类型来自冻结的 `SemanticType` 签名，物理 descriptor 另存；不得从
         // 已擦除 signedness 的 descriptor 反推作者声明的逻辑类型。
         let (logical_params, logical_return) = logical_signatures
             .get(instance)
@@ -309,21 +309,21 @@ fn build_managed_abi_surface(
     Ok((companion_classes, managed_abi, entry_launcher))
 }
 
-/// managed ABI 的逻辑标量类型名：只来自冻结的 `NyarType` 签名，保留 signedness。
+/// managed ABI 的逻辑标量类型名：只来自冻结的 `SemanticType` 签名，保留 signedness。
 ///
 /// 没有 unsigned 编组能力时明确拒绝，禁止用有符号解析器冒充 unsigned；
 /// 物理 descriptor 单独保存在 `signature` 字段，不参与逻辑类型推断。
-fn managed_logical_type_name(ty: &NyarType) -> Result<String> {
+fn managed_logical_type_name(ty: &SemanticType) -> Result<String> {
     Ok(match ty {
-        NyarType::Bottom | NyarType::Unit => "void",
-        NyarType::Boolean => "bool",
-        NyarType::Integer32 { signed: true } => "i32",
-        NyarType::Integer64 { signed: true } => "i64",
-        NyarType::Float64 => "f64",
-        NyarType::Integer32 { signed: false } | NyarType::Integer64 { signed: false } => {
+        SemanticType::Bottom | SemanticType::Unit => "void",
+        SemanticType::Boolean => "bool",
+        SemanticType::Integer32 { signed: true } => "i32",
+        SemanticType::Integer64 { signed: true } => "i64",
+        SemanticType::Float64 => "f64",
+        SemanticType::Integer32 { signed: false } | SemanticType::Integer64 { signed: false } => {
             return Err(format!("JVM managed ABI 没有 unsigned 编组能力（`{ty}`）：拒绝生成 argv launcher，不得用有符号解析器冒充"));
         }
-        NyarType::Integer8 { .. } | NyarType::Integer16 { .. } | NyarType::Integer128 { .. } => {
+        SemanticType::Integer8 { .. } | SemanticType::Integer16 { .. } | SemanticType::Integer128 { .. } => {
             return Err(format!("JVM managed ABI 入口不支持 `{ty}`：只接受 i32 / i64 / f64 / bool / void"));
         }
         other => {
@@ -493,7 +493,7 @@ fn function_descriptor(layouts: &AggregateLayoutPlan, function: &MirFunction) ->
 }
 
 /// 局部 / 形参位置的 JVM 载体：`Unit`/`Bottom` 没有值槽。
-fn jvm_parameter_descriptor(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<JvmTypeDescriptor> {
+fn jvm_parameter_descriptor(layouts: &AggregateLayoutPlan, ty: &SemanticType) -> Result<JvmTypeDescriptor> {
     let descriptor = jvm_type_descriptor(layouts, ty)?;
     if descriptor == JvmTypeDescriptor::Void {
         return Err(format!("JVM 最小 lowering：`{ty}` 是 void 形态，不能作为方法形参或局部值"));
@@ -501,7 +501,7 @@ fn jvm_parameter_descriptor(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Res
     Ok(descriptor)
 }
 
-fn jvm_return_descriptor(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<JvmTypeDescriptor> {
+fn jvm_return_descriptor(layouts: &AggregateLayoutPlan, ty: &SemanticType) -> Result<JvmTypeDescriptor> {
     jvm_type_descriptor(layouts, ty)
 }
 
@@ -712,10 +712,10 @@ fn jvm_unbox_method(descriptor: &JvmTypeDescriptor) -> Result<JvmMethodRef> {
 }
 
 /// 数组类型 `Array<T>` / `FixedArray { element, .. }` 的元素类型。
-fn jvm_array_element_type(array_type: &NyarType) -> Result<&NyarType> {
+fn jvm_array_element_type(array_type: &SemanticType) -> Result<&SemanticType> {
     match array_type {
-        NyarType::Array(element) => Ok(element),
-        NyarType::FixedArray { element, .. } => Ok(element),
+        SemanticType::Array(element) => Ok(element),
+        SemanticType::FixedArray { element, .. } => Ok(element),
         other => Err(format!("JVM 最小 lowering：`{other}` 不是数组类型，缺少元素载体")),
     }
 }
@@ -725,21 +725,21 @@ fn jvm_array_element_type(array_type: &NyarType) -> Result<&NyarType> {
 /// acorn-jvm 没有 `laload`/`lastore`/`faload`/`daload`，因此 i64/f32/f64 元素
 /// 必须用装箱引用数组（`java/lang/Long` / `Double` / `Float`），这是块 3 存取
 /// 指令的前提；标量元素选 `NewArray` atype 可直接承载的基本类型。
-fn jvm_array_element_descriptor(layouts: &AggregateLayoutPlan, element: &NyarType) -> Result<JvmTypeDescriptor> {
+fn jvm_array_element_descriptor(layouts: &AggregateLayoutPlan, element: &SemanticType) -> Result<JvmTypeDescriptor> {
     Ok(match element {
-        NyarType::Boolean => JvmTypeDescriptor::Boolean,
-        NyarType::Integer8 { .. } => JvmTypeDescriptor::Byte,
-        NyarType::Integer16 { .. } => JvmTypeDescriptor::Short,
-        NyarType::Integer32 { .. } => JvmTypeDescriptor::Int,
+        SemanticType::Boolean => JvmTypeDescriptor::Boolean,
+        SemanticType::Integer8 { .. } => JvmTypeDescriptor::Byte,
+        SemanticType::Integer16 { .. } => JvmTypeDescriptor::Short,
+        SemanticType::Integer32 { .. } => JvmTypeDescriptor::Int,
         // V 的 `char` 是 u32 码位载体；JVM `char` 只有 16 位，会把 U+10000 以上截断。
         // 物理载体固定为 32 位 int，UTF-16 code unit 转换只在显式编码边界发生。
-        NyarType::Character => JvmTypeDescriptor::Int,
-        NyarType::Integer64 { .. } => JvmTypeDescriptor::Long,
-        NyarType::Float32 => JvmTypeDescriptor::Float,
-        NyarType::Float64 => JvmTypeDescriptor::Double,
-        NyarType::Utf8 | NyarType::Utf16 => JvmTypeDescriptor::Object("java/lang/String".to_string()),
+        SemanticType::Character => JvmTypeDescriptor::Int,
+        SemanticType::Integer64 { .. } => JvmTypeDescriptor::Long,
+        SemanticType::Float32 => JvmTypeDescriptor::Float,
+        SemanticType::Float64 => JvmTypeDescriptor::Double,
+        SemanticType::Utf8 | SemanticType::Utf16 => JvmTypeDescriptor::Object("java/lang/String".to_string()),
         // 名义布局按冻结身份取 companion 类名；值存储聚合没有单槽 JVM 载体。
-        NyarType::Nominal { layout, spelling } => {
+        SemanticType::Nominal { layout, spelling } => {
             let Some(layout) = layouts.layouts.iter().find(|candidate| candidate.id == *layout)
             else {
                 return Err(format!("JVM 最小 lowering：`{spelling}` 的布局身份 `{layout}` 未在计划中注册：缺少数组元素 JVM 载体合同"));
@@ -753,16 +753,16 @@ fn jvm_array_element_descriptor(layouts: &AggregateLayoutPlan, element: &NyarTyp
         }
         // 泛型实例必须携带 canonical 冻结的实例级布局；计划边界会把它结算成
         // `Nominal`。走到这里的 `Apply` 说明实例表示未结算，禁止按引用擦除掩盖缺口。
-        NyarType::Apply(..) => {
+        SemanticType::Apply(..) => {
             return Err(format!(
                 "JVM 最小 lowering：泛型实例 `{element}` 缺少实例级布局结算：canonical 未冻结该实例的布局身份，拒绝按引用擦除"
             ));
         }
-        NyarType::Array(inner) | NyarType::FixedArray { element: inner, .. } => {
+        SemanticType::Array(inner) | SemanticType::FixedArray { element: inner, .. } => {
             JvmTypeDescriptor::array(jvm_array_element_descriptor(layouts, inner)?)
         }
         // 可空元素只能复用引用载体（`null` 表示空）；标量需要 sum 表示。
-        NyarType::Nullable(inner) => {
+        SemanticType::Nullable(inner) => {
             let descriptor = jvm_array_element_descriptor(layouts, inner)?;
             if matches!(descriptor, JvmTypeDescriptor::Object(_) | JvmTypeDescriptor::Array(_)) {
                 descriptor
@@ -777,29 +777,29 @@ fn jvm_array_element_descriptor(layouts: &AggregateLayoutPlan, element: &NyarTyp
     })
 }
 
-pub(crate) fn jvm_type_descriptor(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<JvmTypeDescriptor> {
+pub(crate) fn jvm_type_descriptor(layouts: &AggregateLayoutPlan, ty: &SemanticType) -> Result<JvmTypeDescriptor> {
     Ok(match ty {
-        NyarType::Bottom | NyarType::Unit => JvmTypeDescriptor::Void,
-        NyarType::Boolean => JvmTypeDescriptor::Boolean,
+        SemanticType::Bottom | SemanticType::Unit => JvmTypeDescriptor::Void,
+        SemanticType::Boolean => JvmTypeDescriptor::Boolean,
         // V 的 `char` 是 u32 码位，载体固定 32 位；不得用宿主 16 位 `Char`。
-        NyarType::Character => JvmTypeDescriptor::Int,
-        NyarType::Integer8 { .. } | NyarType::Integer16 { .. } | NyarType::Integer32 { .. } => JvmTypeDescriptor::Int,
-        NyarType::Integer64 { .. } => JvmTypeDescriptor::Long,
-        NyarType::Float32 => JvmTypeDescriptor::Float,
-        NyarType::Float64 => JvmTypeDescriptor::Double,
-        NyarType::Utf8 | NyarType::Utf16 => JvmTypeDescriptor::Object("java/lang/String".to_string()),
+        SemanticType::Character => JvmTypeDescriptor::Int,
+        SemanticType::Integer8 { .. } | SemanticType::Integer16 { .. } | SemanticType::Integer32 { .. } => JvmTypeDescriptor::Int,
+        SemanticType::Integer64 { .. } => JvmTypeDescriptor::Long,
+        SemanticType::Float32 => JvmTypeDescriptor::Float,
+        SemanticType::Float64 => JvmTypeDescriptor::Double,
+        SemanticType::Utf8 | SemanticType::Utf16 => JvmTypeDescriptor::Object("java/lang/String".to_string()),
         // 栈/堆数组的载体是元素载体数组；`[T; N]` 的长度由 `ArrayFromElements` 表达。
-        NyarType::Array(element) => JvmTypeDescriptor::array(jvm_array_element_descriptor(layouts, element)?),
-        NyarType::FixedArray { element, .. } => JvmTypeDescriptor::array(jvm_array_element_descriptor(layouts, element)?),
+        SemanticType::Array(element) => JvmTypeDescriptor::array(jvm_array_element_descriptor(layouts, element)?),
+        SemanticType::FixedArray { element, .. } => JvmTypeDescriptor::array(jvm_array_element_descriptor(layouts, element)?),
         // 布局身份只经 `TupleNew`/`AggregateCopy` 的 `layout_id` 进入后端，类型描述符
         // 没有该事实，禁止按形状猜布局。
-        NyarType::Tuple(..) => {
+        SemanticType::Tuple(..) => {
             return Err(format!(
                 "JVM 最小 lowering：裸 tuple `{ty}` 没有布局身份：布局身份只经 `TupleNew`/`AggregateCopy` 的 `layout_id` 进入后端，类型描述符没有该事实"
             ));
         }
         // 可空引用直接复用引用载体（`null` 表示空）；标量需要 sum 表示，不得静默装箱。
-        NyarType::Nullable(inner) => {
+        SemanticType::Nullable(inner) => {
             let descriptor = jvm_type_descriptor(layouts, inner)?;
             if matches!(descriptor, JvmTypeDescriptor::Object(_) | JvmTypeDescriptor::Array(_)) {
                 descriptor
@@ -813,13 +813,13 @@ pub(crate) fn jvm_type_descriptor(layouts: &AggregateLayoutPlan, ty: &NyarType) 
         }
         // 泛型实例的实例表示必须在计划边界结算为携带布局身份的 `Nominal`；
         // 缺少冻结布局身份即缺载体合同，禁止按引用擦除。
-        NyarType::Apply(..) => {
+        SemanticType::Apply(..) => {
             return Err(format!("JVM 最小 lowering：泛型实例 `{ty}` 缺少实例级布局结算：canonical 未冻结该实例的布局身份，拒绝按引用擦除"));
         }
         // 携带身份的名义类型：存储类按 `layout` 身份解析，引用/值存储都指向
         // companion 布局类。JVM 没有内联结构体，逐字段拷贝由 `AggregateCopy` 承担，
         // 它是唯一允许的复制路径；零字段值布局与 wasm 标量语义一致，维持结构化失败。
-        NyarType::Nominal { layout, spelling } => {
+        SemanticType::Nominal { layout, spelling } => {
             let Some(layout) = layouts.layouts.iter().find(|candidate| candidate.id == *layout)
             else {
                 return Err(format!("JVM 最小 lowering：`{spelling}` 的布局身份 `{layout}` 未在计划中注册：缺少该形状的 JVM 载体合同"));
@@ -837,7 +837,7 @@ pub(crate) fn jvm_type_descriptor(layouts: &AggregateLayoutPlan, ty: &NyarType) 
     })
 }
 
-fn jvm_local_kind(layouts: &AggregateLayoutPlan, ty: &NyarType) -> Result<JvmSlotKind> {
+fn jvm_local_kind(layouts: &AggregateLayoutPlan, ty: &SemanticType) -> Result<JvmSlotKind> {
     JvmSlotKind::of(&jvm_parameter_descriptor(layouts, ty)?)
 }
 
@@ -1628,7 +1628,7 @@ impl JvmMethodEmitter<'_> {
         Ok((self.layout_by_id(layout_id)?, slot))
     }
 
-    fn operand_type(&self, operand: &Operand) -> Result<NyarType> {
+    fn operand_type(&self, operand: &Operand) -> Result<SemanticType> {
         match operand {
             Operand::Value(value) => self
                 .function
@@ -1637,10 +1637,10 @@ impl JvmMethodEmitter<'_> {
                 .cloned()
                 .ok_or_else(|| format!("JVM 最小 lowering：SSA 值 {:?} 缺少冻结类型: function={}", value, self.function.symbol)),
             Operand::Constant(constant) => Ok(match constant {
-                Constant::Int(_) => NyarType::Integer32 { signed: true },
-                Constant::Float64(_) => NyarType::Float64,
-                Constant::Bool(_) => NyarType::Boolean,
-                Constant::Utf8(_) | Constant::Utf16(_) => NyarType::Utf8,
+                Constant::Int(_) => SemanticType::Integer32 { signed: true },
+                Constant::Float64(_) => SemanticType::Float64,
+                Constant::Bool(_) => SemanticType::Boolean,
+                Constant::Utf8(_) | Constant::Utf16(_) => SemanticType::Utf8,
                 other => {
                     return Err(format!("JVM 最小 lowering：常量 `{other:?}` 没有可装箱的冻结类型: function={}", self.function.symbol));
                 }
@@ -1649,7 +1649,7 @@ impl JvmMethodEmitter<'_> {
         }
     }
 
-    fn output_type(&self, instruction: &MirInstruction) -> Result<Option<NyarType>> {
+    fn output_type(&self, instruction: &MirInstruction) -> Result<Option<SemanticType>> {
         let Some(value) = self.slots.instruction_output(instruction)
         else {
             return Ok(None);
@@ -1691,7 +1691,7 @@ impl JvmMethodEmitter<'_> {
     }
 
     /// 发射一个可能已处于标量槽的 payload/元素，并按目标类型按需装箱。
-    fn emit_boxed_operand(&mut self, operand: &Operand, ty: &NyarType) -> Result<()> {
+    fn emit_boxed_operand(&mut self, operand: &Operand, ty: &SemanticType) -> Result<()> {
         let descriptor = {
             let layouts = self.submission.backend_plan.aggregate_layouts();
             jvm_type_descriptor(layouts, ty)?
@@ -1711,7 +1711,7 @@ impl JvmMethodEmitter<'_> {
         }
     }
 
-    fn emit_array_element_value(&mut self, operand: &Operand, element: &NyarType) -> Result<()> {
+    fn emit_array_element_value(&mut self, operand: &Operand, element: &SemanticType) -> Result<()> {
         let (target, element_descriptor) = {
             let layouts = self.submission.backend_plan.aggregate_layouts();
             (jvm_type_descriptor(layouts, element)?, jvm_array_element_descriptor(layouts, element)?)
@@ -1995,7 +1995,7 @@ impl JvmMethodEmitter<'_> {
         }
     }
 
-    fn emit_array_from_elements(&mut self, instruction: &MirInstruction, array_type: &NyarType, elements: &[Operand]) -> Result<()> {
+    fn emit_array_from_elements(&mut self, instruction: &MirInstruction, array_type: &SemanticType, elements: &[Operand]) -> Result<()> {
         let element = jvm_array_element_type(array_type)?.clone();
         let (creation, store) = {
             let layouts = self.submission.backend_plan.aggregate_layouts();
@@ -2031,7 +2031,7 @@ impl JvmMethodEmitter<'_> {
         }
     }
 
-    fn emit_array_new(&mut self, instruction: &MirInstruction, array_type: &NyarType, length: &Operand) -> Result<()> {
+    fn emit_array_new(&mut self, instruction: &MirInstruction, array_type: &SemanticType, length: &Operand) -> Result<()> {
         let element = jvm_array_element_type(array_type)?.clone();
         let creation = {
             let layouts = self.submission.backend_plan.aggregate_layouts();
@@ -2072,8 +2072,8 @@ impl JvmMethodEmitter<'_> {
         // 否则 `255` / `65535` 会读成 `-1`。物理 descriptor 只决定存取指令，
         // 逻辑元素的 signedness 仍来自语言类型。
         let zero_extension_mask = match &element {
-            NyarType::Integer8 { signed: false } => Some(0xFF),
-            NyarType::Integer16 { signed: false } => Some(0xFFFF),
+            SemanticType::Integer8 { signed: false } => Some(0xFF),
+            SemanticType::Integer16 { signed: false } => Some(0xFFFF),
             _ => None,
         };
         if let Some(mask) = zero_extension_mask {

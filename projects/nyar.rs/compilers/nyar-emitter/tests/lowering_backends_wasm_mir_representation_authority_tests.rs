@@ -21,13 +21,13 @@ use nyar_emitter::{
     },
     testing::lower_fragment_to_wasm_mir_module,
 };
-use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldId, FieldLayout, LayoutId, NominalInstanceId, NyarType, StorageKind};
+use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldId, FieldLayout, LayoutId, NominalInstanceId, SemanticType, StorageKind};
 use std::{collections::BTreeMap, process::Command};
 
-const UTF8: NyarType = NyarType::Utf8;
+const UTF8: SemanticType = SemanticType::Utf8;
 
-fn byte_array() -> NyarType {
-    NyarType::Array(Box::new(NyarType::Integer8 { signed: false }))
+fn byte_array() -> SemanticType {
+    SemanticType::Array(Box::new(SemanticType::Integer8 { signed: false }))
 }
 
 const UTF8_TEXT_LAYOUT_ID: LayoutId = 7;
@@ -111,7 +111,7 @@ fn wasm_host_string_without_layout_binding_stays_i32_and_field_get_fails_structu
 /// 属 `7f40a234` 规范化 `builtin.array.new` 之前的观测（当时元素是未实例化泛型）。
 #[test]
 fn wasm_array_new_element_type_self_registers_and_lowers() {
-    let array_ty = NyarType::Array(Box::new(NyarType::Integer64 { signed: true }));
+    let array_ty = SemanticType::Array(Box::new(SemanticType::Integer64 { signed: true }));
     let new_arr = Instruction::from_kind(InstructionKind::ArrayNew {
         array_type: array_ty.clone(),
         length: Operand::Constant(Constant::Int(3)),
@@ -128,7 +128,7 @@ fn wasm_array_new_element_type_self_registers_and_lowers() {
         symbol: "main".to_string(),
         return_type: array_ty,
         param_types: Vec::new(),
-        value_types: BTreeMap::from([(ValueRef(0), NyarType::Array(Box::new(NyarType::Integer64 { signed: true })))]),
+        value_types: BTreeMap::from([(ValueRef(0), SemanticType::Array(Box::new(SemanticType::Integer64 { signed: true })))]),
         value_layouts: BTreeMap::new(),
         return_layout: None,
         entry: BlockRef(0),
@@ -160,11 +160,11 @@ fn empty_value_layout() -> AggregateLayout {
     }
 }
 
-fn named_layout_type(layout: LayoutId, spelling: &str) -> NyarType {
-    NyarType::Nominal { layout, spelling: Identifier::new(spelling) }
+fn named_layout_type(layout: LayoutId, spelling: &str) -> SemanticType {
+    SemanticType::Nominal { layout, spelling: Identifier::new(spelling) }
 }
 
-fn base_function(symbol: &str, return_type: NyarType, param_types: Vec<NyarType>) -> ExecutableFunction {
+fn base_function(symbol: &str, return_type: SemanticType, param_types: Vec<SemanticType>) -> ExecutableFunction {
     ExecutableFunction {
         symbol: symbol.to_string(),
         return_type,
@@ -258,8 +258,8 @@ fn wasm_zero_field_value_layout_assignment_is_scalar_copy() {
 #[test]
 fn wasm_scalar_field_store_uses_typed_store_not_aggregate_copy() {
     let aggregate_type = named_layout_type(SCALAR_FIELD_LAYOUT_ID, "ScalarPair");
-    let mut function = base_function("main", aggregate_type.clone(), vec![NyarType::Integer64 { signed: true }]);
-    function.value_types.insert(ValueRef(0), NyarType::Integer64 { signed: true });
+    let mut function = base_function("main", aggregate_type.clone(), vec![SemanticType::Integer64 { signed: true }]);
+    function.value_types.insert(ValueRef(0), SemanticType::Integer64 { signed: true });
     function.value_types.insert(ValueRef(1), aggregate_type);
     function.blocks.push(Block {
         id: BlockRef(0),
@@ -284,8 +284,8 @@ fn wasm_scalar_field_store_uses_typed_store_not_aggregate_copy() {
                 key: None,
                 storage: StorageKind::Value,
                 fields: vec![
-                    FieldLayout { name: "left".to_string(), ty: NyarType::Integer64 { signed: true } },
-                    FieldLayout { name: "right".to_string(), ty: NyarType::Integer64 { signed: true } },
+                    FieldLayout { name: "left".to_string(), ty: SemanticType::Integer64 { signed: true } },
+                    FieldLayout { name: "right".to_string(), ty: SemanticType::Integer64 { signed: true } },
                 ],
             }],
             ..Default::default()
@@ -333,8 +333,8 @@ fn wasm_field_bearing_aggregate_assignment_still_uses_memory_copy() {
                 key: None,
                 storage: StorageKind::Value,
                 fields: vec![
-                    FieldLayout { name: "left".to_string(), ty: NyarType::Integer64 { signed: true } },
-                    FieldLayout { name: "right".to_string(), ty: NyarType::Integer64 { signed: true } },
+                    FieldLayout { name: "left".to_string(), ty: SemanticType::Integer64 { signed: true } },
+                    FieldLayout { name: "right".to_string(), ty: SemanticType::Integer64 { signed: true } },
                 ],
             }],
             ..Default::default()
@@ -346,7 +346,7 @@ fn wasm_field_bearing_aggregate_assignment_still_uses_memory_copy() {
 
 // ── `structure` 值复制：`AggregateCopy`（Value 布局）必须产生真实独立副本 ──────
 
-const I32: NyarType = NyarType::Integer32 { signed: true };
+const I32: SemanticType = SemanticType::Integer32 { signed: true };
 const POINT_LAYOUT_ID: LayoutId = 12;
 
 /// `structure Point { x: i32, y: i32 }`：纯值布局（无引用字段）。

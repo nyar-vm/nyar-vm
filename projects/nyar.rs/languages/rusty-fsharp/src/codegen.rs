@@ -2,7 +2,7 @@
 
 use chomsky_types::Loc;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, IntentBuilder};
-use nyar_types::NyarError;
+use nyar_types::TypesError;
 use oak_fsharp::ast::*;
 
 /// FSharp 翻译器上下文
@@ -31,12 +31,12 @@ impl NyarTranslator {
         &self,
         ast: &FSharpRoot,
         egraph: &mut EGraph<IKun, ConstraintAnalysis>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let mut ctx = TranslatorContext::new(egraph);
         self.translate_root(ast, &mut ctx)
     }
 
-    pub fn translate_to_tree(&self, ast: &FSharpRoot) -> Result<IKunTree, NyarError> {
+    pub fn translate_to_tree(&self, ast: &FSharpRoot) -> Result<IKunTree, TypesError> {
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
         let root_id = self.translate_to_graph(ast, &mut egraph)?;
 
@@ -49,7 +49,7 @@ impl NyarTranslator {
         &self,
         root: &FSharpRoot,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let mut items = Vec::new();
         for item in &root.items {
             if let Some(id) = self.translate_item(item, ctx)? {
@@ -63,7 +63,7 @@ impl NyarTranslator {
         &self,
         item: &Item,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<Option<chomsky_uir::egraph::Id>, NyarError> {
+    ) -> Result<Option<chomsky_uir::egraph::Id>, TypesError> {
         match item {
             Item::Namespace(ns) => Ok(Some(self.translate_namespace(ns, ctx)?)),
             Item::Module(m) => Ok(Some(self.translate_module(m, ctx)?)),
@@ -76,7 +76,7 @@ impl NyarTranslator {
         &self,
         ns: &NamespaceDeclaration,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let mut items = Vec::new();
         for item in &ns.items {
             if let Some(id) = self.translate_item(item, ctx)? {
@@ -90,7 +90,7 @@ impl NyarTranslator {
         &self,
         m: &ModuleDeclaration,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let mut items = Vec::new();
         for item in &m.items {
             if let Some(id) = self.translate_item(item, ctx)? {
@@ -104,7 +104,7 @@ impl NyarTranslator {
         &self,
         b: &Binding,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let loc = Loc::default();
         let value = self.translate_expression(&b.expression, ctx)?;
 
@@ -120,7 +120,7 @@ impl NyarTranslator {
         &self,
         expr: &Expression,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, TypesError> {
         let loc = Loc::default();
         match expr {
             Expression::Simple(s) => {

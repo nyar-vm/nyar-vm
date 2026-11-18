@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
 
 use chomsky_uir::IKun;
-use nyar_types::{Id, NyarContext, NyarError, NyarFrontend};
+use nyar_types::{Id, NyarContext, TypesError, NyarFrontend};
 use oak_bat::{
     ast::{BatRoot, Element},
     Builder as BatBuilder, Language as BatLanguage,
@@ -42,13 +42,13 @@ impl Default for RustyBatFrontend {
 impl NyarFrontend for RustyBatFrontend {
     type Language = BatLanguage;
 
-    fn parse(&self, source: &str) -> Result<BatRoot, NyarError> {
+    fn parse(&self, source: &str) -> Result<BatRoot, TypesError> {
         let builder = BatBuilder::new(&self.language);
         let source_text = SourceText::new(source);
         let mut session = oak_core::parser::ParseSession::<BatLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
-        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output.result.map_err(|e| TypesError::Parse(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, ast: &BatRoot, ctx: &mut NyarContext<V>) -> Id {

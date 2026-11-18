@@ -9,7 +9,7 @@ pub mod runtime;
 pub use crate::runtime::RustyRustRuntime;
 
 use chomsky_uir::{egraph::HasDebugInfo, Analysis, IKun};
-use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
+use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
 use oak_core::source::SourceText;
 use oak_rust::{RustBuilder, RustLanguage, RustRoot};
 
@@ -32,13 +32,13 @@ where
 {
     type Language = RustLanguage;
 
-    fn parse(&self, source: &str) -> Result<RustRoot, NyarError> {
+    fn parse(&self, source: &str) -> Result<RustRoot, TypesError> {
         let builder = RustBuilder::new(&self.language);
         let source_text = SourceText::new(source);
         let mut session = oak_core::parser::ParseSession::<RustLanguage>::default();
 
         let output = oak_core::Builder::build(&builder, &source_text, &[], &mut session);
-        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output.result.map_err(|e| TypesError::Parse(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, ast: &RustRoot, ctx: &mut NyarContext<'_, V, A>) -> Id {

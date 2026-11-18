@@ -7,7 +7,7 @@
 pub mod codegen;
 
 use chomsky_uir::ConstraintAnalysis;
-use nyar_types::{Id, Loc, NyarContext, NyarError, NyarFrontend, Vfs};
+use nyar_types::{Id, Loc, NyarContext, TypesError, NyarFrontend, Vfs};
 use oak_zig::ZigLanguage;
 
 /// Rusty Zig 前端
@@ -31,7 +31,7 @@ impl RustyZigFrontend {
 impl NyarFrontend<ConstraintAnalysis, ()> for RustyZigFrontend {
     type Language = ZigLanguage;
 
-    fn parse(&self, _source: &str) -> Result<(), NyarError> {
+    fn parse(&self, _source: &str) -> Result<(), TypesError> {
         // TODO: 实现真正的解析逻辑
         Ok(())
     }

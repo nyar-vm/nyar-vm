@@ -8,12 +8,12 @@ use nyar_emitter::{
     contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, Value, ValueOrigin, ValueRef},
     testing::lower_fragment_to_wasm_mir_module,
 };
-use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldLayout, LayoutId, NyarType, StorageKind};
+use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldLayout, LayoutId, SemanticType, StorageKind};
 use std::collections::BTreeMap;
 
-const I32: NyarType = NyarType::Integer32 { signed: true };
+const I32: SemanticType = SemanticType::Integer32 { signed: true };
 
-fn function(instructions: Vec<Instruction>, value_types: BTreeMap<ValueRef, NyarType>) -> ExecutableFunction {
+fn function(instructions: Vec<Instruction>, value_types: BTreeMap<ValueRef, SemanticType>) -> ExecutableFunction {
     let block = Block {
         id: BlockRef(0),
         label: "entry".to_string(),
@@ -50,8 +50,8 @@ fn lower(function: ExecutableFunction, layouts: Option<AggregateLayoutPlan>) -> 
 /// 写出前必须结构化拒绝，禁止按形状认 argv 或补默认值。
 #[test]
 fn wasi_rejects_entry_parameter_shapes_that_are_not_declared_argv() {
-    let entry_with_params = |params: Vec<NyarType>| {
-        let value_types: BTreeMap<ValueRef, NyarType> =
+    let entry_with_params = |params: Vec<SemanticType>| {
+        let value_types: BTreeMap<ValueRef, SemanticType> =
             params.iter().enumerate().map(|(index, ty)| (ValueRef(index as u32), ty.clone())).collect();
         let parameters: Vec<ValueRef> = (0..params.len() as u32).map(ValueRef).collect();
         let values: Vec<Value> = params
@@ -61,7 +61,7 @@ fn wasi_rejects_entry_parameter_shapes_that_are_not_declared_argv() {
             .collect();
         ExecutableFunction {
             symbol: "main".to_string(),
-            return_type: NyarType::Unit,
+            return_type: SemanticType::Unit,
             param_types: params,
             value_types,
             value_layouts: BTreeMap::new(),
@@ -77,7 +77,7 @@ fn wasi_rejects_entry_parameter_shapes_that_are_not_declared_argv() {
             }],
         }
     };
-    let argv_array = NyarType::Array(Box::new(NyarType::Utf8));
+    let argv_array = SemanticType::Array(Box::new(SemanticType::Utf8));
     for (label, params) in [("标量形参", vec![I32]), ("argv 不在首位且携带额外形参", vec![I32, argv_array])] {
         let main_name = nyar::QualifiedName::new(vec![Identifier::new("main")]);
         let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), entry_with_params(params))]));

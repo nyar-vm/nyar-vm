@@ -56,6 +56,6 @@ pub use nyar_optimizer::{
 };
 pub use nyar_types::{
     AggregateLayoutPlan, CapabilityTag, ExternalCallArgument, ExternalCallEdge, ExternalImportLink, FlagsLayout,
-    Identifier, InternalCallEdge, NamePath, NyarFunctionType, NyarType, QualifiedName, SingletonInstancePlan, SumTypeLayout, SymbolIdentity,
+    Identifier, InternalCallEdge, NamePath, FunctionType, SemanticType, QualifiedName, SingletonInstancePlan, SumTypeLayout, SymbolIdentity,
     WitnessCallEdge, WitnessMethodSlotSubmission, WitnessObject, WitnessSubmission,
 };

@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::compiler::types::hir::{GenericType, ValkyrieType};
-use nyar_types::{AggregateLayoutPlan, Identifier, NyarType};
+use nyar_types::{AggregateLayoutPlan, Identifier, SemanticType};
 
 /// 保留声明的泛型参数与 variant 类型；实例化必须先于物理表示。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -137,7 +137,7 @@ impl MirSumDeclaration {
 ///
 /// Canonical 的声明级与实例级 sum 布局共用这条链路，避免两套拼写口径。
 /// 未登记（含泛型实例尚未生成记录布局）一律返回 `None`，由调用方失败关闭。
-pub(crate) fn record_payload_layout(record: &ValkyrieType, layouts: &AggregateLayoutPlan) -> Option<NyarType> {
+pub(crate) fn record_payload_layout(record: &ValkyrieType, layouts: &AggregateLayoutPlan) -> Option<SemanticType> {
     let ValkyrieType::Nominal { declaration, .. } = record
     else {
         return None;
@@ -151,5 +151,5 @@ pub(crate) fn record_payload_layout(record: &ValkyrieType, layouts: &AggregateLa
     else {
         format!("{}::{}", layout.namespace.replace('.', "::"), layout.name)
     };
-    Some(NyarType::Nominal { layout: layout_id, spelling: Identifier::new(&qualified) })
+    Some(SemanticType::Nominal { layout: layout_id, spelling: Identifier::new(&qualified) })
 }

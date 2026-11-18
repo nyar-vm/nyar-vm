@@ -1,7 +1,7 @@
 //! Semantic MIR 提交门对一等函数值 callee 的放行合同测试。
 //!
 //! 验收面：`Call { callee: Operand::Value }` 仅当该 SSA 值的冻结类型事实为
-//! `NyarType::Function` 时通过 `validate_submission`；非 Function 类型或缺少
+//! `SemanticType::Function` 时通过 `validate_submission`；非 Function 类型或缺少
 //! 冻结类型事实的 Value callee 仍拒绝 SMIR003；`Item` callee 直接调用合同不变。
 //! 正向用例走完整生产管线（canonical → target plan → submission gate），
 //! 禁止按名字、题号或 target 特判。
@@ -16,7 +16,7 @@ use nyar_emitter::{
 };
 use nyar_types::{
     CanonicalFragment, CanonicalPrimitiveType, CanonicalTypeKind, InstructionId, ItemId, ItemInstanceId, ItemInstanceRecord,
-    LinkedSemanticProgram, MirValueId, NyarFunctionType, NyarType, TypeId, TypeRecord, ValueIdentity,
+    LinkedSemanticProgram, MirValueId, FunctionType, SemanticType, TypeId, TypeRecord, ValueIdentity,
 };
 use rusty_valkyrie::compiler::emitter::pipeline::target_plan::from_compiled_program;
 use rusty_valkyrie::compiler::valkyrie_mir::{
@@ -26,10 +26,10 @@ use rusty_valkyrie::compiler::valkyrie_mir::{
 
 const FRAGMENT: &str = "smir_function_value_callee_fragment";
 
-const I32: NyarType = NyarType::Integer32 { signed: true };
+const I32: SemanticType = SemanticType::Integer32 { signed: true };
 
-fn function_type(params: Vec<NyarType>, return_type: NyarType) -> NyarType {
-    NyarType::Function(Box::new(NyarFunctionType { params, return_type }))
+fn function_type(params: Vec<SemanticType>, return_type: SemanticType) -> SemanticType {
+    SemanticType::Function(Box::new(FunctionType { params, return_type }))
 }
 
 /// 从 terminator 推断 `return_type`，构造最小可提交函数（与既有合同测试同一夹具形态）。
@@ -37,11 +37,11 @@ fn fixture_function(
     symbol: &str,
     instructions: Vec<Instruction>,
     terminator: Terminator,
-    value_types: BTreeMap<ValueRef, NyarType>,
+    value_types: BTreeMap<ValueRef, SemanticType>,
 ) -> ExecutableFunction {
     let return_type = match &terminator {
-        Terminator::Return { value: Some(Operand::Value(value)) } => value_types.get(value).cloned().unwrap_or(NyarType::Unit),
-        _ => NyarType::Unit,
+        Terminator::Return { value: Some(Operand::Value(value)) } => value_types.get(value).cloned().unwrap_or(SemanticType::Unit),
+        _ => SemanticType::Unit,
     };
     ExecutableFunction {
         symbol: symbol.to_string(),
@@ -153,7 +153,7 @@ fn function_value_callee_passes_submission_gate_through_production_pipeline() {
 }
 
 /// `indirect(x) -> i32 { return f(x) }`，`f` 的冻结 SSA 类型由测试注入。
-fn value_callee_function(callee_type: Option<NyarType>) -> ExecutableFunction {
+fn value_callee_function(callee_type: Option<SemanticType>) -> ExecutableFunction {
     let callee = ValueRef(0);
     let argument = ValueRef(1);
     let result = ValueRef(2);

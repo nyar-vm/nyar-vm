@@ -12,11 +12,11 @@ use nyar_emitter::{
     contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef},
     testing::lower_fragment_to_nyar_module,
 };
-use nyar_types::NyarType;
+use nyar_types::SemanticType;
 use acorn_odin::{decode_at, OdinHeadCode, OdinInstruction, OdinModuleData};
 
-fn fixed_array(length: usize) -> NyarType {
-    NyarType::FixedArray { element: Box::new(NyarType::Integer64 { signed: true }), length }
+fn fixed_array(length: usize) -> SemanticType {
+    SemanticType::FixedArray { element: Box::new(SemanticType::Integer64 { signed: true }), length }
 }
 
 /// 单 entry block：`ArrayFromElements` 后返回 `ValueRef(0)`。

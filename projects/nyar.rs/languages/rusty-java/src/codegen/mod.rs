@@ -3,7 +3,7 @@
 use chomsky_types::Loc;
 use chomsky_uir::{Analysis, IKun, Id, IntentBuilder};
 use nyar_aot::NyarContext;
-use nyar_types::NyarError;
+use nyar_types::TypesError;
 use oak_java::ast::*;
 use oak_vfs::Vfs;
 
@@ -36,7 +36,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
     }
 
     /// 转换根节点
-    pub fn convert_root(&mut self, root: &JavaRoot) -> Result<Id, NyarError> {
+    pub fn convert_root(&mut self, root: &JavaRoot) -> Result<Id, TypesError> {
         let mut items = Vec::new();
         for item in &root.items {
             match item {
@@ -70,7 +70,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
         }
     }
 
-    fn convert_class(&mut self, class: &ClassDeclaration) -> Result<Id, NyarError> {
+    fn convert_class(&mut self, class: &ClassDeclaration) -> Result<Id, TypesError> {
         let mut members = Vec::new();
         for member in &class.members {
             match member {
@@ -119,7 +119,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
         Ok(self.builder().extension("class", vec![name_id, modifiers_id, extends_id, implements_id, members_id], loc))
     }
 
-    fn convert_interface(&mut self, interface: &InterfaceDeclaration) -> Result<Id, NyarError> {
+    fn convert_interface(&mut self, interface: &InterfaceDeclaration) -> Result<Id, TypesError> {
         let mut members = Vec::new();
         for member in &interface.members {
             match member {
@@ -159,7 +159,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
         Ok(self.builder().extension("interface", vec![name_id, modifiers_id, extends_id, members_id], loc))
     }
 
-    fn convert_field(&mut self, field: &FieldDeclaration) -> Result<Id, NyarError> {
+    fn convert_field(&mut self, field: &FieldDeclaration) -> Result<Id, TypesError> {
         let loc = self.loc();
         let name_id = self.builder().string(&field.name, loc);
         let loc = self.loc();
@@ -177,7 +177,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
         Ok(self.builder().extension("field", vec![name_id, type_id, modifiers_id], loc))
     }
 
-    fn convert_constructor(&mut self, ctor: &ConstructorDeclaration) -> Result<Id, NyarError> {
+    fn convert_constructor(&mut self, ctor: &ConstructorDeclaration) -> Result<Id, TypesError> {
         let body_id = self.convert_block(&ctor.body)?;
         let loc = self.loc();
         let name_id = self.builder().string(&ctor.name, loc);
@@ -201,7 +201,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
         Ok(self.builder().extension("constructor", vec![name_id, modifiers_id, params_id, body_id], loc))
     }
 
-    fn convert_method(&mut self, method: &MethodDeclaration) -> Result<Id, NyarError> {
+    fn convert_method(&mut self, method: &MethodDeclaration) -> Result<Id, TypesError> {
         let body_id = self.convert_block(&method.body)?;
         let loc = self.loc();
         let name_id = self.builder().string(&method.name, loc);
@@ -228,7 +228,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
         Ok(self.builder().extension("method", vec![name_id, modifiers_id, params_id, ret_id, body_id], loc))
     }
 
-    fn convert_parameter(&mut self, param: &Parameter) -> Result<Id, NyarError> {
+    fn convert_parameter(&mut self, param: &Parameter) -> Result<Id, TypesError> {
         let loc = self.loc();
         let name_id = self.builder().string(&param.name, loc);
         let loc = self.loc();
@@ -237,7 +237,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
         Ok(self.builder().extension("parameter", vec![name_id, type_id], loc))
     }
 
-    fn convert_block(&mut self, stmts: &[Statement]) -> Result<Id, NyarError> {
+    fn convert_block(&mut self, stmts: &[Statement]) -> Result<Id, TypesError> {
         let mut ids = Vec::new();
         for stmt in stmts {
             ids.push(self.convert_stmt(stmt)?);
@@ -246,7 +246,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
         Ok(self.builder().seq(ids, loc))
     }
 
-    fn convert_stmt(&mut self, stmt: &Statement) -> Result<Id, NyarError> {
+    fn convert_stmt(&mut self, stmt: &Statement) -> Result<Id, TypesError> {
         match stmt {
             Statement::Expression(expr) => self.convert_expr(expr),
             Statement::Return(Some(expr)) => {
@@ -395,7 +395,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
         }
     }
 
-    fn convert_expr(&mut self, expr: &Expression) -> Result<Id, NyarError> {
+    fn convert_expr(&mut self, expr: &Expression) -> Result<Id, TypesError> {
         match expr {
             Expression::Literal(Literal::Integer(v)) => {
                 let loc = self.loc();
@@ -514,13 +514,13 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
                     name.clone()
                 }
                 else {
-                    return Err(NyarError::Compile("Increment/decrement only supported for identifiers".to_string()));
+                    return Err(TypesError::Compile("Increment/decrement only supported for identifiers".to_string()));
                 };
 
                 let op_name = match op.as_str() {
                     "++" => "add",
                     "--" => "sub",
-                    _ => return Err(NyarError::Compile(format!("Unknown update operator: {}", op))),
+                    _ => return Err(TypesError::Compile(format!("Unknown update operator: {}", op))),
                 };
 
                 let loc = self.loc();

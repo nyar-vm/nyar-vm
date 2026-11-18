@@ -10,7 +10,7 @@ use crate::compiler::{
     types::hir::HirModule,
 };
 use nyar_types::{
-    FieldId, ItemInstanceId, NominalInstanceId, NyarFunctionType, NyarType, WitnessObject,
+    FieldId, ItemInstanceId, NominalInstanceId, FunctionType, SemanticType, WitnessObject,
     layout::{AggregateLayout, AggregateLayoutPlan, LayoutId},
 };
 
@@ -388,29 +388,29 @@ fn normalize_layout_references(
     Ok(normalized)
 }
 
-fn remap_layout_references(ty: &NyarType, local_to_merged: &BTreeMap<LayoutId, LayoutId>, label: &str) -> Result<NyarType, ParseError> {
+fn remap_layout_references(ty: &SemanticType, local_to_merged: &BTreeMap<LayoutId, LayoutId>, label: &str) -> Result<SemanticType, ParseError> {
     let missing =
         |layout: LayoutId| ParseError::Invalid { message: format!("布局 `{label}` 字段类型引用未登记布局 #{layout}"), span: None };
     Ok(match ty {
-        NyarType::Nominal { layout, spelling } => {
-            NyarType::Nominal { layout: *local_to_merged.get(layout).ok_or_else(|| missing(*layout))?, spelling: spelling.clone() }
+        SemanticType::Nominal { layout, spelling } => {
+            SemanticType::Nominal { layout: *local_to_merged.get(layout).ok_or_else(|| missing(*layout))?, spelling: spelling.clone() }
         }
-        NyarType::Apply(base, arguments) => NyarType::Apply(
+        SemanticType::Apply(base, arguments) => SemanticType::Apply(
             Box::new(remap_layout_references(base, local_to_merged, label)?),
             arguments.iter().map(|argument| remap_layout_references(argument, local_to_merged, label)).collect::<Result<_, _>>()?,
         ),
-        NyarType::Function(function) => NyarType::Function(Box::new(NyarFunctionType {
+        SemanticType::Function(function) => SemanticType::Function(Box::new(FunctionType {
             params: function.params.iter().map(|param| remap_layout_references(param, local_to_merged, label)).collect::<Result<_, _>>()?,
             return_type: remap_layout_references(&function.return_type, local_to_merged, label)?,
         })),
-        NyarType::Tuple(items) => {
-            NyarType::Tuple(items.iter().map(|item| remap_layout_references(item, local_to_merged, label)).collect::<Result<_, _>>()?)
+        SemanticType::Tuple(items) => {
+            SemanticType::Tuple(items.iter().map(|item| remap_layout_references(item, local_to_merged, label)).collect::<Result<_, _>>()?)
         }
-        NyarType::Array(element) => NyarType::Array(Box::new(remap_layout_references(element, local_to_merged, label)?)),
-        NyarType::FixedArray { element, length } => {
-            NyarType::FixedArray { element: Box::new(remap_layout_references(element, local_to_merged, label)?), length: *length }
+        SemanticType::Array(element) => SemanticType::Array(Box::new(remap_layout_references(element, local_to_merged, label)?)),
+        SemanticType::FixedArray { element, length } => {
+            SemanticType::FixedArray { element: Box::new(remap_layout_references(element, local_to_merged, label)?), length: *length }
         }
-        NyarType::TraitObject(witness) => NyarType::TraitObject(WitnessObject {
+        SemanticType::TraitObject(witness) => SemanticType::TraitObject(WitnessObject {
             trait_path: witness.trait_path.clone(),
             type_arguments: witness
                 .type_arguments
@@ -418,9 +418,9 @@ fn remap_layout_references(ty: &NyarType, local_to_merged: &BTreeMap<LayoutId, L
                 .map(|argument| remap_layout_references(argument, local_to_merged, label))
                 .collect::<Result<_, _>>()?,
         }),
-        NyarType::Nullable(inner) => NyarType::Nullable(Box::new(remap_layout_references(inner, local_to_merged, label)?)),
-        NyarType::Union(items) => {
-            NyarType::Union(items.iter().map(|item| remap_layout_references(item, local_to_merged, label)).collect::<Result<_, _>>()?)
+        SemanticType::Nullable(inner) => SemanticType::Nullable(Box::new(remap_layout_references(inner, local_to_merged, label)?)),
+        SemanticType::Union(items) => {
+            SemanticType::Union(items.iter().map(|item| remap_layout_references(item, local_to_merged, label)).collect::<Result<_, _>>()?)
         }
         other => other.clone(),
     })

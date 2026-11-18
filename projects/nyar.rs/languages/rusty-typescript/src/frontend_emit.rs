@@ -6,7 +6,7 @@ use chomsky_extract::{Backend, IKunExtractor};
 use chomsky_types::Loc;
 use chomsky_uir::{Analysis, ConstraintAnalysis, EGraph, IKun, IKunTree, Id, IntentBuilder};
 use nyar_aot::{NyarContext, NyarFrontend};
-use nyar_types::NyarError;
+use nyar_types::TypesError;
 use odin_vm::bytecode::format::NyarcModule;
 use oak_core::{ParseSession, SourceText};
 use oak_typescript::{ast, TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot};

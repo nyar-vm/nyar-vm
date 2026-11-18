@@ -3,7 +3,7 @@ use super::{lowerer::array_element_type, *};
 
 impl<'a> WasmMirLowerer<'a> {
     /// 从操作数结构类型取 heap array 元素类型；仅认 `Array` / `FixedArray`，禁止类型名白名单。
-    pub(super) fn infer_array_element_type(&self, operand: &MirOperand) -> Option<NyarType> {
+    pub(super) fn infer_array_element_type(&self, operand: &MirOperand) -> Option<SemanticType> {
         match operand {
             MirOperand::Value(value) => self.mir_fn.value_types.get(value).and_then(|ty| {
                 if let Some(element) = array_element_type(ty) {

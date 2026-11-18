@@ -5,24 +5,24 @@ use nyar_emitter::{
     contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef},
     observation, validate_function,
 };
-use nyar_types::NyarType;
+use nyar_types::SemanticType;
 
 /// 从 terminator 推断 `return_type`，避免 `Return { Some(...) }` 与 Unit 返回类型触发 SMIR007。
-fn function(instructions: Vec<Instruction>, terminator: Terminator, value_types: BTreeMap<ValueRef, NyarType>) -> ExecutableFunction {
+fn function(instructions: Vec<Instruction>, terminator: Terminator, value_types: BTreeMap<ValueRef, SemanticType>) -> ExecutableFunction {
     let return_type = match &terminator {
-        Terminator::Return { value: Some(Operand::Value(v)) } => value_types.get(v).cloned().unwrap_or(NyarType::Unit),
+        Terminator::Return { value: Some(Operand::Value(v)) } => value_types.get(v).cloned().unwrap_or(SemanticType::Unit),
         Terminator::Return { value: Some(Operand::Constant(c)) } => match c {
-            Constant::Bool(_) => NyarType::Boolean,
-            Constant::Int(_) => NyarType::Integer64 { signed: true },
-            Constant::Float64(_) => NyarType::Float64,
-            Constant::Utf8(_) => NyarType::Utf8,
-            Constant::Utf16(_) => NyarType::Utf16,
-            Constant::Unit => NyarType::Unit,
+            Constant::Bool(_) => SemanticType::Boolean,
+            Constant::Int(_) => SemanticType::Integer64 { signed: true },
+            Constant::Float64(_) => SemanticType::Float64,
+            Constant::Utf8(_) => SemanticType::Utf8,
+            Constant::Utf16(_) => SemanticType::Utf16,
+            Constant::Unit => SemanticType::Unit,
             // 空值没有独立名义类型，只能经带 `T?` 类型的 LoadConstant 进入计划（与 `physical_contract`
             // 同一合同）；返回类型推断无法为裸 null 常量给出载体，失败关闭。
             Constant::Null => panic!("bare null constant has no standalone semantic type"),
         },
-        _ => NyarType::Unit,
+        _ => SemanticType::Unit,
     };
     ExecutableFunction {
         return_layout: None,
@@ -47,25 +47,25 @@ fn instr(kind: InstructionKind, results: Vec<ValueRef>) -> Instruction {
 #[test]
 fn rejects_named_option_return_alias() {
     let value = ValueRef(1);
-    let actual = NyarType::Nullable(Box::new(NyarType::Integer32 { signed: true }));
+    let actual = SemanticType::Nullable(Box::new(SemanticType::Integer32 { signed: true }));
     let mut fixture = function(Vec::new(), Terminator::Return { value: Some(Operand::Value(value)) }, BTreeMap::from([(value, actual)]));
-    fixture.return_type = NyarType::Apply(Box::new(NyarType::Named(Identifier::new("Option"))), vec![NyarType::Integer32 { signed: true }]);
+    fixture.return_type = SemanticType::Apply(Box::new(SemanticType::Named(Identifier::new("Option"))), vec![SemanticType::Integer32 { signed: true }]);
     assert_eq!(validate_function(&fixture).unwrap_err().code, "SMIR007");
 }
 
 #[test]
 fn rejects_platform_alias_inside_nullable_return() {
     let value = ValueRef(1);
-    let actual = NyarType::Nullable(Box::new(NyarType::Named(Identifier::new("usize"))));
+    let actual = SemanticType::Nullable(Box::new(SemanticType::Named(Identifier::new("usize"))));
     let mut fixture = function(Vec::new(), Terminator::Return { value: Some(Operand::Value(value)) }, BTreeMap::from([(value, actual)]));
-    fixture.return_type = NyarType::Nullable(Box::new(NyarType::Integer32 { signed: false }));
+    fixture.return_type = SemanticType::Nullable(Box::new(SemanticType::Integer32 { signed: false }));
     assert_eq!(validate_function(&fixture).unwrap_err().code, "SMIR007");
 }
 
 #[test]
 fn accepts_exact_structured_nullable_return() {
     let value = ValueRef(1);
-    let actual = NyarType::Nullable(Box::new(NyarType::Integer32 { signed: true }));
+    let actual = SemanticType::Nullable(Box::new(SemanticType::Integer32 { signed: true }));
     let fixture = function(Vec::new(), Terminator::Return { value: Some(Operand::Value(value)) }, BTreeMap::from([(value, actual)]));
     assert!(validate_function(&fixture).is_ok());
 }
@@ -107,8 +107,8 @@ fn accepts_structured_array_length() {
     let receiver = ValueRef(10);
     let output = ValueRef(11);
     let mut value_types = BTreeMap::new();
-    value_types.insert(receiver, NyarType::Array(Box::new(NyarType::Integer32 { signed: true })));
-    value_types.insert(output, NyarType::Integer32 { signed: true });
+    value_types.insert(receiver, SemanticType::Array(Box::new(SemanticType::Integer32 { signed: true })));
+    value_types.insert(output, SemanticType::Integer32 { signed: true });
     let result = validate_function(&function(
         vec![instr(InstructionKind::ArrayLength { array: Operand::Value(receiver) }, vec![output])],
         Terminator::Return { value: Some(Operand::Value(output)) },
@@ -125,7 +125,7 @@ fn rejects_array_length_without_result_type() {
     let receiver = ValueRef(10);
     let output = ValueRef(11);
     let mut value_types = BTreeMap::new();
-    value_types.insert(receiver, NyarType::Array(Box::new(NyarType::Integer32 { signed: true })));
+    value_types.insert(receiver, SemanticType::Array(Box::new(SemanticType::Integer32 { signed: true })));
     let result = validate_function(&function(
         vec![instr(InstructionKind::ArrayLength { array: Operand::Value(receiver) }, vec![output])],
         Terminator::Return { value: None },
@@ -142,11 +142,11 @@ fn accepts_thin_call_with_typed_results() {
     let left = ValueRef(20);
     let right = ValueRef(21);
     let result_v = ValueRef(22);
-    let ty = NyarType::Named(Identifier::new("TokenKind"));
+    let ty = SemanticType::Named(Identifier::new("TokenKind"));
     let mut value_types = BTreeMap::new();
     value_types.insert(left, ty.clone());
     value_types.insert(right, ty);
-    value_types.insert(result_v, NyarType::Boolean);
+    value_types.insert(result_v, SemanticType::Boolean);
     let result = validate_function(&function(
         vec![instr(
             InstructionKind::Call {
@@ -166,7 +166,7 @@ fn rejects_call_result_without_semantic_type() {
     let left = ValueRef(20);
     let right = ValueRef(21);
     let result_v = ValueRef(22);
-    let ty = NyarType::Named(Identifier::new("TokenKind"));
+    let ty = SemanticType::Named(Identifier::new("TokenKind"));
     let mut value_types = BTreeMap::new();
     value_types.insert(left, ty.clone());
     value_types.insert(right, ty);
@@ -196,7 +196,7 @@ fn rejects_bare_null_constant_return() {
 fn accepts_null_constant_with_nullable_carrier() {
     // null 的合法进入路径是带 `T?` 类型的 LoadConstant；SSA 结果类型与返回类型同载体时接受。
     let output = ValueRef(3);
-    let carrier = NyarType::Nullable(Box::new(NyarType::Integer32 { signed: true }));
+    let carrier = SemanticType::Nullable(Box::new(SemanticType::Integer32 { signed: true }));
     let result = validate_function(&function(
         vec![instr(InstructionKind::LoadConstant { constant: Constant::Null, ty: Some(carrier.clone()) }, vec![output])],
         Terminator::Return { value: Some(Operand::Value(output)) },

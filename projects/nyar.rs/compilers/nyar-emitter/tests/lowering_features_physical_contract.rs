@@ -6,9 +6,9 @@ use nyar_emitter::{
     lowering::features::physical_contract::{PhysicalBackend, PhysicalValueCategory, build_physical_plan},
 };
 use nyar_emitter::contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef};
-use nyar_types::{ImportIndex, ItemInstanceId, NyarType};
+use nyar_types::{ImportIndex, ItemInstanceId, SemanticType};
 
-fn function(symbol: &str, return_type: NyarType, parameters: Vec<NyarType>) -> ExecutableFunction {
+fn function(symbol: &str, return_type: SemanticType, parameters: Vec<SemanticType>) -> ExecutableFunction {
     let values = parameters.iter().enumerate().map(|(index, ty)| (ValueRef(index as u32), ty.clone())).collect();
     ExecutableFunction {
         return_layout: None,
@@ -68,7 +68,7 @@ fn submission(functions: Vec<(QualifiedName, ExecutableFunction)>) -> FragmentSu
 fn constant_int_call_argument_is_not_unit() {
     let target = QualifiedName::new(vec![Identifier::new("std"), Identifier::new("SwissTable"), Identifier::new("new")]);
     let caller = QualifiedName::new(vec![Identifier::new("std"), Identifier::new("HashMap"), Identifier::new("new")]);
-    let mut caller_function = function("std.HashMap.new", NyarType::Named(Identifier::new("HashMap")), vec![]);
+    let mut caller_function = function("std.HashMap.new", SemanticType::Named(Identifier::new("HashMap")), vec![]);
     caller_function.blocks[0].instructions.push(instr(
         InstructionKind::Call {
             callee: Operand::Symbol(nyar::NamePath::new(target.parts().to_vec())),
@@ -79,7 +79,7 @@ fn constant_int_call_argument_is_not_unit() {
     let submission = submission(vec![
         (
             target.clone(),
-            function("std.SwissTable.new", NyarType::Named(Identifier::new("SwissTable")), vec![NyarType::Integer64 { signed: true }]),
+            function("std.SwissTable.new", SemanticType::Named(Identifier::new("SwissTable")), vec![SemanticType::Integer64 { signed: true }]),
         ),
         (caller, caller_function),
     ]);
@@ -94,9 +94,9 @@ fn bare_symbol_call_argument_uses_callee_parameter_type() {
     let target = QualifiedName::new(vec![Identifier::new("std"), Identifier::new("ArrayList"), Identifier::new("push")]);
     let caller = QualifiedName::new(vec![Identifier::new("std"), Identifier::new("SwissTable"), Identifier::new("new")]);
     let mut caller_function =
-        function("std.SwissTable.new", NyarType::Named(Identifier::new("SwissTable")), vec![NyarType::Integer64 { signed: true }]);
+        function("std.SwissTable.new", SemanticType::Named(Identifier::new("SwissTable")), vec![SemanticType::Integer64 { signed: true }]);
     let list = ValueRef(1);
-    caller_function.value_types.insert(list, NyarType::Named(Identifier::new("ArrayList")));
+    caller_function.value_types.insert(list, SemanticType::Named(Identifier::new("ArrayList")));
     caller_function.blocks[0].instructions.push(instr(
         InstructionKind::Call {
             callee: Operand::Symbol(nyar::NamePath::new(target.parts().to_vec())),
@@ -104,9 +104,9 @@ fn bare_symbol_call_argument_uses_callee_parameter_type() {
         },
         Vec::new(),
     ));
-    let option_ty = NyarType::Apply(Box::new(NyarType::Named(Identifier::new("Option"))), vec![NyarType::Named(Identifier::new("Entry"))]);
+    let option_ty = SemanticType::Apply(Box::new(SemanticType::Named(Identifier::new("Option"))), vec![SemanticType::Named(Identifier::new("Entry"))]);
     let submission = submission(vec![
-        (target.clone(), function("std.ArrayList.push", NyarType::Unit, vec![NyarType::Named(Identifier::new("ArrayList")), option_ty])),
+        (target.clone(), function("std.ArrayList.push", SemanticType::Unit, vec![SemanticType::Named(Identifier::new("ArrayList")), option_ty])),
         (caller, caller_function),
     ]);
     let plans = build_physical_plan(&submission, PhysicalBackend::WasmJsGlue)
@@ -122,7 +122,7 @@ fn bare_symbol_call_argument_uses_callee_parameter_type() {
 fn scalar_call_has_exact_backend_independent_categories() {
     let target = QualifiedName::new(vec![Identifier::new("neutral"), Identifier::new("target")]);
     let caller = QualifiedName::new(vec![Identifier::new("neutral"), Identifier::new("caller")]);
-    let mut caller_function = function("neutral.caller", NyarType::Integer64 { signed: true }, vec![NyarType::Integer64 { signed: true }]);
+    let mut caller_function = function("neutral.caller", SemanticType::Integer64 { signed: true }, vec![SemanticType::Integer64 { signed: true }]);
     caller_function.blocks[0].instructions.push(instr(
         InstructionKind::Call {
             callee: Operand::Symbol(nyar::NamePath::new(target.parts().to_vec())),
@@ -131,7 +131,7 @@ fn scalar_call_has_exact_backend_independent_categories() {
         Vec::new(),
     ));
     let submission = submission(vec![
-        (target.clone(), function("neutral.target", NyarType::Integer64 { signed: true }, vec![NyarType::Integer64 { signed: true }])),
+        (target.clone(), function("neutral.target", SemanticType::Integer64 { signed: true }, vec![SemanticType::Integer64 { signed: true }])),
         (caller, caller_function),
     ]);
     for backend in
@@ -147,9 +147,9 @@ fn exact_helper_and_operator_calls_plan_without_suffix_resolution() {
     let main_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("main")]);
     let answer_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("answer")]);
     let operator_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("infix !=")]);
-    let mut caller = function("main::main", NyarType::Integer64 { signed: true }, vec![]);
+    let mut caller = function("main::main", SemanticType::Integer64 { signed: true }, vec![]);
     let value = ValueRef(0);
-    caller.value_types.insert(value, NyarType::Integer64 { signed: true });
+    caller.value_types.insert(value, SemanticType::Integer64 { signed: true });
     caller.blocks[0].instructions.push(instr(
         InstructionKind::Call {
             callee: Operand::Symbol(nyar::NamePath::new(vec![Identifier::new("main"), Identifier::new("answer")])),
@@ -165,13 +165,13 @@ fn exact_helper_and_operator_calls_plan_without_suffix_resolution() {
         },
         vec![ValueRef(1)],
     ));
-    caller.value_types.insert(ValueRef(2), NyarType::Integer64 { signed: true });
-    caller.value_types.insert(ValueRef(1), NyarType::Boolean);
+    caller.value_types.insert(ValueRef(2), SemanticType::Integer64 { signed: true });
+    caller.value_types.insert(ValueRef(1), SemanticType::Boolean);
     let submission = submission(vec![
-        (answer_op, function("main::answer", NyarType::Integer64 { signed: true }, vec![])),
+        (answer_op, function("main::answer", SemanticType::Integer64 { signed: true }, vec![])),
         (
             operator_op,
-            function("main::infix !=", NyarType::Boolean, vec![NyarType::Integer64 { signed: true }, NyarType::Integer64 { signed: true }]),
+            function("main::infix !=", SemanticType::Boolean, vec![SemanticType::Integer64 { signed: true }, SemanticType::Integer64 { signed: true }]),
         ),
         (main_op, caller),
     ]);
@@ -184,14 +184,14 @@ fn exact_helper_and_operator_calls_plan_without_suffix_resolution() {
 fn bare_module_helper_call_is_rejected_without_exact_identity() {
     let main_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("main")]);
     let answer_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("answer")]);
-    let mut caller = function("main::main", NyarType::Integer64 { signed: true }, vec![]);
-    caller.value_types.insert(ValueRef(0), NyarType::Integer64 { signed: true });
+    let mut caller = function("main::main", SemanticType::Integer64 { signed: true }, vec![]);
+    caller.value_types.insert(ValueRef(0), SemanticType::Integer64 { signed: true });
     caller.blocks[0].instructions.push(instr(
         InstructionKind::Call { callee: Operand::Symbol(nyar::NamePath::new(vec![Identifier::new("answer")])), arguments: vec![] },
         vec![ValueRef(0)],
     ));
     let submission =
-        submission(vec![(answer_op.clone(), function("main::answer", NyarType::Integer64 { signed: true }, vec![])), (main_op, caller)]);
+        submission(vec![(answer_op.clone(), function("main::answer", SemanticType::Integer64 { signed: true }, vec![])), (main_op, caller)]);
     let error = build_physical_plan(&submission, PhysicalBackend::WasmJsGlue).expect_err("bare helper must fail before physical planning");
     assert_eq!(error.code, "BPHYS004");
 }
@@ -201,8 +201,8 @@ fn utf8_and_utf16_map_to_reference_without_text_projection() {
     let utf8 = QualifiedName::new(vec![Identifier::new("neutral"), Identifier::new("text8")]);
     let utf16 = QualifiedName::new(vec![Identifier::new("neutral"), Identifier::new("text16")]);
     let submission = submission(vec![
-        (utf8, function("neutral.text8", NyarType::Utf8, vec![])),
-        (utf16, function("neutral.text16", NyarType::Utf16, vec![])),
+        (utf8, function("neutral.text8", SemanticType::Utf8, vec![])),
+        (utf16, function("neutral.text16", SemanticType::Utf16, vec![])),
     ]);
     for backend in
         [PhysicalBackend::Jvm, PhysicalBackend::Clr, PhysicalBackend::WasmCore, PhysicalBackend::WasmJsGlue, PhysicalBackend::WasiComponent]
@@ -217,7 +217,7 @@ fn utf8_and_utf16_map_to_reference_without_text_projection() {
 fn external_import_call_plans_with_import_parameter_types() {
     let caller = QualifiedName::new(vec![Identifier::new("neutral"), Identifier::new("caller")]);
     let import_id = ItemInstanceId::from_index(1).expect("import id");
-    let mut caller_function = function("neutral.caller", NyarType::Integer32 { signed: true }, vec![NyarType::Integer32 { signed: true }]);
+    let mut caller_function = function("neutral.caller", SemanticType::Integer32 { signed: true }, vec![SemanticType::Integer32 { signed: true }]);
     caller_function.blocks[0]
         .instructions
         .push(instr(InstructionKind::Call { callee: Operand::Item(import_id), arguments: vec![Operand::Value(ValueRef(0))] }, Vec::new()));
@@ -227,8 +227,8 @@ fn external_import_call_plans_with_import_parameter_types() {
         BackendImport {
             index: ImportIndex::from_index(0).expect("import index"),
             link: ExternalImportLink::host(Some(Identifier::new("js")), vec!["random".into()]),
-            parameter_types: vec![NyarType::Integer32 { signed: true }],
-            return_type: NyarType::Integer32 { signed: true },
+            parameter_types: vec![SemanticType::Integer32 { signed: true }],
+            return_type: SemanticType::Integer32 { signed: true },
         },
     );
     let submission = FragmentSubmission::from_backend_plan(plan);
@@ -241,7 +241,7 @@ fn external_import_call_plans_with_import_parameter_types() {
 #[test]
 fn unresolved_call_is_rejected_before_backend_emission() {
     let operation = QualifiedName::new(vec![Identifier::new("neutral"), Identifier::new("caller")]);
-    let mut caller = function("neutral.caller", NyarType::Unit, vec![]);
+    let mut caller = function("neutral.caller", SemanticType::Unit, vec![]);
     caller.blocks[0].instructions.push(instr(
         InstructionKind::Call {
             callee: Operand::Symbol(nyar::NamePath::new(vec![Identifier::new("neutral"), Identifier::new("missing")])),
@@ -257,7 +257,7 @@ fn unresolved_call_is_rejected_before_backend_emission() {
 #[test]
 fn unsupported_wide_scalar_is_rejected_without_a_backend_default() {
     let operation = QualifiedName::new(vec![Identifier::new("neutral"), Identifier::new("wide")]);
-    let submission = submission(vec![(operation, function("neutral.wide", NyarType::Integer128 { signed: true }, vec![]))]);
+    let submission = submission(vec![(operation, function("neutral.wide", SemanticType::Integer128 { signed: true }, vec![]))]);
     let error = build_physical_plan(&submission, PhysicalBackend::Jvm).expect_err("i128 requires an explicit JVM physical contract");
     assert_eq!(error.code, "BPHYS001");
 }

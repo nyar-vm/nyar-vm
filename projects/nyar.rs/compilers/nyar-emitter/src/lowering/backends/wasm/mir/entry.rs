@@ -37,7 +37,7 @@ use super::{
 };
 use crate::{
     FragmentSubmission,
-    backend_plan_views::NyarType,
+    backend_plan_views::SemanticType,
     contracts::instruction_primary_result,
     nyar_backend_wasi::{WasmBinaryModule, WasmPackageKind, WasmSection},
 };
@@ -210,7 +210,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         type_index
     };
     // 合同 §5：managed 字符串 → 宿主 i32 句柄的转换在目标计划阶段冻结，编码期只消费配方表。
-    // `NyarType::Utf8` SSA 值携带已登记 gc struct layout 时，宿主导入边界必须按配方转换；
+    // `SemanticType::Utf8` SSA 值携带已登记 gc struct layout 时，宿主导入边界必须按配方转换；
     // 合成导入 `env::host_intern_utf8` 仅在模块确有 managed 字符串时按需追加，因此
     // `import_count` 在冻结步之后再取。
     let managed_utf8_to_host_handle = if wasi_mode {
@@ -315,7 +315,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         return_type: Option<u8>,
         has_environment: bool,
         environment_layout: Option<LayoutId>,
-        environment_type: Option<NyarType>,
+        environment_type: Option<SemanticType>,
     }
     let mut function_value_plans: BTreeMap<ItemInstanceId, FunctionValuePlan> = BTreeMap::new();
     for (_, mir_fn) in mir_operations.iter() {
@@ -329,7 +329,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
                 else {
                     return Err(format!("WASM 函数值 `{instance:?}` 缺少结果槽: {}", mir_fn.symbol));
                 };
-                let Some(NyarType::Function(signature)) = mir_fn.value_types.get(&output)
+                let Some(SemanticType::Function(signature)) = mir_fn.value_types.get(&output)
                 else {
                     return Err(format!("WASM 函数值 `{instance:?}` 缺少冻结 Function 签名: {}", mir_fn.symbol));
                 };
@@ -339,15 +339,15 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
                     .map(|ty| wasm_function_abi_value_type_for(&ctx, ty, &gc_struct_type_indices, js_glue_utf8_as_anyref))
                     .collect::<crate::Result<Vec<u8>>>()?;
                 let return_type = match &signature.return_type {
-                    NyarType::Unit | NyarType::Bottom => None,
+                    SemanticType::Unit | SemanticType::Bottom => None,
                     other => Some(wasm_function_abi_value_type_for(&ctx, other, &gc_struct_type_indices, js_glue_utf8_as_anyref)?),
                 };
                 let (environment_layout, environment_type) = match environment {
                     Some(MirOperand::Value(value)) => {
                         // 泛型 lambda 的环境类型常是 `Apply(Nominal, args)`，不一定落在
-                        // `NyarType::Nominal`；layout 身份以计划冻结的 `value_layouts` 为准。
+                        // `SemanticType::Nominal`；layout 身份以计划冻结的 `value_layouts` 为准。
                         let layout = mir_fn.value_layouts.get(value).copied().or_else(|| match mir_fn.value_types.get(value) {
-                            Some(NyarType::Nominal { layout, .. }) => Some(*layout),
+                            Some(SemanticType::Nominal { layout, .. }) => Some(*layout),
                             _ => None,
                         });
                         (layout, mir_fn.value_types.get(value).cloned())
@@ -592,7 +592,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             // 这个空 `result` 里。）
             let entry_instance = submission.backend_plan.entry_operation().expect("WASI 入口必须保留 Compiler 实例身份");
             let entry_return = return_types_by_instance.get(&entry_instance).copied();
-            let entry_mir_params: Vec<NyarType> = submission
+            let entry_mir_params: Vec<SemanticType> = submission
                 .backend_plan
                 .entry_operation()
                 .as_ref()
@@ -605,7 +605,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             let argv_array_ty = gc_array_type_indices.get("Utf8").copied();
             let entry_argv_plan = match entry_mir_params.as_slice() {
                 [] => None,
-                [NyarType::Array(element)] if is_js_glue_host_string_type(element.as_ref()) => {
+                [SemanticType::Array(element)] if is_js_glue_host_string_type(element.as_ref()) => {
                     match (get_arguments_import, argv_array_ty) {
                         (Some(import_index), Some(array_ty)) => Some((import_index, array_ty)),
                         _ => {
@@ -889,7 +889,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
 
 /// 目标计划阶段冻结「managed 字符串 → 宿主 i32 句柄」转换配方（合同 §5）。
 ///
-/// 扫描所有函数携带 gc struct layout 的 `NyarType::Utf8` SSA 值：这些值在宿主导入
+/// 扫描所有函数携带 gc struct layout 的 `SemanticType::Utf8` SSA 值：这些值在宿主导入
 /// 边界（ABI 声明 i32 句柄）必须由编码期按配方转换，转换事实不允许在编码阶段
 /// 按类型名或布局形状重新推导。字节字段槽来自 layout 的整数字节数组字段，
 /// arraytype 缺失时按注册表同一构造器补登记；合成导入 `env::host_intern_utf8`
@@ -964,8 +964,8 @@ fn freeze_managed_utf8_to_host_handle_plans(
             .iter()
             .enumerate()
             .find_map(|(index, field)| match &field.ty {
-                NyarType::Array(element) | NyarType::FixedArray { element, .. } => {
-                    matches!(element.as_ref(), NyarType::Integer8 { .. }).then(|| (index as u32, element.as_ref().clone()))
+                SemanticType::Array(element) | SemanticType::FixedArray { element, .. } => {
+                    matches!(element.as_ref(), SemanticType::Integer8 { .. }).then(|| (index as u32, element.as_ref().clone()))
                 }
                 _ => None,
             })
@@ -991,7 +991,7 @@ fn freeze_managed_utf8_to_host_handle_plans(
 /// 目标计划阶段冻结「宿主 i32 句柄 → managed 字符串」库导出边界物化配方（合同 §5）。
 ///
 /// 扫描已登记公开导出名的实例：entry 块形参 SSA 值绑定已登记 gc struct layout 的
-/// `NyarType::Utf8` 形参，其物理槽是 anyref，而宿主按冻结库 ABI 传 i32 句柄，导出
+/// `SemanticType::Utf8` 形参，其物理槽是 anyref，而宿主按冻结库 ABI 传 i32 句柄，导出
 /// 边界必须物化。物化事实与冻结 ABI 载体交叉核对：载体不是 `i32` 说明合同已坏，
 /// 结构化失败，禁止静默回落。字节字段槽与 arraytype 推导与 managed→host 冻结同法；
 /// 合成导入 `env::host_utf8_extract` 仅在确有需物化形参时追加到导入表尾部。
@@ -1055,8 +1055,8 @@ fn freeze_host_handle_to_managed_utf8_plans(
                 .iter()
                 .enumerate()
                 .find_map(|(field_index, field)| match &field.ty {
-                    NyarType::Array(element) | NyarType::FixedArray { element, .. } => {
-                        matches!(element.as_ref(), NyarType::Integer8 { .. }).then(|| (field_index as u32, element.as_ref().clone()))
+                    SemanticType::Array(element) | SemanticType::FixedArray { element, .. } => {
+                        matches!(element.as_ref(), SemanticType::Integer8 { .. }).then(|| (field_index as u32, element.as_ref().clone()))
                     }
                     _ => None,
                 })
@@ -1291,8 +1291,8 @@ fn freeze_utf8_host_handle_materialize_plans(
             .iter()
             .enumerate()
             .find_map(|(field_index, field)| match &field.ty {
-                NyarType::Array(element) | NyarType::FixedArray { element, .. } => {
-                    matches!(element.as_ref(), NyarType::Integer8 { .. }).then(|| (field_index as u32, element.as_ref().clone()))
+                SemanticType::Array(element) | SemanticType::FixedArray { element, .. } => {
+                    matches!(element.as_ref(), SemanticType::Integer8 { .. }).then(|| (field_index as u32, element.as_ref().clone()))
                 }
                 _ => None,
             })
@@ -1493,9 +1493,9 @@ fn emit_host_handle_to_managed_utf8_wrapper_body(
     WasmOpcode::End.encode(body);
 }
 
-pub(super) fn emit_wasi_entry_default_arg(ty: &NyarType, gc_array_type_indices: &BTreeMap<String, u32>, body: &mut Vec<u8>) {
+pub(super) fn emit_wasi_entry_default_arg(ty: &SemanticType, gc_array_type_indices: &BTreeMap<String, u32>, body: &mut Vec<u8>) {
     match ty {
-        NyarType::Array(element) | NyarType::FixedArray { element, .. } => {
+        SemanticType::Array(element) | SemanticType::FixedArray { element, .. } => {
             let key = wasm_array_element_type_key(element);
             let type_index = gc_array_type_indices.get(&key).copied();
             if let Some(type_index) = type_index {
@@ -1506,12 +1506,12 @@ pub(super) fn emit_wasi_entry_default_arg(ty: &NyarType, gc_array_type_indices: 
                 panic!("WASI entry array parameter `{key}` 缺少已注册的 array type");
             }
         }
-        NyarType::Float64 => encode_f64_const(0.0, body),
+        SemanticType::Float64 => encode_f64_const(0.0, body),
         // f32 有独立载体：默认值按真实 f32 位模式发射（+0.0），不得借 f64 载体。
-        NyarType::Float32 => encode_f32_const(0.0, body),
-        NyarType::Integer64 { .. } | NyarType::Integer128 { .. } => encode_i64_const(0, body),
-        NyarType::Unit => encode_ref_null_anyref(body),
-        NyarType::Bottom => encode_i32_const(0, body),
+        SemanticType::Float32 => encode_f32_const(0.0, body),
+        SemanticType::Integer64 { .. } | SemanticType::Integer128 { .. } => encode_i64_const(0, body),
+        SemanticType::Unit => encode_ref_null_anyref(body),
+        SemanticType::Bottom => encode_i32_const(0, body),
         other if is_js_glue_host_string_type(other) => encode_i32_const(0, body),
         other if type_is_wasm_gc_heap_reference(other) => {
             panic!("WASI entry heap 参数 `{other:?}` 缺少 array type 合同")
@@ -1535,7 +1535,7 @@ fn wasi_entry_declares_argv(submission: &FragmentSubmission) -> bool {
         .and_then(|instance| submission.backend_plan.get_function(&instance))
         .is_some_and(|view| {
             matches!(view.function.param_types.as_slice(),
-                [NyarType::Array(element)] if is_js_glue_host_string_type(element.as_ref()))
+                [SemanticType::Array(element)] if is_js_glue_host_string_type(element.as_ref()))
         })
 }
 
@@ -1764,42 +1764,42 @@ fn emit_library_field_accessors<'name>(
 ) -> crate::Result<()> {
     /// 从导出位置（参数或返回值）收集桥接可达节点。
     ///
-    /// - `Nominal` 自带布局；`Apply` 只从计划冻结的 `NyarType → LayoutId`
+    /// - `Nominal` 自带布局；`Apply` 只从计划冻结的 `SemanticType → LayoutId`
     ///   索引解析，索引缺失直接跳过（schema 侧同样没有字段合同，宿主失败闭合）。
     /// - heap `Array<T>` 收集元素类型，供发射 `array.new_default/get/set/len`。
     /// - 深搜按 `reachable` 去重，布局环不会死循环。
     fn collect_bridge_nodes(
-        ty: &NyarType,
+        ty: &SemanticType,
         ctx: &ExecutableLoweringContext,
         reachable: &mut BTreeSet<LayoutId>,
-        array_elements: &mut BTreeMap<String, NyarType>,
-        worklist: &mut Vec<NyarType>,
+        array_elements: &mut BTreeMap<String, SemanticType>,
+        worklist: &mut Vec<SemanticType>,
     ) {
         match ty {
-            NyarType::Array(element) => {
+            SemanticType::Array(element) => {
                 array_elements.entry(wasm_array_element_type_key(element)).or_insert_with(|| element.as_ref().clone());
                 worklist.push(element.as_ref().clone());
             }
-            NyarType::FixedArray { element, .. } | NyarType::Nullable(element) => {
+            SemanticType::FixedArray { element, .. } | SemanticType::Nullable(element) => {
                 worklist.push(element.as_ref().clone());
             }
-            NyarType::Tuple(elements) | NyarType::Union(elements) => {
+            SemanticType::Tuple(elements) | SemanticType::Union(elements) => {
                 worklist.extend(elements.iter().cloned());
             }
-            NyarType::Nominal { layout, .. } => {
+            SemanticType::Nominal { layout, .. } => {
                 if reachable.insert(*layout) {
                     if let Some(item) = ctx.layout_by_id(*layout) {
                         worklist.extend(item.fields.iter().map(|field| field.ty.clone()));
                     }
                 }
             }
-            NyarType::Apply(..) => {
+            SemanticType::Apply(..) => {
                 if let Some(item) = ctx.layout_for_nyar_type(ty) {
                     if reachable.insert(item.id) {
                         worklist.extend(item.fields.iter().map(|field| field.ty.clone()));
                     }
                 }
-                else if let NyarType::Apply(base, args) = ty {
+                else if let SemanticType::Apply(base, args) = ty {
                     worklist.push(base.as_ref().clone());
                     worklist.extend(args.iter().cloned());
                 }
@@ -1808,7 +1808,7 @@ fn emit_library_field_accessors<'name>(
         }
     }
 
-    let mut worklist: Vec<NyarType> = Vec::new();
+    let mut worklist: Vec<SemanticType> = Vec::new();
     for (instance, _) in submission.backend_plan.export_names() {
         let Some(view) = submission.backend_plan.get_function(instance)
         else {
@@ -1818,18 +1818,18 @@ fn emit_library_field_accessors<'name>(
         worklist.push(view.function.return_type.clone());
     }
     let mut reachable: BTreeSet<LayoutId> = BTreeSet::new();
-    let mut array_elements: BTreeMap<String, NyarType> = BTreeMap::new();
+    let mut array_elements: BTreeMap<String, SemanticType> = BTreeMap::new();
     // Option 标量载荷的物理载体集合：`None` 是 `ref.null`，`Some(标量)` 必须装进
     // 后端已注册的 `[i32]` / `[i64]` / `[f64]` box。只在这里收集**导出签名可达**的载荷，
     // 不按类型名或调用点外的事实猜。
     let mut option_payloads: BTreeSet<String> = BTreeSet::new();
     // unite 变体身份桥：导出签名可达的全部 sum（零载荷与带载荷）都需要按判别
     // tag 读回；带载荷变体再按同一份 sum 身份派生 payload accessor。
-    // 索引来自 canonical 冻结的 `NyarType → SumTypeLayout`，不按名字识别。
+    // 索引来自 canonical 冻结的 `SemanticType → SumTypeLayout`，不按名字识别。
     let sums = submission.backend_plan.sum_layout_by_nyar_type();
     let mut reachable_sums: BTreeMap<nyar_types::NominalInstanceId, nyar_types::SumTypeLayout> = BTreeMap::new();
     // 类型工作列表按类型去重：递归 sum 的载荷会再次命中自身，没有去重会无限展开。
-    let mut visited_types: BTreeSet<NyarType> = BTreeSet::new();
+    let mut visited_types: BTreeSet<SemanticType> = BTreeSet::new();
     while let Some(ty) = worklist.pop() {
         if !visited_types.insert(ty.clone()) {
             continue;
@@ -1839,7 +1839,7 @@ fn emit_library_field_accessors<'name>(
             // 变体载荷也是 ABI 边界的一部分：嵌套 sum / 聚合 / 数组必须一起可达。
             worklist.extend(sum.variants.iter().filter_map(|variant| variant.payload_type.clone()));
         }
-        if let NyarType::Nullable(inner) = &ty {
+        if let SemanticType::Nullable(inner) = &ty {
             let inner_schema = super::abi_schema::abi_schema_for_type(inner);
             if let Some(contract) = super::abi_schema::option_box_contract(&inner_schema) {
                 option_payloads.insert(contract.payload.to_string());
@@ -2030,9 +2030,9 @@ fn emit_library_field_accessors<'name>(
                 }
                 else {
                     match field.ty {
-                        NyarType::Float32 => VALTYPE_F32,
-                        NyarType::Float64 => VALTYPE_F64,
-                        NyarType::Integer64 { .. } => VALTYPE_I64,
+                        SemanticType::Float32 => VALTYPE_F32,
+                        SemanticType::Float64 => VALTYPE_F64,
+                        SemanticType::Integer64 { .. } => VALTYPE_I64,
                         _ => VALTYPE_I32,
                     }
                 };
@@ -2043,9 +2043,9 @@ fn emit_library_field_accessors<'name>(
                 ];
                 if !inline_aggregate {
                     lir.push(match field.ty {
-                        NyarType::Float32 => WasmBodyInstruction::MemArg { opcode: WasmOpcode::F32Load, align: 2, offset: 0 },
-                        NyarType::Float64 => WasmBodyInstruction::MemArg { opcode: WasmOpcode::F64Load, align: 3, offset: 0 },
-                        NyarType::Integer64 { .. } => WasmBodyInstruction::MemArg { opcode: WasmOpcode::I64Load, align: 3, offset: 0 },
+                        SemanticType::Float32 => WasmBodyInstruction::MemArg { opcode: WasmOpcode::F32Load, align: 2, offset: 0 },
+                        SemanticType::Float64 => WasmBodyInstruction::MemArg { opcode: WasmOpcode::F64Load, align: 3, offset: 0 },
+                        SemanticType::Integer64 { .. } => WasmBodyInstruction::MemArg { opcode: WasmOpcode::I64Load, align: 3, offset: 0 },
                         _ => WasmBodyInstruction::MemArg { opcode: WasmOpcode::I32Load, align: 2, offset: 0 },
                     });
                 }

@@ -13,13 +13,13 @@ use nyar_emitter::{
     contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef},
     testing::lower_fragment_to_wasm_mir_module,
 };
-use nyar_types::{ItemInstanceId, NyarFunctionType, NyarType};
+use nyar_types::{ItemInstanceId, FunctionType, SemanticType};
 use std::{collections::BTreeMap, process::Command};
 
-const I32: NyarType = NyarType::Integer32 { signed: true };
+const I32: SemanticType = SemanticType::Integer32 { signed: true };
 
-fn function_type(params: Vec<NyarType>, return_type: NyarType) -> NyarType {
-    NyarType::Function(Box::new(NyarFunctionType { params, return_type }))
+fn function_type(params: Vec<SemanticType>, return_type: SemanticType) -> SemanticType {
+    SemanticType::Function(Box::new(FunctionType { params, return_type }))
 }
 
 /// `cmp(a: i32, b: i32) -> i32`：忽略实参，恒返回 42（间接调用命中即证 table/elem/typeidx 全对）。
@@ -50,7 +50,7 @@ fn cmp_function() -> ExecutableFunction {
 ///
 /// `callee_type` 是函数值 SSA 的登记类型；fail-closed 测试用它注入缺事实形状。
 /// `referenced_instance` 是 `LoadFunctionRef` 引用的实例身份。
-fn main_function(callee_type: NyarType, referenced_instance: ItemInstanceId, environment: Option<Operand>, captured: Vec<String>) -> ExecutableFunction {
+fn main_function(callee_type: SemanticType, referenced_instance: ItemInstanceId, environment: Option<Operand>, captured: Vec<String>) -> ExecutableFunction {
     let load = Instruction::from_kind(InstructionKind::LoadFunctionRef {
         instance: referenced_instance,
         environment,
@@ -86,12 +86,12 @@ fn cmp_instance() -> ItemInstanceId {
     ItemInstanceId::from_index(0).expect("测试实例身份")
 }
 
-fn lower(callee_type: NyarType, referenced_instance: ItemInstanceId) -> nyar_emitter::Result<WasmBinaryModule> {
+fn lower(callee_type: SemanticType, referenced_instance: ItemInstanceId) -> nyar_emitter::Result<WasmBinaryModule> {
     lower_with(callee_type, referenced_instance, None, Vec::new())
 }
 
 fn lower_with(
-    callee_type: NyarType,
+    callee_type: SemanticType,
     referenced_instance: ItemInstanceId,
     environment: Option<Operand>,
     captured: Vec<String>,
@@ -200,7 +200,7 @@ fn wasm_indirect_call_without_frozen_signature_fails_closed() {
 /// fail-closed：callee 的冻结签名与被引用实例的物理签名无法适配间接调用时结构化失败。
 #[test]
 fn wasm_indirect_call_signature_mismatch_fails_closed() {
-    let i64_ty = NyarType::Integer64 { signed: true };
+    let i64_ty = SemanticType::Integer64 { signed: true };
     let error = lower(function_type(vec![i64_ty.clone(), i64_ty], I32), cmp_instance()).expect_err("签名不一致不得静默编码");
     assert!(error.contains("物理签名"), "错误必须是结构化的签名适配失败: {error}");
 }

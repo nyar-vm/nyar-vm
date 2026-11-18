@@ -29,14 +29,14 @@ pub(crate) fn testing_lower_fragment_to_wasm_mir_module(submission: &FragmentSub
 
 pub(crate) fn testing_jvm_type_descriptor(
     layouts: &nyar_types::AggregateLayoutPlan,
-    ty: &crate::backend_plan_views::NyarType,
+    ty: &crate::backend_plan_views::SemanticType,
 ) -> Result<crate::nyar_backend_jvm::JvmTypeDescriptor> {
     jvm::emit::jvm_type_descriptor(layouts, ty)
 }
 
 pub(crate) fn testing_msil_type(
     layouts: &nyar_types::AggregateLayoutPlan,
-    ty: &crate::backend_plan_views::NyarType,
+    ty: &crate::backend_plan_views::SemanticType,
 ) -> Result<crate::nyar_backend_clr::MsilType> {
     clr::emit::msil_type(layouts, ty)
 }

@@ -22,15 +22,15 @@ use crate::{
     backend_plan_views::{
         ExecutableBlockRef as MirBlockRef, ExecutableConstant as MirConstant, ExecutableFunction as MirFunction,
         ExecutableInstruction as MirInstruction, ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand,
-        ExecutableStorageKind as MirStorageKind, ExecutableValueRef as MirValueRef, NyarType,
+        ExecutableStorageKind as MirStorageKind, ExecutableValueRef as MirValueRef, SemanticType,
     },
 };
 use acorn_wasm::{VALTYPE_EXTERNREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, WasmOpcode};
 use nyar_types::{ItemInstanceId, LayoutId};
 
-pub(in crate::lowering::backends::wasm) fn array_element_type(array_type: &NyarType) -> Option<&NyarType> {
+pub(in crate::lowering::backends::wasm) fn array_element_type(array_type: &SemanticType) -> Option<&SemanticType> {
     match array_type {
-        NyarType::Array(element) | NyarType::FixedArray { element, .. } => Some(element.as_ref()),
+        SemanticType::Array(element) | SemanticType::FixedArray { element, .. } => Some(element.as_ref()),
         _ => None,
     }
 }
@@ -357,7 +357,7 @@ impl<'a> WasmMirLowerer<'a> {
         Ok(lowerer)
     }
 
-    pub(super) fn storage_for_type(&self, ty: &NyarType) -> MirStorageKind {
+    pub(super) fn storage_for_type(&self, ty: &SemanticType) -> MirStorageKind {
         mir_storage_for_type(self.ctx, ty, self.js_glue_utf8_as_anyref)
     }
 
@@ -571,7 +571,7 @@ impl<'a> WasmMirLowerer<'a> {
     pub(super) fn operand_is_heap_array(&self, operand: &MirOperand) -> bool {
         match operand {
             MirOperand::Value(vref) => match self.mir_fn.value_types.get(vref) {
-                Some(ty) => matches!(ty, NyarType::Array(_) | NyarType::FixedArray { .. }),
+                Some(ty) => matches!(ty, SemanticType::Array(_) | SemanticType::FixedArray { .. }),
                 None => false,
             },
             _ => false,

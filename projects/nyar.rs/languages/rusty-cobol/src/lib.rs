@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-use nyar_types::{Id, Loc, NyarContext, NyarError, NyarFrontend, Vfs};
+use nyar_types::{Id, Loc, NyarContext, TypesError, NyarFrontend, Vfs};
 use oak_cobol::{ast::CobolRoot, CobolBuilder, CobolLanguage};
 use oak_core::{Builder, SourceText};
 
@@ -22,13 +22,13 @@ impl Default for RustyCobolFrontend {
 impl NyarFrontend<(), CobolRoot> for RustyCobolFrontend {
     type Language = CobolLanguage;
 
-    fn parse(&self, source: &str) -> Result<CobolRoot, NyarError> {
+    fn parse(&self, source: &str) -> Result<CobolRoot, TypesError> {
         let builder = CobolBuilder::new(&self.language);
         let source_text = SourceText::new(source);
         let mut session = oak_core::parser::ParseSession::<CobolLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
-        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output.result.map_err(|e| TypesError::Parse(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, _ast: &CobolRoot, _ctx: &mut NyarContext<'_, V>) -> Id {

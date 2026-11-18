@@ -4,7 +4,7 @@
 //! 调用与聚合合同。它不创建、不修正 callable、layout 或类型等语义事实。
 
 use nyar_types::{
-    CanonicalPrimitiveType, CanonicalTypeKind, Identifier, LinkedSemanticProgram, NyarType, TypeId,
+    CanonicalPrimitiveType, CanonicalTypeKind, Identifier, LinkedSemanticProgram, SemanticType, TypeId,
     semantic_ids::{ItemId, MirValueId},
 };
 use std::collections::BTreeMap;
@@ -1212,36 +1212,36 @@ pub fn validate_named_residues(linked: &LinkedSemanticProgram) -> Result<(), Val
 }
 
 /// 递归返回第一个与已登记身份同名的 `Named` 残留。
-fn shadowed_named_residue<'a>(linked: &LinkedSemanticProgram, ty: &'a NyarType) -> Option<&'a Identifier> {
+fn shadowed_named_residue<'a>(linked: &LinkedSemanticProgram, ty: &'a SemanticType) -> Option<&'a Identifier> {
     match ty {
-        NyarType::Named(name) if shadows_registered_identity(linked, name) => Some(name),
-        NyarType::Named(_) => None,
+        SemanticType::Named(name) if shadows_registered_identity(linked, name) => Some(name),
+        SemanticType::Named(_) => None,
         // `Apply` 的基是泛型构造器拼写（声明名），不是值位类型；身份由参数与整体
         // 应用承载。只检查实参，避免把合法的 `Apply(Named("Option"), …)` 误判为残留。
-        NyarType::Apply(_, arguments) => arguments.iter().find_map(|argument| shadowed_named_residue(linked, argument)),
-        NyarType::Function(function) => function
+        SemanticType::Apply(_, arguments) => arguments.iter().find_map(|argument| shadowed_named_residue(linked, argument)),
+        SemanticType::Function(function) => function
             .params
             .iter()
             .find_map(|parameter| shadowed_named_residue(linked, parameter))
             .or_else(|| shadowed_named_residue(linked, &function.return_type)),
-        NyarType::Tuple(elements) | NyarType::Union(elements) => elements.iter().find_map(|element| shadowed_named_residue(linked, element)),
-        NyarType::Array(element) | NyarType::Nullable(element) => shadowed_named_residue(linked, element),
-        NyarType::FixedArray { element, .. } => shadowed_named_residue(linked, element),
-        NyarType::TraitObject(object) => object.type_arguments.iter().find_map(|argument| shadowed_named_residue(linked, argument)),
-        NyarType::Bottom
-        | NyarType::Unit
-        | NyarType::Boolean
-        | NyarType::Integer8 { .. }
-        | NyarType::Integer16 { .. }
-        | NyarType::Integer32 { .. }
-        | NyarType::Integer64 { .. }
-        | NyarType::Integer128 { .. }
-        | NyarType::Float32
-        | NyarType::Float64
-        | NyarType::Character
-        | NyarType::Utf8
-        | NyarType::Utf16
-        | NyarType::Nominal { .. } => None,
+        SemanticType::Tuple(elements) | SemanticType::Union(elements) => elements.iter().find_map(|element| shadowed_named_residue(linked, element)),
+        SemanticType::Array(element) | SemanticType::Nullable(element) => shadowed_named_residue(linked, element),
+        SemanticType::FixedArray { element, .. } => shadowed_named_residue(linked, element),
+        SemanticType::TraitObject(object) => object.type_arguments.iter().find_map(|argument| shadowed_named_residue(linked, argument)),
+        SemanticType::Bottom
+        | SemanticType::Unit
+        | SemanticType::Boolean
+        | SemanticType::Integer8 { .. }
+        | SemanticType::Integer16 { .. }
+        | SemanticType::Integer32 { .. }
+        | SemanticType::Integer64 { .. }
+        | SemanticType::Integer128 { .. }
+        | SemanticType::Float32
+        | SemanticType::Float64
+        | SemanticType::Character
+        | SemanticType::Utf8
+        | SemanticType::Utf16
+        | SemanticType::Nominal { .. } => None,
     }
 }
 

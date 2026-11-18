@@ -14,16 +14,16 @@ use nyar_emitter::{
     contracts::{Block, BlockRef, ExecutableFunction, Terminator, ValueRef},
     testing::lower_fragment_to_nyar_module,
 };
-use nyar_types::NyarType;
+use nyar_types::SemanticType;
 use acorn_odin::{OdinHeadCode, OdinModuleData, decode_at};
 
 /// `main() -> void`：入口块 `Raise`，resume 块带一个 `Bottom` 形参后 `return`。
 fn raising_function() -> ExecutableFunction {
     ExecutableFunction {
         symbol: "main".to_string(),
-        return_type: NyarType::Unit,
+        return_type: SemanticType::Unit,
         param_types: Vec::new(),
-        value_types: BTreeMap::from([(ValueRef(0), NyarType::Bottom)]),
+        value_types: BTreeMap::from([(ValueRef(0), SemanticType::Bottom)]),
         value_layouts: BTreeMap::new(),
         return_layout: None,
         entry: BlockRef(0),

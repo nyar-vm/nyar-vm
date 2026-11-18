@@ -743,7 +743,7 @@ pub(crate) fn register_sum_nominal_instances(
                 by_type.insert(binding.ty, binding.nominal);
                 variant_records.insert((nominal, variant.id), binding);
             }
-            // 布局侧仍写 NyarType；语义身份只认上方 VariantRecord 的 TypeId。
+            // 布局侧仍写 SemanticType；语义身份只认上方 VariantRecord 的 TypeId。
             // 多字段 payload 走变体记录已登记布局；单字段名义 payload（`usize`、
             // `SwissTableEntry<K, V>` 等）没有结构化目标形状，按声明身份已冻结的
             // surface spelling 表示，与 emitter `lower_type` 同口径。
@@ -781,7 +781,7 @@ fn sum_variant_layout_payload(
     type_values: &BTreeMap<ValkyrieType, TypeId>,
     declaration_spellings: &BTreeMap<TypeId, Identifier>,
     layouts: &nyar_types::AggregateLayoutPlan,
-) -> Option<nyar_types::NyarType> {
+) -> Option<nyar_types::SemanticType> {
     if variant.fields.len() > 1 {
         crate::compiler::mir::record_payload_layout(instantiated, layouts)
     }
@@ -793,7 +793,7 @@ fn sum_variant_layout_payload(
 /// 单字段 payload 的布局拼写结算（`sum_variant_layout_payload` 的单字段分支）。
 ///
 /// 语义身份只认 `VariantRecord::payload_type`；这里只回答 RepresentationPlan 与物理
-/// 布局需要的 `NyarType`。顺序固定为：严格 `concretize_type` → 声明 `[primitive]`
+/// 布局需要的 `SemanticType`。顺序固定为：严格 `concretize_type` → 声明 `[primitive]`
 /// 身份载体 → 已登记声明布局 → 文本编码名桥 → 残差。拼写只用于显示与残差，
 /// 不再决定 signedness、指针宽度或 nominal/scalar 分类；缺事实返回 `None`。
 fn sum_payload_layout(
@@ -801,7 +801,7 @@ fn sum_payload_layout(
     type_values: &BTreeMap<ValkyrieType, TypeId>,
     declaration_spellings: &BTreeMap<TypeId, Identifier>,
     layouts: &nyar_types::AggregateLayoutPlan,
-) -> Option<nyar_types::NyarType> {
+) -> Option<nyar_types::SemanticType> {
     if let Ok(concrete) = concretize_type(ty) {
         return Some(concrete);
     }
@@ -820,19 +820,19 @@ fn sum_payload_layout(
             .and_then(|builtin| concretize_type(&builtin).ok())
             .or_else(|| {
                 crate::compiler::mir::layout_id_for_type(&declaration_ty, layouts)
-                    .map(|layout| nyar_types::NyarType::Nominal { layout, spelling: spelling.clone() })
+                    .map(|layout| nyar_types::SemanticType::Nominal { layout, spelling: spelling.clone() })
             })?,
         None => crate::compiler::mir::ssa::encoding_spelling_carrier(spelling.as_str())
             .or_else(|| {
                 crate::compiler::mir::layout_id_for_type(&declaration_ty, layouts)
-                    .map(|layout| nyar_types::NyarType::Nominal { layout, spelling: spelling.clone() })
+                    .map(|layout| nyar_types::SemanticType::Nominal { layout, spelling: spelling.clone() })
             })
-            .unwrap_or_else(|| nyar_types::NyarType::Named(spelling.clone())),
+            .unwrap_or_else(|| nyar_types::SemanticType::Named(spelling.clone())),
     };
     if arguments.is_empty() {
         return Some(base);
     }
-    Some(nyar_types::NyarType::Apply(
+    Some(nyar_types::SemanticType::Apply(
         Box::new(base),
         arguments
             .iter()

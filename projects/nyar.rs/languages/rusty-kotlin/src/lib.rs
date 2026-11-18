@@ -9,7 +9,7 @@ pub mod tagless;
 pub mod visitor;
 
 use chomsky_uir::ConstraintAnalysis;
-use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
+use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
 use oak_core::source::SourceText;
 use oak_kotlin::{KotlinBuilder, KotlinLanguage, KotlinRoot};
 
@@ -37,14 +37,14 @@ impl RustyKotlinFrontend {
 impl NyarFrontend<ConstraintAnalysis, KotlinRoot> for RustyKotlinFrontend {
     type Language = KotlinLanguage;
 
-    fn parse(&self, source: &str) -> Result<KotlinRoot, NyarError> {
+    fn parse(&self, source: &str) -> Result<KotlinRoot, TypesError> {
         let mut session = oak_core::parser::ParseSession::<KotlinLanguage>::default();
         let source_text = SourceText::new(source);
         let output = self.builder.build(&source_text, &[], &mut session);
         if let Ok(root) = &output.result {
             println!("Parsed {} declarations", root.declarations.len());
         }
-        output.result.map_err(|e| NyarError::Compile(format!("{:?}", e)))
+        output.result.map_err(|e| TypesError::Compile(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, _ast: &KotlinRoot, _ctx: &mut NyarContext<'_, V, ConstraintAnalysis>) -> Id {

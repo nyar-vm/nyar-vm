@@ -90,8 +90,8 @@ fn schematize_function_abi(
     function: &ExecutableFunction,
     abi: &WasmLibraryExportAbi,
     layouts: &nyar_types::AggregateLayoutPlan,
-    layout_by_type: &std::collections::BTreeMap<nyar_types::NyarType, nyar_types::LayoutId>,
-    sums: &std::collections::BTreeMap<nyar_types::NyarType, nyar_types::SumTypeLayout>,
+    layout_by_type: &std::collections::BTreeMap<nyar_types::SemanticType, nyar_types::LayoutId>,
+    sums: &std::collections::BTreeMap<nyar_types::SemanticType, nyar_types::SumTypeLayout>,
 ) -> Result<(Vec<serde_json::Value>, super::abi_schema::WasmAbiType)> {
     let identities = canonical_parameter_identities(instance_label, function)?;
     if abi.params.len() != function.param_types.len() {
@@ -246,9 +246,9 @@ mod tests {
         lowering::backends::wasm::abi::{WasmAbiCarrier, WasmLibraryExportAbi},
     };
     use crate::contracts::ValueOrigin;
-    use nyar_types::NyarType;
+    use nyar_types::SemanticType;
 
-    fn nyar(s: &str) -> NyarType {
+    fn nyar(s: &str) -> SemanticType {
         crate::test_canonical_primitive(s)
     }
 
@@ -289,7 +289,7 @@ mod tests {
     // ---- 参数身份合同 ----
 
     /// 构造带 `ValueOrigin::Parameter` 身份的测试函数。
-    fn abi_function(parameters: &[(usize, &str, NyarType)], return_type: NyarType) -> ExecutableFunction {
+    fn abi_function(parameters: &[(usize, &str, SemanticType)], return_type: SemanticType) -> ExecutableFunction {
         ExecutableFunction {
             symbol: "identity".to_string(),
             return_type,
@@ -316,8 +316,8 @@ mod tests {
         }
     }
 
-    fn arraylist_i64() -> NyarType {
-        NyarType::Apply(Box::new(NyarType::Named(nyar_types::Identifier::new("std::collections::ArrayList"))), vec![nyar("i64")])
+    fn arraylist_i64() -> SemanticType {
+        SemanticType::Apply(Box::new(SemanticType::Named(nyar_types::Identifier::new("std::collections::ArrayList"))), vec![nyar("i64")])
     }
 
     fn frozen_abi(params: Vec<WasmAbiCarrier>, returns: WasmAbiCarrier) -> WasmLibraryExportAbi {

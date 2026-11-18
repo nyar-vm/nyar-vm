@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use crate::Result;
 use nyar::QualifiedName;
-use nyar_types::{ItemInstanceId, NyarType};
+use nyar_types::{ItemInstanceId, SemanticType};
 
 use crate::{
     backend_plan_views::{ExecutableFunction, FunctionView},
@@ -34,18 +34,18 @@ pub struct TargetExecutionPlan {
     /// 布局身份判等，不比较拼写或结构形态；声明值类型不是聚合时无此项。
     field_type_layouts: BTreeMap<nyar_types::FieldId, nyar_types::LayoutId>,
     aggregate_layout_by_type: BTreeMap<nyar_types::TypeId, nyar_types::LayoutId>,
-    /// 以结构化 `NyarType` 为键布局索引。
+    /// 以结构化 `SemanticType` 为键布局索引。
     ///
-    /// `NyarType::Apply`（如 `ArrayList<i64>`）不携带 `LayoutId`；库导出 ABI 的
+    /// `SemanticType::Apply`（如 `ArrayList<i64>`）不携带 `LayoutId`；库导出 ABI 的
     /// 字段/容器桥需要从类型拼写回查冻结布局。索引只在 canonical 计划构建时
     /// 由 `aggregate_layout_by_type` 逐项 `lower_type` 生成，不按名字猜布局。
-    aggregate_layout_by_nyar_type: BTreeMap<NyarType, nyar_types::LayoutId>,
-    /// 以结构化 `NyarType` 为键的 unite 布局索引。
+    aggregate_layout_by_nyar_type: BTreeMap<SemanticType, nyar_types::LayoutId>,
+    /// 以结构化 `SemanticType` 为键的 unite 布局索引。
     ///
     /// unite 没有 `LayoutId`，但库导出 ABI 需要按变体身份读回值。索引只在
     /// canonical 计划构建时由 `sum_types` 的已冻结名义身份 `lower_type` 生成，
     /// 不按名字猜布局。
-    sum_layout_by_nyar_type: BTreeMap<NyarType, nyar_types::SumTypeLayout>,
+    sum_layout_by_nyar_type: BTreeMap<SemanticType, nyar_types::SumTypeLayout>,
     flags_types: Vec<nyar_types::FlagsLayout>,
     singleton_instances: Vec<nyar_types::SingletonInstancePlan>,
     functions: BTreeMap<ItemInstanceId, ExecutableFunction>,
@@ -65,9 +65,9 @@ pub struct BackendImport {
     /// 外部链接合同。
     pub link: nyar_types::ExternalImportLink,
     /// 参数类型列表。
-    pub parameter_types: Vec<NyarType>,
+    pub parameter_types: Vec<SemanticType>,
     /// 返回类型。
-    pub return_type: NyarType,
+    pub return_type: SemanticType,
 }
 
 /// 程序级文本载体表示模式：表示计划的正式事实。
@@ -142,9 +142,9 @@ pub struct TargetPlanInput {
     /// 完整类型身份 → 布局身份。
     pub aggregate_layout_by_type: BTreeMap<nyar_types::TypeId, nyar_types::LayoutId>,
     /// 结构化类型 → 布局身份。
-    pub aggregate_layout_by_nyar_type: BTreeMap<NyarType, nyar_types::LayoutId>,
+    pub aggregate_layout_by_nyar_type: BTreeMap<SemanticType, nyar_types::LayoutId>,
     /// 结构化类型 → unite 布局。
-    pub sum_layout_by_nyar_type: BTreeMap<NyarType, nyar_types::SumTypeLayout>,
+    pub sum_layout_by_nyar_type: BTreeMap<SemanticType, nyar_types::SumTypeLayout>,
     /// flags 类型布局。
     pub flags_types: Vec<nyar_types::FlagsLayout>,
     /// 单例实例计划。
@@ -290,13 +290,13 @@ impl TargetExecutionPlan {
         self
     }
 
-    /// 登记结构化 `NyarType` → layout，并写入 `aggregate_layouts`（集成测试专用）。
+    /// 登记结构化 `SemanticType` → layout，并写入 `aggregate_layouts`（集成测试专用）。
     ///
     /// 生产路径由 `from_compiled_program` 从 `aggregate_layout_by_type` 逐项
     /// `lower_type` 生成；手工计划没有 canonical，必须显式登记同一事实，
     /// 否则泛型实例（`Apply`）只能退回按名字猜测布局。
     #[doc(hidden)]
-    pub fn testing_register_type_layout(&mut self, ty: nyar_types::NyarType, layout: nyar_types::AggregateLayout) -> &mut Self {
+    pub fn testing_register_type_layout(&mut self, ty: nyar_types::SemanticType, layout: nyar_types::AggregateLayout) -> &mut Self {
         let layout_id = layout.id;
         if !self.aggregate_layouts.layouts.iter().any(|item| item.id == layout_id) {
             self.aggregate_layouts.layouts.push(layout);
@@ -314,7 +314,7 @@ impl TargetExecutionPlan {
 
     /// 登记 unite 的冻结 sum 布局索引（集成测试专用）。
     #[doc(hidden)]
-    pub fn testing_register_sum_layout(&mut self, ty: NyarType, sum: nyar_types::SumTypeLayout) -> &mut Self {
+    pub fn testing_register_sum_layout(&mut self, ty: SemanticType, sum: nyar_types::SumTypeLayout) -> &mut Self {
         self.sum_layout_by_nyar_type.insert(ty, sum);
         self
     }
@@ -413,10 +413,10 @@ impl TargetExecutionPlan {
         &self.aggregate_layout_by_type
     }
 
-    /// 返回结构化 `NyarType` 到布局 ID 的映射。
+    /// 返回结构化 `SemanticType` 到布局 ID 的映射。
     ///
     /// 这是 `Apply(Named, args)` 唯一可用的布局身份来源；按名字回查布局被禁止。
-    pub fn aggregate_layout_by_nyar_type(&self) -> &BTreeMap<NyarType, nyar_types::LayoutId> {
+    pub fn aggregate_layout_by_nyar_type(&self) -> &BTreeMap<SemanticType, nyar_types::LayoutId> {
         &self.aggregate_layout_by_nyar_type
     }
 
@@ -442,10 +442,10 @@ impl TargetExecutionPlan {
         self
     }
 
-    /// 返回结构化 `NyarType` 到 unite 布局的映射。
+    /// 返回结构化 `SemanticType` 到 unite 布局的映射。
     ///
     /// unite 没有 `LayoutId`；库导出 ABI 的变体身份合同只能来自这份冻结索引。
-    pub fn sum_layout_by_nyar_type(&self) -> &BTreeMap<NyarType, nyar_types::SumTypeLayout> {
+    pub fn sum_layout_by_nyar_type(&self) -> &BTreeMap<SemanticType, nyar_types::SumTypeLayout> {
         &self.sum_layout_by_nyar_type
     }
 

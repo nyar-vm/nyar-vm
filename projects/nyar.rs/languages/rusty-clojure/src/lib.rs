@@ -12,7 +12,7 @@ pub mod visitor;
 pub use crate::runtime::RustyClojureRuntime;
 
 use chomsky_uir::ConstraintAnalysis;
-use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
+use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
 use oak_clojure::{ClojureLanguage, ClojureParser};
 use oak_core::source::SourceText;
 
@@ -38,7 +38,7 @@ impl RustyClojureFrontend {
 impl NyarFrontend<ConstraintAnalysis, ()> for RustyClojureFrontend {
     type Language = ClojureLanguage;
 
-    fn parse(&self, source: &str) -> Result<(), NyarError> {
+    fn parse(&self, source: &str) -> Result<(), TypesError> {
         use oak_core::parser::Parser;
         let parser = ClojureParser::new(&self.language);
         let source_text = SourceText::new(source);
@@ -47,7 +47,7 @@ impl NyarFrontend<ConstraintAnalysis, ()> for RustyClojureFrontend {
         if output.result.is_ok() {
             println!("Parsed Clojure source");
         }
-        output.result.map(|_| ()).map_err(|e| NyarError::Compile(format!("{:?}", e)))
+        output.result.map(|_| ()).map_err(|e| TypesError::Compile(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, _ast: &(), _ctx: &mut NyarContext<'_, V, ConstraintAnalysis>) -> Id {

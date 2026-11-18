@@ -159,7 +159,7 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     /// 查找 heap `[T]` 的 element_type 对应 wasm-gc arraytype 的 type_index。
-    pub(super) fn resolve_gc_array_type_index(&self, element_type: &NyarType) -> Option<u32> {
+    pub(super) fn resolve_gc_array_type_index(&self, element_type: &SemanticType) -> Option<u32> {
         let key = wasm_array_element_type_key(element_type);
         self.gc_array_type_indices.get(&key).copied()
     }

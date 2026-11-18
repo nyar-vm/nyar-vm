@@ -10,10 +10,10 @@ use nyar_emitter::{
     contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef},
     testing::lower_fragment_to_wasm_mir_module,
 };
-use nyar_types::{ImportIndex, InstructionId, ItemInstanceId, NyarType, ProvenanceId};
+use nyar_types::{ImportIndex, InstructionId, ItemInstanceId, SemanticType, ProvenanceId};
 use std::collections::BTreeMap;
 
-const I32: NyarType = NyarType::Integer32 { signed: true };
+const I32: SemanticType = SemanticType::Integer32 { signed: true };
 
 /// `main()`：%0 = 静态调用 `callee`（无实参）；return %0。
 fn call_main(callee: Operand) -> ExecutableFunction {
@@ -113,7 +113,7 @@ fn wasm_i64_slot_receiving_i32_carrier_fails_structured() {
     let import = BackendImport {
         index: ImportIndex::from_index(0).expect("导入下标"),
         link: nyar::ExternalImportLink::host(Some(Identifier::new("wasm")), vec!["env".into(), "utf8_length".into()]),
-        parameter_types: vec![NyarType::Integer64 { signed: true }],
+        parameter_types: vec![SemanticType::Integer64 { signed: true }],
         return_type: I32,
     };
     let error = lower(function, Some((callee, import))).expect_err("i32 实参送进 i64 形参槽必须结构化失败，禁止静默 extend");
