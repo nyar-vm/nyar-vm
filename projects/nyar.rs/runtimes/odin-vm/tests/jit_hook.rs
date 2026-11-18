@@ -1,5 +1,5 @@
 //! Consumer-side workload evidence tests: the JSON intent pipeline (`workload_json`) stays in
-//! this crate while the engine substrate lives in Boost `interpreter-vm-odin-vm`.
+//! this crate while the engine substrate lives in Boost `interpreter-vm-ovm`.
 
 use interpreter_gc::GcMode;
 use odin_vm::{OdinVm, workload_json::parse_workload_intent_json};

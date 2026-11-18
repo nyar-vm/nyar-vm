@@ -81,7 +81,7 @@ fn gc_mode_label(mode: GcMode) -> &'static str {
 }
 
 /// 将当前策略与 ConcurrentTrace / 晋升证据合成可序列化 JSON 包络。
-pub fn snapshot_gc_evidence(vm: &interpreter_vm_odin_vm::OdinVm) -> serde_json::Value {
+pub fn snapshot_gc_evidence(vm: &interpreter_vm_ovm::OdinVm) -> serde_json::Value {
     use serde_json::{Value, json};
 
     let decision = vm.last_strategy_decision().map(|d| {
