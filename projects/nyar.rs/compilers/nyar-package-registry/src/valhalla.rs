@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{PublisherKey, canonicalize_package_name};
 
-/// Valhalla registry adapter (Ed25519 publisher-key auth).
+/// Valhalla 渠道适配器：自有注册表，使用 Ed25519 发布者密钥认证。
 #[derive(Debug, Clone)]
 pub struct ValhallaRegistry {
     endpoint: String,
@@ -28,6 +28,11 @@ impl ValhallaRegistry {
     /// Connect to the public Valhalla registry.
     pub fn default_registry() -> Result<Self, RegistryError> {
         Self::new(Self::DEFAULT_ENDPOINT)
+    }
+
+    /// Connect with a caller-configured HTTP client (proxy and timeouts are the caller's policy).
+    pub fn with_http(endpoint: impl Into<String>, http: HttpClient) -> Self {
+        Self { endpoint: endpoint.into().trim_end_matches('/').to_string(), http }
     }
 }
 

@@ -53,14 +53,40 @@ impl<T: Registry + ?Sized> RegistryCredentials for T {
 }
 
 /// 构建产品内置的注册表适配器集合：第三方渠道由 Boost 提供，Valhalla 由本 crate 追加。
+///
+/// 代理是宿主策略：这里显式读取 `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` 与 `NO_PROXY`
+/// （Boost 的传输层本身不读环境变量）。
 pub fn default_registries() -> Result<HashMap<String, Arc<dyn Registry>>, RegistryError> {
     registries_with_endpoints(&BTreeMap::new())
 }
 
 /// 按 endpoint 覆盖构建产品内置适配器集合。
 pub fn registries_with_endpoints(endpoints: &BTreeMap<String, String>) -> Result<HashMap<String, Arc<dyn Registry>>, RegistryError> {
-    let mut registries = package_registry::registries_with_endpoints(endpoints)?;
+    let proxy = ProxyConfig::from_env()?;
+    registries_with_proxy_option(endpoints, proxy)
+}
+
+/// 按 endpoint 覆盖并用显式代理构建产品内置适配器集合。
+pub fn registries_with_proxy(
+    endpoints: &BTreeMap<String, String>,
+    proxy: ProxyConfig,
+) -> Result<HashMap<String, Arc<dyn Registry>>, RegistryError> {
+    registries_with_proxy_option(endpoints, Some(proxy))
+}
+
+fn registries_with_proxy_option(
+    endpoints: &BTreeMap<String, String>,
+    proxy: Option<ProxyConfig>,
+) -> Result<HashMap<String, Arc<dyn Registry>>, RegistryError> {
+    let mut registries = match &proxy {
+        Some(proxy) => package_registry::registries_with_proxy(endpoints, proxy.clone())?,
+        None => package_registry::registries_with_endpoints(endpoints)?,
+    };
     let endpoint = endpoints.get("valhalla").map(String::as_str).unwrap_or(ValhallaRegistry::DEFAULT_ENDPOINT);
-    registries.insert("valhalla".to_string(), Arc::new(ValhallaRegistry::new(endpoint)?));
+    let valhalla = match proxy {
+        Some(proxy) => ValhallaRegistry::with_http(endpoint, HttpClient::with_proxy(RetryConfig::default(), proxy)),
+        None => ValhallaRegistry::new(endpoint)?,
+    };
+    registries.insert("valhalla".to_string(), Arc::new(valhalla));
     Ok(registries)
 }

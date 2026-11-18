@@ -3,12 +3,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use nyar_package_registry::Package;
+use nyar_package_registry::{OsvClient, Package};
 use serde::{Deserialize, Serialize};
 
 use crate::{PackageManagerError, Result};
-
-const OSV_ENDPOINT: &str = "https://api.osv.dev/v1/query";
 
 /// Vulnerability report for a locked package.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -182,13 +180,8 @@ impl SecurityAudit {
 
 fn ecosystem_for_registry(registry: &str) -> Option<&'static str> {
     match registry.to_ascii_lowercase().as_str() {
-        "npm" | "jsr" => Some("npm"),
-        "nuget" => Some("NuGet"),
-        "maven" => Some("Maven"),
-        "pypi" | "conda" => Some("PyPI"),
-        "crates" | "crates-io" => Some("crates.io"),
         "valhalla" | "local" | "mock" | "workspace" => None,
-        _ => None,
+        _ => nyar_package_registry::osv_ecosystem(registry),
     }
 }
 
@@ -224,83 +217,29 @@ const RESTRICTED: &[&str] =
     &["GPL-2.0-only", "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later", "AGPL-3.0-only", "AGPL-3.0-or-later", "SSPL-1.0", "BUSL-1.1"];
 
 fn query_osv(name: &str, version: &str, ecosystem: &str) -> Result<Vec<VulnerabilityReport>> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .user_agent("nyar-package-manager/0.1")
-        .build()
-        .map_err(|error| PackageManagerError::message(error.to_string()))?;
-
-    let payload = serde_json::json!({
-        "package": { "name": name, "ecosystem": ecosystem },
-        "version": version
-    });
-
-    let response = client.post(OSV_ENDPOINT).json(&payload).send().map_err(|error| PackageManagerError::message(error.to_string()))?;
-    if !response.status().is_success() {
-        return Ok(Vec::new());
-    }
-
-    let body: OsvResponse = response.json().map_err(|error| PackageManagerError::message(error.to_string()))?;
-    let mut reports = Vec::new();
-    for vuln in body.vulns.unwrap_or_default() {
-        let vulnerability_id = vuln.id.or_else(|| vuln.aliases.unwrap_or_default().into_iter().find(|alias| alias.starts_with("CVE-")));
-        let severity = vuln
-            .database_specific
-            .as_ref()
-            .and_then(|value| value.get("severity"))
-            .and_then(|value| value.as_str())
-            .unwrap_or("unknown")
-            .to_string();
-        let fixed_version = vuln.affected.as_ref().and_then(|affected| extract_fixed_version(affected));
-        let url = vuln
-            .references
-            .as_ref()
-            .and_then(|refs| refs.first())
-            .and_then(|reference| reference.get("url"))
-            .and_then(|value| value.as_str())
-            .map(str::to_string);
-
-        reports.push(VulnerabilityReport {
+    let advisories = osv_client()?.query(name, version, ecosystem).map_err(|error| PackageManagerError::message(error.to_string()))?;
+    Ok(advisories
+        .into_iter()
+        .map(|advisory| VulnerabilityReport {
             package_name: name.to_string(),
             version: version.to_string(),
-            vulnerability_id,
-            title: vuln.summary.unwrap_or_default(),
-            severity,
-            fixed_version,
-            url,
-        });
-    }
-    Ok(reports)
+            vulnerability_id: advisory.id,
+            title: advisory.summary,
+            severity: advisory.severity,
+            fixed_version: advisory.fixed_version,
+            url: advisory.url,
+        })
+        .collect())
 }
 
-fn extract_fixed_version(affected: &[serde_json::Value]) -> Option<String> {
-    for item in affected {
-        let ranges = item.get("ranges")?.as_array()?;
-        for range in ranges {
-            let events = range.get("events")?.as_array()?;
-            for event in events {
-                if let Some(fixed) = event.get("fixed").and_then(|value| value.as_str()) {
-                    return Some(fixed.to_string());
-                }
-            }
-        }
-    }
-    None
-}
-
-#[derive(Debug, Deserialize)]
-struct OsvResponse {
-    vulns: Option<Vec<OsvVuln>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct OsvVuln {
-    id: Option<String>,
-    summary: Option<String>,
-    aliases: Option<Vec<String>>,
-    database_specific: Option<serde_json::Value>,
-    affected: Option<Vec<serde_json::Value>>,
-    references: Option<Vec<serde_json::Value>>,
+/// OSV 查询走宿主代理策略：此处显式读取代理环境变量，Boost 传输层不隐式读取。
+fn osv_client() -> Result<OsvClient> {
+    let retry = nyar_package_registry::RetryConfig::default();
+    let http = match nyar_package_registry::ProxyConfig::from_env().map_err(|error| PackageManagerError::message(error.to_string()))? {
+        Some(proxy) => nyar_package_registry::HttpClient::with_proxy(retry, proxy),
+        None => nyar_package_registry::HttpClient::new(retry).map_err(|error| PackageManagerError::message(error.to_string()))?,
+    };
+    Ok(OsvClient::with_http(http))
 }
 
 fn load_cache(path: &Path) -> BTreeMap<String, Vec<VulnerabilityReport>> {
