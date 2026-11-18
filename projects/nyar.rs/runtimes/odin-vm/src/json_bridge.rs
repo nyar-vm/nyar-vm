@@ -5,7 +5,7 @@ use interpreter_gc::{ObjectHeap, ObjectPayload};
 use acorn_odin::{OvmAbiExport, OvmAbiType, OvmOptionBoxing, OvmTextRepresentation};
 use serde_json::Value as JsonValue;
 
-use crate::{array_runtime, error::OdinRuntimeError, text_runtime, value::Value};
+use interpreter_odin::{array_runtime, error::OdinRuntimeError, text_runtime, value::Value};
 
 /// `Option<Option<T>>` 的 boxed 线格式：`null` 表示外层 `None`，
 /// `{"$some": <inner>}` 表示外层 `Some`（内层 `None` 即 `{"$some": null}`）。
@@ -92,7 +92,7 @@ pub fn parse_call_args_json(source: &str) -> Result<Vec<Value>> {
     else {
         return Err(miette::miette!("--args-json must be a JSON array"));
     };
-    items.iter().map(value_from_json).collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    items.iter().map(value_from_json).collect::<Result<Vec<_>, _>>().map_err(|e| miette::miette!("{e}"))
 }
 
 /// 在运行时堆边界解析调用参数；结构参数缺少导出合同则失败。
@@ -104,7 +104,7 @@ pub fn parse_call_args_json_with_heap(source: &str, heap: &mut ObjectHeap) -> Re
     };
     let mut args = Vec::with_capacity(items.len());
     for item in &items {
-        args.push(materialize_value_from_json(item, Some(heap))?);
+        args.push(materialize_value_from_json(item, Some(heap)).map_err(|e| miette::miette!("{e}"))?);
     }
     Ok(args)
 }

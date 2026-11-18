@@ -83,7 +83,7 @@ fn pool_integer64(module: &OdinModuleData) -> Vec<i64> {
 }
 
 fn widens_through_host_import(module: &OdinModuleData) -> bool {
-    module.imports.iter().any(|OdinImport { module_name, symbol_name, .. }| module_name == "nyar.host" && symbol_name == "i32_to_i64")
+    module.imports.iter().any(|OdinImport { module_name, symbol_name, .. }| module_name == "odin.host" && symbol_name == "i32_to_i64")
 }
 
 /// `i64::MAX` 必须以 `Integer64` 进池；若走 `value as i32` 会得到 `Integer32(-1)`。
@@ -277,7 +277,7 @@ fn i32_parameter_constant_out_of_range_fails_structured() {
     assert!(error.contains("超出目标 Integer32 槽的表示范围"), "错误必须指明 i32 形参槽越界: {error}");
 }
 
-/// `nyar.host` 边界 + `ovm` 平台标签 + 单段符号的外部导入（测试专用）。
+/// `odin.host` 边界 + `ovm` 平台标签 + 单段符号的外部导入（测试专用）。
 fn host_echo_import(symbol: &str, parameter_types: Vec<NyarType>) -> BackendImport {
     BackendImport {
         index: ImportIndex::from_index(0).expect("导入下标"),
@@ -336,7 +336,7 @@ fn host_i32_parameter_constant_matches_signature() {
     assert!(pool_integer64(&module).is_empty(), "i32 外部形参不得出现 Integer64 池条目: {:?}", module.constants);
     assert!(!widens_through_host_import(&module), "i32 外部形参不得拓宽: {:?}", module.imports);
     assert!(
-        module.imports.iter().any(|OdinImport { module_name, symbol_name, .. }| module_name == "nyar.host" && symbol_name == "echo_i32"),
+        module.imports.iter().any(|OdinImport { module_name, symbol_name, .. }| module_name == "odin.host" && symbol_name == "echo_i32"),
         "外部调用必须命中导入符号: {:?}",
         module.imports
     );
@@ -349,7 +349,7 @@ fn host_i64_parameter_constant_keeps_width() {
     assert_eq!(pool_integer64(&module), vec![2_147_483_648], "2147483648 必须原样进 Integer64 池: {:?}", module.constants);
     assert!(pool_integer32(&module).is_empty(), "i64 外部实参不得回绕成 Integer32: {:?}", module.constants);
     assert!(
-        module.imports.iter().any(|OdinImport { module_name, symbol_name, .. }| module_name == "nyar.host" && symbol_name == "echo_i64"),
+        module.imports.iter().any(|OdinImport { module_name, symbol_name, .. }| module_name == "odin.host" && symbol_name == "echo_i64"),
         "外部调用必须命中导入符号: {:?}",
         module.imports
     );

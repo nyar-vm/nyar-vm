@@ -26,7 +26,7 @@ use crate::{
 };
 
 /// 宿主 builtin 导入模块名（链接名在 imports section；热路径只用下标）。
-const HOST_IMPORT_MODULE: &str = "nyar.host";
+const HOST_IMPORT_MODULE: &str = "odin.host";
 
 /// OVM 私有文本载体桥：raw 宿主串 → `[u8]` 字节数组（不补 NUL、不截断）。
 const TEXT_TO_BYTES_IMPORT: &str = "utf8.to_bytes";

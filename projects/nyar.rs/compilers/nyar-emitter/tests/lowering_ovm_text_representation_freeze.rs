@@ -207,7 +207,7 @@ fn literal_to_managed_return_function() -> ExecutableFunction {
 fn literal_text_materializes_into_managed_return_slot() {
     let module = lower(literal_to_managed_return_function(), true, false).expect("字面量 raw 事实进入托管返回槽必须按冻结布局物化");
     assert!(
-        module.imports.iter().any(|import| import.module_name == "nyar.host" && import.symbol_name == "utf8.to_bytes"),
+        module.imports.iter().any(|import| import.module_name == "odin.host" && import.symbol_name == "utf8.to_bytes"),
         "raw→托管边界必须走 `utf8.to_bytes` 物化桥: {:?}",
         module.imports
     );

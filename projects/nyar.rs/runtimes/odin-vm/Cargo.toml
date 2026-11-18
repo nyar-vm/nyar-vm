@@ -4,17 +4,16 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Odin VM (OVM) runtime — language-agnostic OVM bytecode executor"
+description = "Odin VM consumer facade — re-exports Boost interpreter-odin with product-side JSON bridge and workload helpers"
 
 [lib]
 name = "odin_vm"
 path = "src/lib.rs"
 
 [dependencies]
-# 执行格式合同：`acorn-odin`。不得依赖语言前端。
-acorn-odin = { workspace = true }
+# 引擎底座：Boost `interpreter-odin`（git rev pin）。本 crate 只保留宿主 JSON 与负载意图适配。
+interpreter-odin = { workspace = true }
 interpreter-gc = { workspace = true }
-interpreter-jit = { workspace = true }
+acorn-odin = { workspace = true }
 miette = { workspace = true }
-clap = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

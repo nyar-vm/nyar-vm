@@ -1,270 +1,11 @@
-use odin_vm::{OdinVm, jit::JitError};
+//! Consumer-side workload evidence tests: the JSON intent pipeline (`workload_json`) stays in
+//! this crate while the engine substrate lives in Boost `interpreter-odin`.
 
-use acorn_odin::{Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinModuleData, encode_module};
-
-fn empty_module() -> odin_vm::module::LoadedModule {
-    let mut code = Vec::new();
-    code.push(OdinHeadCode::Constant as u8);
-    code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(OdinHeadCode::Return as u8);
-    let data = OdinModuleData {
-        version: Odin_VERSION,
-        name: "jit-hook".to_string(),
-        constants: vec![OdinConstant::Integer32(0)],
-        functions: vec![OdinFunction { name: "main".to_string(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 }],
-        imports: Vec::new(),
-        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
-        witness_entries: Vec::new(),
-        code_bytes: code,
-        globals: Vec::new(),
-        init_function_indices: Vec::new(),
-        layouts: Vec::new(),
-    };
-    let bytes = encode_module(&data);
-    OdinVm::new().load(&bytes).expect("load module")
-}
-
-#[test]
-fn executor_default_jit_is_disabled() {
-    let module = empty_module();
-    let mut vm = OdinVm::new();
-    assert!(!vm.jit_enabled());
-    assert_eq!(vm.try_jit_compile(&module, 0), Err(JitError::Unsupported));
-}
-
-#[test]
-fn stack_maps_available_without_jit_backend() {
-    use acorn_odin::OdinHeadCode;
-
-    let mut code = Vec::new();
-    code.push(OdinHeadCode::ObjectNew as u8);
-    code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(OdinHeadCode::Return as u8);
-    let data = OdinModuleData {
-        version: Odin_VERSION,
-        name: "stack-map".to_string(),
-        constants: Vec::new(),
-        functions: vec![OdinFunction { name: "main".to_string(), arity: 0, local_count: 2, code_offset: 0, code_length: code.len() as i32 }],
-        imports: Vec::new(),
-        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
-        witness_entries: Vec::new(),
-        code_bytes: code,
-        globals: Vec::new(),
-        init_function_indices: Vec::new(),
-        layouts: vec![acorn_odin::OdinLayout { field_count: 0 }],
-    };
-    let module = OdinVm::new().load(&encode_module(&data)).expect("load");
-    let maps = OdinVm::new().stack_maps_for(&module, 0).expect("stack maps");
-    assert_eq!(maps.function_index, 0);
-    assert!(!maps.entries.is_empty());
-    assert_eq!(maps.entries[0].local_root_slots, vec![0, 1]);
-    // ObjectNew 与 Return 均为 safepoint
-    assert!(maps.entries.len() >= 2);
-}
-
-#[test]
-fn stack_map_jit_backend_returns_artifact_maps() {
-    use odin_vm::jit::StackMapJit;
-
-    let module = empty_module();
-    let mut vm = OdinVm::new();
-    vm.set_jit(Box::new(StackMapJit));
-    assert!(vm.jit_enabled());
-    let artifact = vm.try_jit_compile(&module, 0).expect("stack-map jit");
-    assert_eq!(artifact.function_index, 0);
-    assert!(!artifact.stack_maps.entries.is_empty());
-    assert!(!artifact.deopt_map.entries.is_empty());
-}
-
-#[test]
-fn baseline_scalar_jit_fast_path_adds_i32_args() {
-    use odin_vm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
-
-    let mut code = Vec::new();
-    code.push(OdinHeadCode::LoadArg as u8);
-    code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(OdinHeadCode::LoadArg as u8);
-    code.extend_from_slice(&1i32.to_le_bytes());
-    code.push(OdinHeadCode::I32Add as u8);
-    code.push(OdinHeadCode::Return as u8);
-    let data = OdinModuleData {
-        version: Odin_VERSION,
-        name: "scalar-add".to_string(),
-        constants: Vec::new(),
-        functions: vec![OdinFunction { name: "add".to_string(), arity: 2, local_count: 2, code_offset: 0, code_length: code.len() as i32 }],
-        imports: Vec::new(),
-        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "add".to_string(), function_index: 0 }],
-        witness_entries: Vec::new(),
-        code_bytes: code,
-        globals: Vec::new(),
-        init_function_indices: Vec::new(),
-        layouts: Vec::new(),
-    };
-    let module = OdinVm::new().load(&encode_module(&data)).expect("load");
-    let mut vm = OdinVm::new();
-    vm.set_jit(Box::new(BaselineScalarJit::new(OdinScalarMatcher)));
-    let artifact = vm.try_jit_compile(&module, 0).expect("compile");
-    assert!(artifact.machine_code.is_some());
-    let result = vm.run(&module, "add", vec![Value::I32(40), Value::I32(2)]).expect("run");
-    assert_eq!(result, Value::I32(42));
-    assert_eq!(vm.scalar_cache_len(), 1);
-    // 第二次 run 应命中缓存
-    let again = vm.run(&module, "add", vec![Value::I32(1), Value::I32(2)]).expect("run cached");
-    assert_eq!(again, Value::I32(3));
-    assert_eq!(vm.scalar_cache_len(), 1);
-}
-
-fn load_i32_binop_module(name: &str, export: &str, op: OdinHeadCode) -> odin_vm::module::LoadedModule {
-    let mut code = Vec::new();
-    code.push(OdinHeadCode::LoadArg as u8);
-    code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(OdinHeadCode::LoadArg as u8);
-    code.extend_from_slice(&1i32.to_le_bytes());
-    code.push(op as u8);
-    code.push(OdinHeadCode::Return as u8);
-    let data = OdinModuleData {
-        version: Odin_VERSION,
-        name: name.to_string(),
-        constants: Vec::new(),
-        functions: vec![OdinFunction { name: export.to_string(), arity: 2, local_count: 2, code_offset: 0, code_length: code.len() as i32 }],
-        imports: Vec::new(),
-        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: export.to_string(), function_index: 0 }],
-        witness_entries: Vec::new(),
-        code_bytes: code,
-        globals: Vec::new(),
-        init_function_indices: Vec::new(),
-        layouts: Vec::new(),
-    };
-    OdinVm::new().load(&encode_module(&data)).expect("load")
-}
-
-#[test]
-fn baseline_scalar_jit_fast_path_cmp_and_select() {
-    use odin_vm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
-
-    let mut vm = OdinVm::new();
-    vm.set_jit(Box::new(BaselineScalarJit::new(OdinScalarMatcher)));
-
-    // LoadArg0; LoadArg1; I32LtS; Return
-    let mut cmp_code = Vec::new();
-    cmp_code.push(OdinHeadCode::LoadArg as u8);
-    cmp_code.extend_from_slice(&0i32.to_le_bytes());
-    cmp_code.push(OdinHeadCode::LoadArg as u8);
-    cmp_code.extend_from_slice(&1i32.to_le_bytes());
-    cmp_code.push(OdinHeadCode::I32LtS as u8);
-    cmp_code.push(OdinHeadCode::Return as u8);
-    let cmp = load_named_module("scalar-lt", "lt", 2, cmp_code);
-    assert_eq!(vm.run(&cmp, "lt", vec![Value::I32(1), Value::I32(2)]).expect("lt"), Value::I32(1));
-
-    // select: a==b ? c : d
-    let mut sel = Vec::new();
-    sel.push(OdinHeadCode::LoadArg as u8);
-    sel.extend_from_slice(&0i32.to_le_bytes());
-    sel.push(OdinHeadCode::LoadArg as u8);
-    sel.extend_from_slice(&1i32.to_le_bytes());
-    sel.push(OdinHeadCode::I32Eq as u8);
-    let br_pc = sel.len();
-    sel.push(OdinHeadCode::JumpIfFalse as u8);
-    let offset_pos = sel.len();
-    sel.extend_from_slice(&0i32.to_le_bytes());
-    sel.push(OdinHeadCode::LoadArg as u8);
-    sel.extend_from_slice(&2i32.to_le_bytes());
-    sel.push(OdinHeadCode::Return as u8);
-    let else_pc = sel.len();
-    let rel = (else_pc as i32) - (br_pc as i32);
-    sel[offset_pos..offset_pos + 4].copy_from_slice(&rel.to_le_bytes());
-    sel.push(OdinHeadCode::LoadArg as u8);
-    sel.extend_from_slice(&3i32.to_le_bytes());
-    sel.push(OdinHeadCode::Return as u8);
-    let select = load_named_module("scalar-sel", "sel", 4, sel);
-    assert_eq!(vm.run(&select, "sel", vec![Value::I32(1), Value::I32(1), Value::I32(7), Value::I32(9)]).expect("sel true"), Value::I32(7));
-    assert_eq!(vm.run(&select, "sel", vec![Value::I32(1), Value::I32(0), Value::I32(7), Value::I32(9)]).expect("sel false"), Value::I32(9));
-}
-
-fn load_named_module(name: &str, export: &str, arity: i32, code: Vec<u8>) -> odin_vm::module::LoadedModule {
-    let data = OdinModuleData {
-        version: Odin_VERSION,
-        name: name.to_string(),
-        constants: Vec::new(),
-        functions: vec![OdinFunction { name: export.to_string(), arity, local_count: arity, code_offset: 0, code_length: code.len() as i32 }],
-        imports: Vec::new(),
-        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: export.to_string(), function_index: 0 }],
-        witness_entries: Vec::new(),
-        code_bytes: code,
-        globals: Vec::new(),
-        init_function_indices: Vec::new(),
-        layouts: Vec::new(),
-    };
-    OdinVm::new().load(&encode_module(&data)).expect("load")
-}
-
-#[test]
-fn baseline_scalar_jit_fast_path_load_dup_mul() {
-    use odin_vm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
-
-    let mut code = Vec::new();
-    code.push(OdinHeadCode::LoadArg as u8);
-    code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(OdinHeadCode::Dup as u8);
-    code.push(OdinHeadCode::I32Mul as u8);
-    code.push(OdinHeadCode::Return as u8);
-    let module = load_named_module("scalar-sq", "sq", 1, code);
-    let mut vm = OdinVm::new();
-    vm.set_jit(Box::new(BaselineScalarJit::new(OdinScalarMatcher)));
-    assert_eq!(vm.run(&module, "sq", vec![Value::I32(7)]).expect("run"), Value::I32(49));
-}
-
-#[test]
-fn baseline_scalar_jit_folds_const_const_binop() {
-    use odin_vm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
-
-    let mut code = Vec::new();
-    code.push(OdinHeadCode::Constant as u8);
-    code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(OdinHeadCode::Constant as u8);
-    code.extend_from_slice(&1i32.to_le_bytes());
-    code.push(OdinHeadCode::I32Add as u8);
-    code.push(OdinHeadCode::Return as u8);
-    let data = OdinModuleData {
-        version: Odin_VERSION,
-        name: "scalar-fold".to_string(),
-        constants: vec![OdinConstant::Integer32(20), OdinConstant::Integer32(22)],
-        functions: vec![OdinFunction {
-            name: "forty_two".to_string(),
-            arity: 0,
-            local_count: 0,
-            code_offset: 0,
-            code_length: code.len() as i32,
-        }],
-        imports: Vec::new(),
-        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "forty_two".to_string(), function_index: 0 }],
-        witness_entries: Vec::new(),
-        code_bytes: code,
-        globals: Vec::new(),
-        init_function_indices: Vec::new(),
-        layouts: Vec::new(),
-    };
-    let module = OdinVm::new().load(&encode_module(&data)).expect("load");
-    let mut vm = OdinVm::new();
-    vm.set_jit(Box::new(BaselineScalarJit::new(OdinScalarMatcher)));
-    assert_eq!(vm.run(&module, "forty_two", vec![]).expect("run"), Value::I32(42));
-}
-
-#[test]
-fn workload_hints_tighten_gray_budget_on_vm() {
-    use interpreter_gc::WorkloadHints;
-
-    let mut vm = OdinVm::new();
-    assert_eq!(vm.gray_budget_per_slice(), 64);
-    assert_eq!(vm.max_trace_slices_per_poll(), 5);
-    vm.apply_workload_hints(WorkloadHints { pause_budget_ms: Some(1), ..WorkloadHints::default() });
-    assert_eq!(vm.gray_budget_per_slice(), 8);
-    assert_eq!(vm.max_trace_slices_per_poll(), 2);
-}
+use interpreter_gc::GcMode;
+use odin_vm::{OdinVm, workload_json::parse_workload_intent_json};
 
 #[test]
 fn concurrent_interactive_fixture_wires_vm_evidence_accessors() {
-    use interpreter_gc::GcMode;
     use odin_vm::workload_json::parse_workload_intent_json;
 
     let text = include_str!("../fixtures/workload/concurrent-interactive.json");
@@ -282,13 +23,13 @@ fn concurrent_interactive_fixture_wires_vm_evidence_accessors() {
 
 #[test]
 fn gc_evidence_snapshot_includes_scenario_and_trace_fields() {
-    use odin_vm::workload_json::parse_workload_intent_json;
+    use odin_vm::workload_json::{parse_workload_intent_json, snapshot_gc_evidence};
 
     let text = include_str!("../fixtures/workload/concurrent-interactive.json");
     let intent = parse_workload_intent_json(text).expect("parse");
     let mut vm = OdinVm::new();
     vm.apply_workload_intent(intent).expect("apply");
-    let snap = vm.gc_evidence_snapshot();
+    let snap = snapshot_gc_evidence(&vm);
     assert_eq!(snap["decision"]["scenario_id"], "concurrent-interactive");
     assert_eq!(snap["decision"]["mode"], "concurrent_mark_reserved");
     assert!(snap["transitions"].as_array().expect("transitions").len() >= 1);
@@ -301,7 +42,6 @@ fn gc_evidence_snapshot_includes_scenario_and_trace_fields() {
 
 #[test]
 fn online_request_fixture_applies_generational_strategy_on_vm() {
-    use interpreter_gc::GcMode;
     use odin_vm::workload_json::parse_workload_intent_json;
 
     let text = include_str!("../fixtures/workload/online-request.json");
@@ -317,7 +57,6 @@ fn online_request_fixture_applies_generational_strategy_on_vm() {
 
 #[test]
 fn resident_service_fixture_applies_generational_strategy_on_vm() {
-    use interpreter_gc::GcMode;
     use odin_vm::workload_json::parse_workload_intent_json;
 
     let text = include_str!("../fixtures/workload/resident-service.json");
@@ -334,7 +73,6 @@ fn resident_service_fixture_applies_generational_strategy_on_vm() {
 
 #[test]
 fn offline_batch_fixture_applies_throughput_strategy_on_vm() {
-    use interpreter_gc::GcMode;
     use odin_vm::workload_json::parse_workload_intent_json;
 
     let text = include_str!("../fixtures/workload/offline-batch.json");
@@ -351,7 +89,7 @@ fn offline_batch_fixture_applies_throughput_strategy_on_vm() {
 
 #[test]
 fn nested_workload_phase_overrides_scenario_then_restores() {
-    use interpreter_gc::{GcMode, IntentSource};
+    use interpreter_gc::IntentSource;
     use odin_vm::workload_json::parse_workload_intent_json;
 
     let batch = parse_workload_intent_json(include_str!("../fixtures/workload/offline-batch.json")).expect("batch");
@@ -373,135 +111,4 @@ fn nested_workload_phase_overrides_scenario_then_restores() {
     assert_eq!(restored.mode, GcMode::ThroughputBatch);
     assert_eq!(restored.scenario_id.as_deref(), Some("offline-batch"));
     assert_eq!(vm.last_strategy_decision().map(|d| d.scenario_id.as_deref()), Some(Some("offline-batch")));
-}
-
-#[test]
-fn install_inline_deopt_chain_orders_outer_then_inner() {
-    use odin_vm::jit::{InlineFrameSpec, build_inline_deopt_map, materialize_interpreter_frames};
-
-    let map = build_inline_deopt_map(
-        1,
-        &[
-            InlineFrameSpec { function_index: 1, local_count: 1, resume_instruction: None },
-            InlineFrameSpec { function_index: 0, local_count: 2, resume_instruction: Some(40) },
-        ],
-        &[7],
-    );
-    let entry = map.entry_at(7).expect("entry");
-    let restored = materialize_interpreter_frames(entry, &[vec![], vec![]]).expect("materialize");
-    let mut vm = OdinVm::new();
-    vm.install_deopt_frames(&restored, 0, None).expect("install");
-    assert_eq!(vm.frame_count(), 2);
-}
-
-#[test]
-fn install_deopt_frames_invalidates_scalar_and_restores_locals() {
-    use odin_vm::{
-        Value,
-        jit::{BaselineScalarJit, OdinScalarMatcher, build_baseline_deopt_map, materialize_interpreter_frames},
-    };
-
-    let mut code = Vec::new();
-    code.push(OdinHeadCode::LoadArg as u8);
-    code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(OdinHeadCode::Return as u8);
-    let module = load_named_module("scalar-deopt", "id", 1, code);
-    let mut vm = OdinVm::new();
-    vm.set_jit(Box::new(BaselineScalarJit::new(OdinScalarMatcher)));
-    assert_eq!(vm.run(&module, "id", vec![Value::I32(1)]).expect("run"), Value::I32(1));
-    assert_eq!(vm.scalar_cache_len(), 1);
-
-    let map = build_baseline_deopt_map(0, 2, &[0]);
-    let entry = map.entry_at(0).expect("entry");
-    let restored = materialize_interpreter_frames(entry, &[vec![]]).expect("materialize");
-    vm.install_deopt_frames(&restored, 0, None).expect("install");
-    assert_eq!(vm.scalar_cache_len(), 0);
-    assert_eq!(vm.frame_count(), 1);
-}
-
-#[test]
-fn invalidate_assumption_drops_scalar_leaf_cache() {
-    use odin_vm::{
-        Value,
-        jit::{BaselineScalarJit, OdinScalarMatcher, JitAssumption},
-    };
-
-    let mut code = Vec::new();
-    code.push(OdinHeadCode::LoadArg as u8);
-    code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(OdinHeadCode::Return as u8);
-    let module = load_named_module("scalar-assume", "id", 1, code);
-    let mut vm = OdinVm::new();
-    vm.set_jit(Box::new(BaselineScalarJit::new(OdinScalarMatcher)));
-    assert_eq!(vm.run(&module, "id", vec![Value::I32(9)]).expect("run"), Value::I32(9));
-    assert_eq!(vm.scalar_cache_len(), 1);
-    vm.invalidate_assumption(JitAssumption::ScalarLeafShape);
-    assert_eq!(vm.scalar_cache_len(), 0);
-}
-
-#[test]
-fn invalidate_scalar_cache_clears_compiled_blobs() {
-    use odin_vm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
-
-    let mut code = Vec::new();
-    code.push(OdinHeadCode::LoadArg as u8);
-    code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(OdinHeadCode::Return as u8);
-    let module = load_named_module("scalar-inv", "id", 1, code);
-    let mut vm = OdinVm::new();
-    vm.set_jit(Box::new(BaselineScalarJit::new(OdinScalarMatcher)));
-    assert_eq!(vm.run(&module, "id", vec![Value::I32(3)]).expect("run"), Value::I32(3));
-    assert_eq!(vm.scalar_cache_len(), 1);
-    vm.invalidate_scalar_module(&module);
-    assert_eq!(vm.scalar_cache_len(), 0);
-    assert_eq!(vm.run(&module, "id", vec![Value::I32(4)]).expect("rerun"), Value::I32(4));
-    assert_eq!(vm.scalar_cache_len(), 1);
-    vm.invalidate_scalar_cache();
-    assert_eq!(vm.scalar_cache_len(), 0);
-}
-
-#[test]
-fn baseline_scalar_jit_fast_path_const_local_binop() {
-    use odin_vm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
-
-    let mut code = Vec::new();
-    code.push(OdinHeadCode::Constant as u8);
-    code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(OdinHeadCode::LoadArg as u8);
-    code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(OdinHeadCode::I32Add as u8);
-    code.push(OdinHeadCode::Return as u8);
-    let data = OdinModuleData {
-        version: Odin_VERSION,
-        name: "scalar-imm-add".to_string(),
-        constants: vec![OdinConstant::Integer32(10)],
-        functions: vec![OdinFunction { name: "add10".to_string(), arity: 1, local_count: 1, code_offset: 0, code_length: code.len() as i32 }],
-        imports: Vec::new(),
-        exports: vec![OdinExport { kind: OdinExportKind::Function, symbol_name: "add10".to_string(), function_index: 0 }],
-        witness_entries: Vec::new(),
-        code_bytes: code,
-        globals: Vec::new(),
-        init_function_indices: Vec::new(),
-        layouts: Vec::new(),
-    };
-    let module = OdinVm::new().load(&encode_module(&data)).expect("load");
-    let mut vm = OdinVm::new();
-    vm.set_jit(Box::new(BaselineScalarJit::new(OdinScalarMatcher)));
-    assert_eq!(vm.run(&module, "add10", vec![Value::I32(7)]).expect("run"), Value::I32(17));
-    assert_eq!(vm.scalar_cache_len(), 1);
-}
-
-#[test]
-fn baseline_scalar_jit_fast_path_sub_and_mul() {
-    use odin_vm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
-
-    let mut vm = OdinVm::new();
-    vm.set_jit(Box::new(BaselineScalarJit::new(OdinScalarMatcher)));
-
-    let sub = load_i32_binop_module("scalar-sub", "sub", OdinHeadCode::I32Sub);
-    assert_eq!(vm.run(&sub, "sub", vec![Value::I32(40), Value::I32(2)]).expect("sub"), Value::I32(38));
-
-    let mul = load_i32_binop_module("scalar-mul", "mul", OdinHeadCode::I32Mul);
-    assert_eq!(vm.run(&mul, "mul", vec![Value::I32(40), Value::I32(2)]).expect("mul"), Value::I32(80));
-    assert_eq!(vm.scalar_cache_len(), 2);
 }
