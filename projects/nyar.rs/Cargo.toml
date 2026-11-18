@@ -16,7 +16,6 @@ members = [
     "compilers/nyar-analyzer",
     "compilers/nyar-emitter",
     "compilers/nyar-format",
-    "compilers/nyar-optimizer",
     "compilers/nyar-package-manager",
     "compilers/nyar-package-registry",
     "compilers/nyar-runner",
@@ -38,9 +37,7 @@ repository = "https://github.com/nyar-vm/nyar-vm"
 [workspace.dependencies]
 # Boost 库，已使用本地 `.cargo/config.toml` 覆盖
 boost-diagnostic = { git = "https://github.com/oovm/rust-boost", rev = "9aa52745d6eae2d7748c76e4e3e6555e1f6e4b86", default-features = false, features = ["std", "serde"] }
-compiler-optimize = { git = "https://github.com/oovm/rust-boost", rev = "5211e79672663c2b5168bc505dfe37c94028e5d6" }
 interpreter-gc = { git = "https://github.com/oovm/rust-boost", rev = "5211e79672663c2b5168bc505dfe37c94028e5d6" }
-interpreter-jit = { git = "https://github.com/oovm/rust-boost", rev = "5211e79672663c2b5168bc505dfe37c94028e5d6" }
 compiler-analysis = { git = "https://github.com/oovm/rust-boost", rev = "5211e79672663c2b5168bc505dfe37c94028e5d6" }
 compiler-emitter = { git = "https://github.com/oovm/rust-boost", rev = "5211e79672663c2b5168bc505dfe37c94028e5d6" }
 compiler-target = { git = "https://github.com/oovm/rust-boost", rev = "5211e79672663c2b5168bc505dfe37c94028e5d6" }
@@ -68,7 +65,6 @@ legion-fixtures = { git = "https://github.com/valkyrie-language/valkyrie.rs", re
 # Nyar Compiler 编译期组件
 nyar = { path = "compilers/nyar" }
 nyar-analyzer = { path = "compilers/nyar-analyzer" }
-nyar-optimizer = { path = "compilers/nyar-optimizer" }
 nyar-types = { path = "compilers/nyar-types" }
 nyar-format = { path = "compilers/nyar-format" }
 nyar-runner = { path = "compilers/nyar-runner" }
