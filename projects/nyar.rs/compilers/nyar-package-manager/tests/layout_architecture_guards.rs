@@ -4,11 +4,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// Neutral defaults that must always come from [`ProjectLayout`], never be hard-coded in `src`.
+/// 本产品的布局默认值必须只出现在 `PRODUCT_LAYOUT` 声明处。
 ///
-/// `layout.rs` is the only place allowed to spell them out.
-fn neutral_layout_literals() -> Vec<String> {
-    let layout = ProjectLayout::neutral();
+/// Boost 的 `package-resolve` 只提供中立的 `ProjectLayout` 类型；本仓的 `lib.rs` 是唯一允许
+/// 拼出产品文件名的位置。
+fn product_layout_literals() -> Vec<String> {
+    let layout = PRODUCT_LAYOUT;
     vec![
         layout.package_manifest.to_string(),
         layout.workspace_manifest.to_string(),
@@ -84,8 +85,8 @@ fn scan_source(path: &Path) -> String {
 }
 
 #[test]
-fn neutral_layout_uses_nyar_defaults() {
-    let layout = ProjectLayout::neutral();
+fn product_layout_uses_nyar_defaults() {
+    let layout = PRODUCT_LAYOUT;
     assert_eq!(layout.package_manifest, "package.von");
     assert_eq!(layout.workspace_manifest, "workspace.von");
     assert_eq!(layout.ignore_file, ".packageignore");
@@ -101,9 +102,9 @@ fn package_manager_src_does_not_hardcode_layout_defaults() {
     let mut files = Vec::new();
     collect_rs_files(&root, &mut files);
     assert!(!files.is_empty());
-    let needles = neutral_layout_literals();
+    let needles = product_layout_literals();
     for path in files {
-        if path.file_name().and_then(|name| name.to_str()) == Some("layout.rs") {
+        if path.file_name().and_then(|name| name.to_str()) == Some("lib.rs") {
             continue;
         }
         let source = scan_source(&path);

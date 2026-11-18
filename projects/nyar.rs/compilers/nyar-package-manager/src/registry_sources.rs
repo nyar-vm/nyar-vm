@@ -7,7 +7,7 @@ use std::{
 use nyar_package_registry::{Registry, registries_with_endpoints};
 use serde::{Deserialize, Serialize};
 
-use crate::{PackageManagerError, ProjectLayout, Result};
+use crate::{PRODUCT_LAYOUT, PackageManagerError, ProjectLayout, Result};
 
 /// Persistent registry endpoint configuration.
 ///
@@ -33,7 +33,7 @@ impl RegistrySourceManager {
 
     /// Open with neutral layout paths (tests / tools without a product CLI).
     pub fn open_default() -> Result<Self> {
-        Self::open_with_layout(ProjectLayout::neutral())
+        Self::open_with_layout(PRODUCT_LAYOUT)
     }
 
     /// 打开 `registry-sources.von`；文件缺失时使用内置默认 endpoint 表。

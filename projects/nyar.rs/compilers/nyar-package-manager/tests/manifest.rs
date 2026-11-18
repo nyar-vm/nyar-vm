@@ -7,7 +7,7 @@ fn save_roundtrip_dev_dependencies() {
     )
     .expect("parse");
     let dir = tempfile::tempdir().expect("tempdir");
-    manifest.save(dir.path(), ProjectLayout::neutral()).expect("save");
-    let loaded = PackageManifest::load(dir.path(), ProjectLayout::neutral()).expect("load");
+    manifest.save(dir.path(), PRODUCT_LAYOUT).expect("save");
+    let loaded = PackageManifest::load(dir.path(), PRODUCT_LAYOUT).expect("load");
     assert_eq!(loaded.dev_dependencies.get("smoke.dev").and_then(|s| s.version_constraint()), Some("1.5.0"));
 }

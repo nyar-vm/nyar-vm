@@ -7,9 +7,10 @@ use std::{
 use nyar_package_registry::{Package, PublishOptions, PublishResult, Registry, TokenVerifyResult};
 
 use crate::{
-    DependencyBucket, DependencyResolver, LockEntry, LockFile, PackageCache, PackageManagerError, PackageManifest, PackagePublisher,
-    ProjectLayout, ProjectMode, RegistrySourceManager, Result, ScriptResult, ScriptRunner, SecurityAudit, SecurityAuditResult, VendorManager,
-    WorkspaceManifest, is_registry_publish_type, resolve_publish_artifact, version::satisfies_version_constraint,
+    DependencyBucket, DependencyResolver, LockEntry, LockFile, PRODUCT_LAYOUT, PackageCache, PackageManagerError, PackageManifest,
+    PackagePublisher, ProjectLayout, ProjectMode, RegistrySourceManager, Result, ScriptResult, ScriptRunner, SecurityAudit,
+    SecurityAuditResult, VendorManager, WorkspaceManifest, is_registry_publish_type, resolve_publish_artifact,
+    satisfies_version_constraint,
 };
 
 /// Installed / queried package summary.
@@ -95,7 +96,7 @@ impl PackageManager {
         manifest: PackageManifest,
         registries: HashMap<String, Arc<dyn Registry>>,
     ) -> Result<Self> {
-        Self::open_with_manifest_layout(directory, manifest, registries, ProjectLayout::neutral())
+        Self::open_with_manifest_layout(directory, manifest, registries, PRODUCT_LAYOUT)
     }
 
     /// Open with an in-memory manifest and a product-supplied [`ProjectLayout`].
@@ -944,5 +945,5 @@ fn copy_dir(source: &Path, dest: &Path) -> Result<()> {
 // Keep WorkspaceManifest reachable for callers.
 #[allow(dead_code)]
 fn _workspace_manifest_path(root: &Path) -> PathBuf {
-    WorkspaceManifest::path_in(root, ProjectLayout::neutral())
+    WorkspaceManifest::path_in(root, PRODUCT_LAYOUT)
 }

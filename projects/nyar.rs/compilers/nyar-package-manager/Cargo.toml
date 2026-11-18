@@ -13,6 +13,7 @@ miette = { workspace = true }
 nyar = { workspace = true }
 nyar-format = { workspace = true, features = ["serde"] }
 nyar-package-registry = { workspace = true }
+package-resolve = { git = "https://github.com/oovm/rust-boost", rev = "9a7b37b13702e3f4461ceb6362effdfc79e0cdbe" }
 acorn-odin = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

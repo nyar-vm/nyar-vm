@@ -1,4 +1,5 @@
 use miette::Diagnostic;
+use package_resolve::PackageError;
 use nyar_package_registry::RegistryError;
 use oak_core::OakError;
 use thiserror::Error;
@@ -10,6 +11,10 @@ pub enum PackageManagerError {
     #[error(transparent)]
     #[diagnostic(code(nyar::package_manager::registry))]
     Registry(#[from] RegistryError),
+    /// 清单 / lock / 依赖求解错误。
+    #[error(transparent)]
+    #[diagnostic(code(nyar::package_manager::resolve))]
+    Resolve(#[from] PackageError),
     /// VON 解析或序列化失败。
     #[error(transparent)]
     #[diagnostic(code(nyar::package_manager::von))]

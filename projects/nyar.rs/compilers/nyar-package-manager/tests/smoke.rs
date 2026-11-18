@@ -110,7 +110,7 @@ fn publish_dry_run_packs_without_upload() {
         let mut pm = PackageManager::open_with_registries(
             package_dir.path(),
             mock_registries(mock.clone()),
-            nyar_package_manager::ProjectLayout::neutral(),
+            nyar_package_manager::PRODUCT_LAYOUT,
         )
         .expect("open package manager");
 
@@ -149,7 +149,7 @@ fn publish_uploads_tarball_to_mock_registry() {
         let mut pm = PackageManager::open_with_registries(
             package_dir.path(),
             mock_registries(mock.clone()),
-            nyar_package_manager::ProjectLayout::neutral(),
+            nyar_package_manager::PRODUCT_LAYOUT,
         )
         .expect("open package manager");
 
@@ -190,7 +190,7 @@ fn publish_uses_manifest_publish_target_package_id() {
         let mut pm = PackageManager::open_with_registries(
             package_dir.path(),
             mock_registries(mock.clone()),
-            nyar_package_manager::ProjectLayout::neutral(),
+            nyar_package_manager::PRODUCT_LAYOUT,
         )
         .expect("open package manager");
 
@@ -235,7 +235,7 @@ fn publish_uses_node_dist_not_project_root() {
         let mut pm = PackageManager::open_with_registries(
             package_dir.path(),
             mock_registries(mock.clone()),
-            nyar_package_manager::ProjectLayout::neutral(),
+            nyar_package_manager::PRODUCT_LAYOUT,
         )
         .expect("open package manager");
 
@@ -273,7 +273,7 @@ fn install_writes_vendors_and_lockfile() {
         });
 
         let mut pm =
-            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::ProjectLayout::neutral())
+            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT)
                 .expect("open package manager");
         let info = pm.install_one("smoke.dep", "2.0.0", "npm", true).expect("install");
 
@@ -307,7 +307,7 @@ fn offline_install_restores_from_cache_after_vendors_removed() {
         });
 
         let mut pm =
-            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::ProjectLayout::neutral())
+            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT)
                 .expect("open package manager");
         pm.install_one("smoke.dep", "2.0.0", "npm", true).expect("online install");
 
@@ -334,7 +334,7 @@ fn offline_install_fails_when_package_missing() {
 
         let mock = Arc::new(MockRegistry::new("npm", "https://mock.npm.local"));
         let mut pm =
-            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::ProjectLayout::neutral())
+            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT)
                 .expect("open package manager");
         pm.offline = true;
         let error = pm.install_dependencies(false, "npm").expect_err("offline install should fail");
@@ -363,7 +363,7 @@ fn peer_dependency_validation_warns_on_missing_peer() {
 
         let mock = Arc::new(MockRegistry::new("npm", "https://mock.npm.local"));
         let mut pm =
-            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::ProjectLayout::neutral())
+            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT)
                 .expect("open package manager");
         pm.install_dependencies(false, "npm").expect("install with peer warning");
     });
@@ -384,7 +384,7 @@ fn audit_offline_checks_licenses_from_lockfile() {
         });
 
         let mut pm =
-            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::ProjectLayout::neutral())
+            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT)
                 .expect("open package manager");
         pm.install_one("smoke.dep", "2.0.0", "npm", true).expect("install");
 
@@ -400,7 +400,7 @@ fn audit_offline_checks_licenses_from_lockfile() {
 #[test]
 fn registry_sources_persist_custom_endpoint() {
     with_isolated_home(|_| {
-        let layout = nyar_package_manager::ProjectLayout::neutral();
+        let layout = nyar_package_manager::PRODUCT_LAYOUT;
         let mut manager = RegistrySourceManager::open_with_layout(layout).expect("open");
         manager.add("npm", "https://npm.example.test").expect("add");
         assert_eq!(manager.get_endpoint("npm"), Some("https://npm.example.test"));
@@ -505,7 +505,7 @@ fn login_discovers_npmrc_without_auth_von() {
         let mock = Arc::new(MockRegistry::new("npm", "https://mock.npm.local"));
         mock.insert_token("discovered-token", "npm-user");
         let mut pm =
-            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::ProjectLayout::neutral())
+            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT)
                 .expect("open package manager");
 
         let result = pm.login(Some("npm"), None).expect("login");
@@ -543,7 +543,7 @@ fn valhalla_login_persists_auth_von() {
 
         let mut registries: HashMap<String, Arc<dyn Registry>> = HashMap::new();
         registries.insert("valhalla".to_string(), Arc::new(ValhallaRegistry::new("https://valhalla.example.test").expect("valhalla")));
-        let mut pm = PackageManager::open_with_registries(package_dir.path(), registries, nyar_package_manager::ProjectLayout::neutral())
+        let mut pm = PackageManager::open_with_registries(package_dir.path(), registries, nyar_package_manager::PRODUCT_LAYOUT)
             .expect("open package manager");
         let key = PublisherKey::from_seed([7u8; 32]).expect("seed");
         let result = pm.login(Some("valhalla"), Some(&key.to_auth_material())).expect("login");
@@ -648,7 +648,7 @@ fn nested_workspace_enumerates_member_packages() {
     let nested_dir = root.path().join("nested");
     let app_dir = nested_dir.join("app");
     std::fs::create_dir_all(&app_dir).expect("app dir");
-    let layout = nyar_package_manager::ProjectLayout::neutral();
+    let layout = nyar_package_manager::PRODUCT_LAYOUT;
     std::fs::write(root.path().join(layout.workspace_manifest), "{\n    name: \"root\",\n    members: [\"nested\"]\n}\n")
         .expect("root workspace");
     std::fs::write(nested_dir.join(layout.workspace_manifest), "{\n    name: \"nested\",\n    members: [\"app\"]\n}\n")
@@ -673,7 +673,7 @@ fn open_with_manifest_layout_uses_product_lockfile_name() {
             lockfile: "product-lock.von",
             home_dirname: ".product-pm",
             home_env: "PRODUCT_PM_HOME",
-            ..nyar_package_manager::ProjectLayout::neutral()
+            ..nyar_package_manager::PRODUCT_LAYOUT
         };
 
         let mock = Arc::new(MockRegistry::new("npm", "https://mock.npm.local"));
@@ -720,7 +720,7 @@ fn update_preserves_dev_dependency_bucket() {
         });
 
         let mut pm =
-            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::ProjectLayout::neutral())
+            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT)
                 .expect("open");
         pm.update_one_with_manifest("smoke.dev", "2.0.0", "npm", true).expect("update");
 
@@ -749,7 +749,7 @@ fn remove_cleans_registry_vendor_path() {
         });
 
         let mut pm =
-            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::ProjectLayout::neutral())
+            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT)
                 .expect("open");
         pm.install_one("smoke.dep", "2.0.0", "npm", true).expect("install");
 
@@ -777,12 +777,12 @@ fn add_dev_dependency_writes_dev_bucket() {
         });
 
         let mut pm =
-            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::ProjectLayout::neutral())
+            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT)
                 .expect("open");
         pm.add_dev_dependency("smoke.dev", "1.5.0", "npm").expect("add dev");
 
         let parsed =
-            nyar_package_manager::PackageManifest::load(package_dir.path(), nyar_package_manager::ProjectLayout::neutral()).expect("load");
+            nyar_package_manager::PackageManifest::load(package_dir.path(), nyar_package_manager::PRODUCT_LAYOUT).expect("load");
         assert!(!parsed.dependencies.contains_key("smoke.dev"));
         assert_eq!(parsed.dev_dependencies.get("smoke.dev").and_then(|s| s.version_constraint()), Some("1.5.0"));
     });
@@ -801,7 +801,7 @@ fn pack_options_for_artifact(artifact_dir: &Path) -> nyar_package_manager::Regis
         },
         include_files: Vec::new(),
         flat_layout: false,
-        layout: nyar_package_manager::ProjectLayout::neutral(),
+        layout: nyar_package_manager::PRODUCT_LAYOUT,
     }
 }
 
@@ -866,7 +866,7 @@ fn npm_envelope_rejects_legacy_nyar_execution_artifact() {
 fn npm_envelope_declares_assembly_identity_for_package_nyar() {
     let dir = TempDir::new().expect("package dir");
     std::fs::write(dir.path().join("package.nyar"), b"\x4E\x59\x41\x52").expect("assembly");
-    let packed = nyar_package_manager::pack(dir.path(), &pack_options_for_artifact(dir.path()).meta, nyar_package_manager::ProjectLayout::neutral())
+    let packed = nyar_package_manager::pack(dir.path(), &pack_options_for_artifact(dir.path()).meta, nyar_package_manager::PRODUCT_LAYOUT)
         .expect("pack");
     let package_json = tarball_package_json(&packed.tarball_data);
     assert!(!package_json.contains("\"kind\":\"execution\""), "`package.nyar` must not be declared as execution: {package_json}");

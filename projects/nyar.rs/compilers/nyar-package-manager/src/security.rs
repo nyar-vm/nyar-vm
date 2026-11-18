@@ -6,7 +6,7 @@ use std::{
 use nyar_package_registry::{OsvClient, Package};
 use serde::{Deserialize, Serialize};
 
-use crate::{PackageManagerError, Result};
+use crate::{PRODUCT_LAYOUT, PackageManagerError, Result};
 
 /// Vulnerability report for a locked package.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -107,7 +107,7 @@ impl SecurityAudit {
 
     /// Open with neutral layout paths (tests / tools without a product CLI).
     pub fn open_default() -> Result<Self> {
-        Self::open_with_layout(crate::ProjectLayout::neutral())
+        Self::open_with_layout(crate::PRODUCT_LAYOUT)
     }
 
     /// 使用自定义 OSV 查询结果缓存文件路径。

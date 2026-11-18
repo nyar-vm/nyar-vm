@@ -7,7 +7,7 @@ license.workspace = true
 description = "Nyar package registry facade: Valhalla channel, publisher keys and official CLI credential stores"
 
 [dependencies]
-package-registry = { git = "https://github.com/oovm/rust-boost", rev = "ecc1cf5e3ceecb794cf35037b1b0a657393ccdb3" }
+package-registry = { git = "https://github.com/oovm/rust-boost", rev = "9a7b37b13702e3f4461ceb6362effdfc79e0cdbe" }
 base64 = { workspace = true }
 ed25519-dalek = { workspace = true }
 serde = { workspace = true }

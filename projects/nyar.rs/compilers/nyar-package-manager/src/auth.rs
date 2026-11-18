@@ -6,7 +6,7 @@ use std::{
 use nyar_package_registry::{PublisherKey, Registry, RegistryCredentials, TokenVerifyResult};
 use serde::{Deserialize, Serialize};
 
-use crate::{DiscoveredCredential, PackageManagerError, ProjectLayout, Result, credentials};
+use crate::{PRODUCT_LAYOUT, DiscoveredCredential, PackageManagerError, ProjectLayout, Result, credentials};
 
 /// Stored vendor authentication tokens (path from [`ProjectLayout`]).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,7 +150,7 @@ impl VendorManager {
 
     /// Open with neutral layout paths (tests / tools without a product CLI).
     pub fn open_default() -> Result<Self> {
-        Self::open_with_layout(ProjectLayout::neutral())
+        Self::open_with_layout(PRODUCT_LAYOUT)
     }
 
     /// Login to a registry. When `token` is empty, discover from registry credential stores first.

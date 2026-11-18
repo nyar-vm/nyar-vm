@@ -25,7 +25,7 @@ fn resolves_unicode_scope_entry_to_mjs() {
         },
         include_files: Vec::new(),
         flat_layout: false,
-        layout: nyar_package_manager::ProjectLayout::neutral(),
+        layout: nyar_package_manager::PRODUCT_LAYOUT,
     };
     let packed = pack_registry_artifact(&options).expect("pack");
     assert!(packed.file_count >= 3);
@@ -66,7 +66,7 @@ fn packs_manifest_files_and_jsr_flat_layout() {
         },
         include_files: vec!["NOTICE".into(), "dist/**/docs/*.md".into()],
         flat_layout: true,
-        layout: nyar_package_manager::ProjectLayout::neutral(),
+        layout: nyar_package_manager::PRODUCT_LAYOUT,
     };
     let packed = pack_registry_artifact(&options).expect("pack");
 
