@@ -37,13 +37,13 @@ repository = "https://github.com/nyar-vm/nyar-vm"
 [workspace.dependencies]
 # Boost 库，已使用本地 `.cargo/config.toml` 覆盖
 boost-diagnostic = { git = "https://github.com/oovm/rust-boost", rev = "9aa52745d6eae2d7748c76e4e3e6555e1f6e4b86", default-features = false, features = ["std", "serde"] }
-interpreter-gc = { git = "https://github.com/oovm/rust-boost", rev = "1688e402b3526f65863cc42e09dcd0d553dbd305" }
-compiler-analysis = { git = "https://github.com/oovm/rust-boost", rev = "1688e402b3526f65863cc42e09dcd0d553dbd305" }
-compiler-emitter = { git = "https://github.com/oovm/rust-boost", rev = "1688e402b3526f65863cc42e09dcd0d553dbd305" }
-compiler-target = { git = "https://github.com/oovm/rust-boost", rev = "1688e402b3526f65863cc42e09dcd0d553dbd305" }
-compiler-specialize = { git = "https://github.com/oovm/rust-boost", rev = "1688e402b3526f65863cc42e09dcd0d553dbd305" }
-compiler-types = { git = "https://github.com/oovm/rust-boost", rev = "1688e402b3526f65863cc42e09dcd0d553dbd305" }
-interpreter-vm-ovm = { git = "https://github.com/oovm/rust-boost", rev = "1688e402b3526f65863cc42e09dcd0d553dbd305" }
+interpreter-gc = { git = "https://github.com/oovm/rust-boost", rev = "43cd1d71d7bdadee9941065054aed6d029d0c108" }
+compiler-analysis = { git = "https://github.com/oovm/rust-boost", rev = "43cd1d71d7bdadee9941065054aed6d029d0c108" }
+compiler-emitter = { git = "https://github.com/oovm/rust-boost", rev = "43cd1d71d7bdadee9941065054aed6d029d0c108" }
+compiler-target = { git = "https://github.com/oovm/rust-boost", rev = "43cd1d71d7bdadee9941065054aed6d029d0c108" }
+compiler-specialize = { git = "https://github.com/oovm/rust-boost", rev = "43cd1d71d7bdadee9941065054aed6d029d0c108" }
+compiler-types = { git = "https://github.com/oovm/rust-boost", rev = "43cd1d71d7bdadee9941065054aed6d029d0c108" }
+interpreter-vm-ovm = { git = "https://github.com/oovm/rust-boost", rev = "43cd1d71d7bdadee9941065054aed6d029d0c108" }
 acorn-wasm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "c93c8c294d007ab16e12cbf4f7f95051340e9573" }
 acorn-jvm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "c93c8c294d007ab16e12cbf4f7f95051340e9573" }
 acorn-pe = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "c93c8c294d007ab16e12cbf4f7f95051340e9573" }
@@ -59,9 +59,9 @@ oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "e68240
 oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "e68240f088b2f0657556eafd79aa0dca797e64dc", features = ["serde"] }
 oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "e68240f088b2f0657556eafd79aa0dca797e64dc" }
 oak-awsl = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "e68240f088b2f0657556eafd79aa0dca797e64dc" }
-language-format = { git = "https://github.com/oovm/rust-boost", rev = "1688e402b3526f65863cc42e09dcd0d553dbd305" }
-language-highlight = { git = "https://github.com/oovm/rust-boost", rev = "1688e402b3526f65863cc42e09dcd0d553dbd305" }
-compiler-valkyrie = { git = "https://github.com/oovm/rust-boost", rev = "1688e402b3526f65863cc42e09dcd0d553dbd305" }
+language-format = { git = "https://github.com/oovm/rust-boost", rev = "43cd1d71d7bdadee9941065054aed6d029d0c108" }
+language-highlight = { git = "https://github.com/oovm/rust-boost", rev = "43cd1d71d7bdadee9941065054aed6d029d0c108" }
+compiler-valkyrie = { git = "https://github.com/oovm/rust-boost", rev = "43cd1d71d7bdadee9941065054aed6d029d0c108" }
 # Nyar Compiler 编译期组件
 nyar = { path = "compilers/nyar" }
 nyar-analyzer = { path = "compilers/nyar-analyzer" }
