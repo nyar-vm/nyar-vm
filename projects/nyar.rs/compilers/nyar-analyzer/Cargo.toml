@@ -2,11 +2,11 @@
 name = "nyar-analyzer"
 version.workspace = true
 edition.workspace = true
-description = "Frontend-agnostic analysis contracts for the Nyar backend platform"
+description = "Frontend-agnostic format, highlight and residual contracts with Boost analysis facts re-exported"
 authors.workspace = true
 license.workspace = true
 
 [dependencies]
-nyar-optimizer = { workspace = true }
-nyar-types = { workspace = true, features = ["serde"] }
+compiler-analysis = { workspace = true }
+compiler-types = { workspace = true }
 serde = { workspace = true }
