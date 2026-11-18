@@ -55,10 +55,10 @@ acorn-host = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "be
 # `.odin` 字节码磁盘格式合同由 Acorn 格式适配器仓持有。
 acorn-odin = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "beccbdf77374dbb2ca67395be19af3e2048c57ca" }
 # Oak parser frontend (`examples/oak-voc` publishes crate `oak-awsl`). Bump `rev` with oak.rs releases.
-oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "fc94201d43926ac3f75b3a4f7dd10ac219d73f6e" }
-oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "fc94201d43926ac3f75b3a4f7dd10ac219d73f6e", features = ["serde"] }
-oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "fc94201d43926ac3f75b3a4f7dd10ac219d73f6e" }
-oak-awsl = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "fc94201d43926ac3f75b3a4f7dd10ac219d73f6e" }
+oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "b7eac8a9977c446e754de035a53a3ff083aa4a85" }
+oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "b7eac8a9977c446e754de035a53a3ff083aa4a85", features = ["serde"] }
+oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "b7eac8a9977c446e754de035a53a3ff083aa4a85" }
+oak-awsl = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "b7eac8a9977c446e754de035a53a3ff083aa4a85" }
 # Nyar Compiler 编译期组件
 nyar = { path = "compilers/nyar" }
 nyar-analyzer = { path = "compilers/nyar-analyzer" }
