@@ -1,7 +1,7 @@
 //! 宿主导入能力：加载期把符号解析为 [`HostOp`]，热路径只按枚举分派。
 
 use crate::error::OdinRuntimeError;
-use nyar_gc::{ObjectHeap, ObjectPayload};
+use interpreter_gc::{ObjectHeap, ObjectPayload};
 use acorn_odin::OdinImport;
 
 use crate::{array_runtime, dom_runtime, output_runtime, random_runtime, text_runtime, time_runtime, value::Value};
@@ -372,7 +372,7 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
                 }
                 None => None,
             };
-            let mut intent = nyar_gc::WorkloadIntent::empty(nyar_gc::IntentSource::PhaseEvent);
+            let mut intent = interpreter_gc::WorkloadIntent::empty(interpreter_gc::IntentSource::PhaseEvent);
             intent.phase = Some(phase);
             intent.pause_budget_ms = pause_budget_ms;
             heap.begin_phase(intent).map_err(|error| OdinRuntimeError::ModuleLoad(error.to_string()))?;

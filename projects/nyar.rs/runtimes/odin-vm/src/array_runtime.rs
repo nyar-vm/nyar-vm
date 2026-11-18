@@ -3,7 +3,7 @@
 //! 由 `CallIntrinsic` 经稠密 intrinsic 下标调用；元素槽与 `FieldGet`/`FieldSet` 同为
 //! `LayoutObject.slots[i]`，**禁止**字段名字符串寻址。
 
-use nyar_gc::{ObjectHeap, ObjectId, ObjectPayload};
+use interpreter_gc::{ObjectHeap, ObjectId, ObjectPayload};
 
 use crate::{error::OdinRuntimeError, value::Value};
 

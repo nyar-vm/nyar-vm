@@ -11,7 +11,7 @@
 //!
 //! 堆引用不得编码裸 `ObjectId`：须经 [`HostRoots`] 固定为 `RootHandle`（tag `0x07`）。
 
-use nyar_gc::{HostRoots, RootHandle};
+use interpreter_gc::{HostRoots, RootHandle};
 
 use crate::{error::OdinRuntimeError, value::Value};
 

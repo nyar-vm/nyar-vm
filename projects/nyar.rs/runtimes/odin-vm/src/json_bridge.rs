@@ -1,7 +1,7 @@
 //! CLI 的 JSON 与运行时值边界；缺少导出类型和布局合同的结构值必须拒绝。
 
 use miette::{IntoDiagnostic, Result};
-use nyar_gc::{ObjectHeap, ObjectPayload};
+use interpreter_gc::{ObjectHeap, ObjectPayload};
 use acorn_odin::{OvmAbiExport, OvmAbiType, OvmOptionBoxing, OvmTextRepresentation};
 use serde_json::Value as JsonValue;
 
@@ -140,7 +140,7 @@ fn object_slots<'a>(heap: &'a ObjectHeap, value: &Value, what: &'static str) -> 
     }
 }
 
-fn set_slot(heap: &mut ObjectHeap, id: nyar_gc::ObjectId, slot: usize, value: Value) -> Result<(), OdinRuntimeError> {
+fn set_slot(heap: &mut ObjectHeap, id: interpreter_gc::ObjectId, slot: usize, value: Value) -> Result<(), OdinRuntimeError> {
     heap.set_field(id, slot, value).map_err(|message| contract_failure("declared layout slot", message.to_string()))
 }
 

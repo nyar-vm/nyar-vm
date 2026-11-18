@@ -26,7 +26,7 @@ pub struct RestoredInterpreterFrame {
     pub locals: Vec<RestoredLocal>,
 }
 
-/// 物化后的 local 槽内容（JIT 包不依赖 `nyar-gc::Value`）。
+/// 物化后的 local 槽内容（JIT 包不依赖 `interpreter-gc::Value`）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RestoredLocal {
     /// 未提供物化值：解释器应以 `Null` 填槽。

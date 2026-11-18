@@ -8,7 +8,7 @@ use crate::{
     random_runtime,
     value::Value,
 };
-use nyar_gc::ObjectHeap;
+use interpreter_gc::ObjectHeap;
 
 /// Nyar virtual machine entry point.
 #[derive(Debug, Default)]
@@ -143,7 +143,7 @@ impl OdinVm {
         &mut self,
         restored: &[crate::jit::RestoredInterpreterFrame],
         stack_base: usize,
-        roots: Option<&nyar_gc::HostRoots>,
+        roots: Option<&interpreter_gc::HostRoots>,
     ) -> Result<(), OdinRuntimeError> {
         self.executor.install_deopt_frames(restored, stack_base, roots)
     }
@@ -168,12 +168,12 @@ impl OdinVm {
     }
 
     /// 设置堆级 GC 策略（立即生效于后续 safepoint）。
-    pub fn set_gc_policy(&mut self, policy: nyar_gc::GcPolicy) {
+    pub fn set_gc_policy(&mut self, policy: interpreter_gc::GcPolicy) {
         self.executor.heap_mut().set_policy(policy);
     }
 
     /// 更新工作负载提示（软上限、暂停预算、ConcurrentTrace 灰预算等），不改 GC 模式。
-    pub fn apply_workload_hints(&mut self, hints: nyar_gc::WorkloadHints) {
+    pub fn apply_workload_hints(&mut self, hints: interpreter_gc::WorkloadHints) {
         self.executor.apply_workload_hints(hints);
     }
 
@@ -188,62 +188,62 @@ impl OdinVm {
     }
 
     /// 最近一次 ConcurrentTrace poll 的工作量记账。
-    pub fn last_trace_poll(&self) -> nyar_gc::TracePollReport {
+    pub fn last_trace_poll(&self) -> interpreter_gc::TracePollReport {
         self.executor.last_trace_poll()
     }
 
     /// 最近一次 ConcurrentTrace 周期的根握手证据。
-    pub fn last_root_handshake(&self) -> nyar_gc::RootHandshakeReport {
+    pub fn last_root_handshake(&self) -> interpreter_gc::RootHandshakeReport {
         self.executor.last_root_handshake()
     }
 
     /// 最近一次 nursery 物理晋升转发图。
-    pub fn last_relocate_map(&self) -> &nyar_gc::RelocateMap {
+    pub fn last_relocate_map(&self) -> &interpreter_gc::RelocateMap {
         self.executor.last_relocate_map()
     }
 
     /// 最近一次晋升失败原因（若有）。
-    pub fn last_promotion_failure(&self) -> Option<&nyar_gc::PromotionFailure> {
+    pub fn last_promotion_failure(&self) -> Option<&interpreter_gc::PromotionFailure> {
         self.executor.last_promotion_failure()
     }
 
     /// 应用进程级工作负载意图并刷新 GC 策略。
-    pub fn apply_workload_intent(&mut self, intent: nyar_gc::WorkloadIntent) -> Result<nyar_gc::StrategyDecision, nyar_gc::IntentError> {
+    pub fn apply_workload_intent(&mut self, intent: interpreter_gc::WorkloadIntent) -> Result<interpreter_gc::StrategyDecision, interpreter_gc::IntentError> {
         self.executor.heap_mut().apply_intent(intent)
     }
 
     /// 进入业务阶段（嵌套）并刷新策略。
-    pub fn begin_workload_phase(&mut self, intent: nyar_gc::WorkloadIntent) -> Result<nyar_gc::StrategyDecision, nyar_gc::IntentError> {
+    pub fn begin_workload_phase(&mut self, intent: interpreter_gc::WorkloadIntent) -> Result<interpreter_gc::StrategyDecision, interpreter_gc::IntentError> {
         self.executor.heap_mut().begin_phase(intent)
     }
 
     /// 结束业务阶段并刷新策略。
-    pub fn end_workload_phase(&mut self, phase: Option<&str>) -> Result<nyar_gc::StrategyDecision, nyar_gc::IntentError> {
+    pub fn end_workload_phase(&mut self, phase: Option<&str>) -> Result<interpreter_gc::StrategyDecision, interpreter_gc::IntentError> {
         self.executor.heap_mut().end_phase(phase)
     }
 
     /// 最近一次策略决策（若有）。
-    pub fn last_strategy_decision(&self) -> Option<&nyar_gc::StrategyDecision> {
+    pub fn last_strategy_decision(&self) -> Option<&interpreter_gc::StrategyDecision> {
         self.executor.heap().last_strategy_decision()
     }
 
     /// 策略模式切换证据（同模式重复刷新不追加）。
-    pub fn strategy_transition_history(&self) -> &[nyar_gc::StrategyTransition] {
+    pub fn strategy_transition_history(&self) -> &[interpreter_gc::StrategyTransition] {
         self.executor.heap().strategy_transition_history()
     }
 
     /// 将值固定为宿主根，跨 `run` / `collect` 保持可达。
-    pub fn pin_root(&mut self, value: Value) -> nyar_gc::RootHandle {
+    pub fn pin_root(&mut self, value: Value) -> interpreter_gc::RootHandle {
         self.executor.heap_mut().pin_root(value)
     }
 
     /// 释放宿主根。
-    pub fn unpin_root(&mut self, handle: nyar_gc::RootHandle) {
+    pub fn unpin_root(&mut self, handle: interpreter_gc::RootHandle) {
         self.executor.heap_mut().unpin_root(handle);
     }
 
     /// 读取宿主根当前值。
-    pub fn get_root(&self, handle: nyar_gc::RootHandle) -> Option<&Value> {
+    pub fn get_root(&self, handle: interpreter_gc::RootHandle) -> Option<&Value> {
         self.executor.heap().get_root(handle)
     }
 

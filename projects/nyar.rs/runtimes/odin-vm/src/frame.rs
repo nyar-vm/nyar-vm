@@ -47,11 +47,11 @@ impl Frame {
 
     /// 由 deopt 物化帧构造解释器帧（`Absent` → `Null`；`Provided` 经 [`crate::deopt_value`] 解码）。
     ///
-    /// 若 `Provided` 含 `RootHandle` 载荷，必须传入 [`nyar_gc::HostRoots`]。
+    /// 若 `Provided` 含 `RootHandle` 载荷，必须传入 [`interpreter_gc::HostRoots`]。
     pub fn from_deopt_restore(
         restored: &RestoredInterpreterFrame,
         stack_base: usize,
-        roots: Option<&nyar_gc::HostRoots>,
+        roots: Option<&interpreter_gc::HostRoots>,
     ) -> Result<Self, OdinRuntimeError> {
         let mut locals = Vec::with_capacity(restored.locals.len());
         for cell in &restored.locals {

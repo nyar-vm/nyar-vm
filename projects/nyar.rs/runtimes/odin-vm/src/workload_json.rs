@@ -1,8 +1,8 @@
-//! 将 JSON 工作负载意图解析为 [`nyar_gc::WorkloadIntent`]。
+//! 将 JSON 工作负载意图解析为 [`interpreter_gc::WorkloadIntent`]。
 //!
 //! 解析属于宿主边界；`.odin` 外码不携带这些字段。
 
-use nyar_gc::{GcMode, IntentError, IntentSource, ObjectLifetimeHint, WorkloadIntent};
+use interpreter_gc::{GcMode, IntentError, IntentSource, ObjectLifetimeHint, WorkloadIntent};
 
 /// JSON 解析失败。
 #[derive(Debug)]
@@ -65,7 +65,7 @@ pub fn parse_workload_intent_json(source: &str) -> Result<WorkloadIntent, Worklo
     };
 
     // 复用控制器校验（紧暂停 + 吞吐冲突）
-    let mut probe = nyar_gc::StrategyController::new();
+    let mut probe = interpreter_gc::StrategyController::new();
     probe.set_process_intent(intent.clone()).map_err(|error: IntentError| WorkloadJsonError(error.to_string()))?;
 
     Ok(intent)

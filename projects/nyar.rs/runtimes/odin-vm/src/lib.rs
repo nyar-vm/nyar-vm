@@ -6,7 +6,7 @@
 //!
 //! - This crate executes **decoded Nyar IR modules** only. It must not import concrete
 //!   language ASTs or compilers.
-//! - Managed heap / GC live in **`nyar-gc`**; optional JIT lives in **`nyar-jit`**.
+//! - Managed heap / GC live in **`interpreter-gc`**; optional JIT lives in **`nyar-jit`**.
 //! - This crate owns the interpreter loop.
 //! - Concrete languages lower through `emitter` into `.odin` bytes before this VM sees them.
 //!
@@ -48,7 +48,7 @@ pub use crate::{
     vm::OdinVm,
     workload_json::{WorkloadJsonError, parse_workload_intent_json, snapshot_gc_evidence},
 };
-pub use nyar_gc::{
+pub use interpreter_gc::{
     ConcurrentMarkController, ConcurrentMarkError, ConcurrentMarkEvent, ConcurrentMarkState, ConcurrentMarkTicker, GarbageCollector, GcMode,
     GcPolicy, GcRoots, Generation, HostRoots, IntentError, IntentSource, LayoutDescriptor, LayoutId, ObjectHeap, ObjectLifetimeHint,
     ObjectPayload, PromotionFailure, RelocateMap, RootHandle, RootHandshakeReport, StrategyController, StrategyDecision, StrategyTransition,

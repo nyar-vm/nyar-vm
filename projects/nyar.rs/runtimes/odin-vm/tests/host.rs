@@ -1,4 +1,4 @@
-use nyar_gc::ObjectHeap;
+use interpreter_gc::ObjectHeap;
 use acorn_odin::OdinImport;
 use odin_vm::{
     host::{HostOp, ResolvedImport, execute_host_op, parse_host_op, resolve_import},

@@ -18,7 +18,7 @@ Package name: `odin-vm`. Rust import path: `odin_vm`.
 | `OdinVm`                              | Public entry: `load`, `run`, `run_with_globals`, JIT/stack-map hooks     |
 | `Executor`                            | Interpreter loop, call frames, NJ1 compile cache, deoptimization handoff |
 | `LoadedModule` / `ModuleGlobals`      | Decoded module image and persistent global slots (singleton init)        |
-| `nyar-gc` (re-exported)               | Managed heap, collector, layout descriptors, workload intent             |
+| `interpreter-gc` (re-exported)               | Managed heap, collector, layout descriptors, workload intent             |
 | `nyar-jit` (via `Executor::with_jit`) | Optional machine-code backend injected by the host                       |
 
 ## Features
@@ -51,4 +51,4 @@ code.
 
 - Does **not** parse source code or lower HIR/MIR.
 - Does **not** own the on-disk bytecode format contract (see `acorn-odin`).
-- Re-exports GC types for convenience but heap policy lives in `nyar-gc`.
+- Re-exports GC types for convenience but heap policy lives in `interpreter-gc`.

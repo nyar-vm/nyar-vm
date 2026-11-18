@@ -1,4 +1,4 @@
-use nyar_gc::{ObjectHeap, ObjectPayload, Value};
+use interpreter_gc::{ObjectHeap, ObjectPayload, Value};
 use odin_vm::{
     array_runtime::{array_get, array_length, array_push, array_set, build_fixed_array},
     error::OdinRuntimeError,
@@ -36,7 +36,7 @@ fn rejects_non_object_for_array_intrinsics() {
 
 #[test]
 fn array_set_records_old_to_young_barrier() {
-    use nyar_gc::Generation;
+    use interpreter_gc::Generation;
 
     let mut heap = ObjectHeap::new();
     let array_id = heap.alloc_tenured(ObjectPayload::LayoutObject { layout_id: 0, slots: vec![Value::Null, Value::Null] });

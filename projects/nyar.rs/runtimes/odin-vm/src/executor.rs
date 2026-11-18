@@ -14,7 +14,7 @@ use crate::{
     stack::ValueStack,
     value::{CoroutineState, Value},
 };
-use nyar_gc::{GarbageCollector, GcRoots, LayoutDescriptor, ObjectHeap, ObjectId};
+use interpreter_gc::{GarbageCollector, GcRoots, LayoutDescriptor, ObjectHeap, ObjectId};
 
 /// An invocation's control outcome, independent of the type of its return value.
 #[derive(Debug, Clone, PartialEq)]
@@ -187,7 +187,7 @@ impl Executor {
         &mut self,
         restored: &[RestoredInterpreterFrame],
         stack_base: usize,
-        roots: Option<&nyar_gc::HostRoots>,
+        roots: Option<&interpreter_gc::HostRoots>,
     ) -> Result<(), OdinRuntimeError> {
         self.invalidate_nj1_cache();
         let mut frames = Vec::with_capacity(restored.len());
@@ -215,12 +215,12 @@ impl Executor {
 
     /// 以给定 GC 根执行一次 `collect_for_policy`，把转发图交回调用方（供集成测试观察根握手）。
     #[doc(hidden)]
-    pub fn collect_for_policy(&mut self, roots: GcRoots<'_>) -> nyar_gc::RelocateMap {
+    pub fn collect_for_policy(&mut self, roots: GcRoots<'_>) -> interpreter_gc::RelocateMap {
         self.gc.collect_for_policy(roots, &mut self.heap)
     }
 
     /// 按工作负载提示同步堆策略与 ConcurrentTrace 有界预算。
-    pub fn apply_workload_hints(&mut self, hints: nyar_gc::WorkloadHints) {
+    pub fn apply_workload_hints(&mut self, hints: interpreter_gc::WorkloadHints) {
         self.gc.apply_workload_hints(&hints);
         self.heap.policy_mut().apply_hints(hints);
     }
@@ -236,22 +236,22 @@ impl Executor {
     }
 
     /// 最近一次 ConcurrentTrace poll 的工作量记账。
-    pub fn last_trace_poll(&self) -> nyar_gc::TracePollReport {
+    pub fn last_trace_poll(&self) -> interpreter_gc::TracePollReport {
         self.gc.last_trace_poll()
     }
 
     /// 最近一次 ConcurrentTrace 周期的根握手证据。
-    pub fn last_root_handshake(&self) -> nyar_gc::RootHandshakeReport {
+    pub fn last_root_handshake(&self) -> interpreter_gc::RootHandshakeReport {
         self.gc.last_root_handshake()
     }
 
     /// 最近一次 nursery 物理晋升转发图。
-    pub fn last_relocate_map(&self) -> &nyar_gc::RelocateMap {
+    pub fn last_relocate_map(&self) -> &interpreter_gc::RelocateMap {
         self.gc.last_relocate_map()
     }
 
     /// 最近一次晋升失败原因（若有）。
-    pub fn last_promotion_failure(&self) -> Option<&nyar_gc::PromotionFailure> {
+    pub fn last_promotion_failure(&self) -> Option<&interpreter_gc::PromotionFailure> {
         self.heap.last_promotion_failure()
     }
 
@@ -536,7 +536,7 @@ impl Executor {
     }
 
     /// 将 nursery 物理晋升后的转发图应用到解释器根。
-    fn apply_relocate_map(&mut self, map: &nyar_gc::RelocateMap, globals: &mut [Value]) {
+    fn apply_relocate_map(&mut self, map: &interpreter_gc::RelocateMap, globals: &mut [Value]) {
         if !map.has_moves() {
             return;
         }

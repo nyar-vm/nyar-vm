@@ -4,7 +4,7 @@
 //! 序列化语义（HTML escape、void 元素、作用域前缀）不归 VM。
 //! 句柄即 `Value::Object`——类型化的堆引用，不是整数编号。
 
-use nyar_gc::{ObjectHeap, ObjectId, ObjectPayload};
+use interpreter_gc::{ObjectHeap, ObjectId, ObjectPayload};
 
 use crate::{array_runtime, error::OdinRuntimeError, value::Value};
 

@@ -252,7 +252,7 @@ fn baseline_scalar_jit_folds_const_const_binop() {
 
 #[test]
 fn workload_hints_tighten_gray_budget_on_vm() {
-    use nyar_gc::WorkloadHints;
+    use interpreter_gc::WorkloadHints;
 
     let mut vm = OdinVm::new();
     assert_eq!(vm.gray_budget_per_slice(), 64);
@@ -264,7 +264,7 @@ fn workload_hints_tighten_gray_budget_on_vm() {
 
 #[test]
 fn concurrent_interactive_fixture_wires_vm_evidence_accessors() {
-    use nyar_gc::GcMode;
+    use interpreter_gc::GcMode;
     use odin_vm::workload_json::parse_workload_intent_json;
 
     let text = include_str!("../fixtures/workload/concurrent-interactive.json");
@@ -301,7 +301,7 @@ fn gc_evidence_snapshot_includes_scenario_and_trace_fields() {
 
 #[test]
 fn online_request_fixture_applies_generational_strategy_on_vm() {
-    use nyar_gc::GcMode;
+    use interpreter_gc::GcMode;
     use odin_vm::workload_json::parse_workload_intent_json;
 
     let text = include_str!("../fixtures/workload/online-request.json");
@@ -317,7 +317,7 @@ fn online_request_fixture_applies_generational_strategy_on_vm() {
 
 #[test]
 fn resident_service_fixture_applies_generational_strategy_on_vm() {
-    use nyar_gc::GcMode;
+    use interpreter_gc::GcMode;
     use odin_vm::workload_json::parse_workload_intent_json;
 
     let text = include_str!("../fixtures/workload/resident-service.json");
@@ -334,7 +334,7 @@ fn resident_service_fixture_applies_generational_strategy_on_vm() {
 
 #[test]
 fn offline_batch_fixture_applies_throughput_strategy_on_vm() {
-    use nyar_gc::GcMode;
+    use interpreter_gc::GcMode;
     use odin_vm::workload_json::parse_workload_intent_json;
 
     let text = include_str!("../fixtures/workload/offline-batch.json");
@@ -351,7 +351,7 @@ fn offline_batch_fixture_applies_throughput_strategy_on_vm() {
 
 #[test]
 fn nested_workload_phase_overrides_scenario_then_restores() {
-    use nyar_gc::{GcMode, IntentSource};
+    use interpreter_gc::{GcMode, IntentSource};
     use odin_vm::workload_json::parse_workload_intent_json;
 
     let batch = parse_workload_intent_json(include_str!("../fixtures/workload/offline-batch.json")).expect("batch");

@@ -63,7 +63,7 @@ pub fn execute_control(
             let value = ctx.stack.pop()?;
             let slot = ctx.globals.get_mut(index).ok_or(OdinRuntimeError::GlobalIndexOutOfRange(instruction.operand1))?;
             let satb = ctx.heap.concurrent_mark().requires_satb();
-            nyar_gc::write_value_slot(ctx.heap.barrier_mut(), slot, value, satb);
+            interpreter_gc::write_value_slot(ctx.heap.barrier_mut(), slot, value, satb);
             frame.ip += instruction.size as usize;
             Ok(StepResult::Continue)
         }

@@ -2,7 +2,7 @@
 
 use acorn_odin::{OdinHeadCode, OdinInstruction};
 
-use nyar_gc::ObjectPayload;
+use interpreter_gc::ObjectPayload;
 
 use crate::{
     error::OdinRuntimeError,

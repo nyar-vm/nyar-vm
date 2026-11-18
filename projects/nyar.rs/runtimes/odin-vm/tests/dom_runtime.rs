@@ -1,6 +1,6 @@
 //! `asgard.render` 内存 DOM 宿主：合同操作的堆表示与读出 ABI 测试。
 
-use nyar_gc::{ObjectHeap, ObjectPayload, Value};
+use interpreter_gc::{ObjectHeap, ObjectPayload, Value};
 use odin_vm::{
     dom_runtime::{self, DOM_NODE_LAYOUT_ID, DomNode},
     error::OdinRuntimeError,

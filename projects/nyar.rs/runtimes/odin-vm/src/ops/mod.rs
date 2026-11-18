@@ -10,7 +10,7 @@ use crate::{
     stack::ValueStack,
     value::{CoroutineState, ObjectId, Value, value_from_constant},
 };
-use nyar_gc::ObjectHeap;
+use interpreter_gc::ObjectHeap;
 
 mod arithmetic;
 mod control;
