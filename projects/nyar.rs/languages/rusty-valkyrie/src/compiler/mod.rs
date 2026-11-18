@@ -1,18 +1,7 @@
-#![doc = include_str!("readme.md")]
+//! Valkyrie 语言实现的消费门面。
+//!
+//! 类型模型、HIR/MIR、语义分析、诊断、驱动、目标适配与语言服务全部由 Boost
+//! **`language-valkyrie`** 拥有；本模块只做原样再导出，保持 `crate::compiler::*` 路径不变。
+//! 交付侧（Asgard / Legion）留在产品仓。
 
-pub mod api;
-pub mod diagnostics;
-pub mod driver;
-pub mod emitter;
-pub mod expansion;
-pub mod hir;
-pub mod input;
-pub mod mir;
-pub mod observation;
-pub mod optimization;
-pub mod semantic;
-pub mod services;
-pub mod syntax;
-pub(crate) mod text_carrier;
-pub mod types;
-pub mod valkyrie_mir;
+pub use language_valkyrie::compiler::*;

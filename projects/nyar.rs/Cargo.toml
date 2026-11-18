@@ -37,13 +37,13 @@ repository = "https://github.com/nyar-vm/nyar-vm"
 [workspace.dependencies]
 # Boost 库，已使用本地 `.cargo/config.toml` 覆盖
 boost-diagnostic = { git = "https://github.com/oovm/rust-boost", rev = "9aa52745d6eae2d7748c76e4e3e6555e1f6e4b86", default-features = false, features = ["std", "serde"] }
-interpreter-gc = { git = "https://github.com/oovm/rust-boost", rev = "4ca0924ffd78e4dd787ccebe470c795e4daec175" }
-compiler-analysis = { git = "https://github.com/oovm/rust-boost", rev = "4ca0924ffd78e4dd787ccebe470c795e4daec175" }
-compiler-emitter = { git = "https://github.com/oovm/rust-boost", rev = "4ca0924ffd78e4dd787ccebe470c795e4daec175" }
-compiler-target = { git = "https://github.com/oovm/rust-boost", rev = "4ca0924ffd78e4dd787ccebe470c795e4daec175" }
-compiler-specialize = { git = "https://github.com/oovm/rust-boost", rev = "4ca0924ffd78e4dd787ccebe470c795e4daec175" }
-compiler-types = { git = "https://github.com/oovm/rust-boost", rev = "4ca0924ffd78e4dd787ccebe470c795e4daec175" }
-interpreter-vm-ovm = { git = "https://github.com/oovm/rust-boost", rev = "4ca0924ffd78e4dd787ccebe470c795e4daec175" }
+interpreter-gc = { git = "https://github.com/oovm/rust-boost", rev = "801802927e36e76b4277fccc60edf372f7442409" }
+compiler-analysis = { git = "https://github.com/oovm/rust-boost", rev = "801802927e36e76b4277fccc60edf372f7442409" }
+compiler-emitter = { git = "https://github.com/oovm/rust-boost", rev = "801802927e36e76b4277fccc60edf372f7442409" }
+compiler-target = { git = "https://github.com/oovm/rust-boost", rev = "801802927e36e76b4277fccc60edf372f7442409" }
+compiler-specialize = { git = "https://github.com/oovm/rust-boost", rev = "801802927e36e76b4277fccc60edf372f7442409" }
+compiler-types = { git = "https://github.com/oovm/rust-boost", rev = "801802927e36e76b4277fccc60edf372f7442409" }
+interpreter-vm-ovm = { git = "https://github.com/oovm/rust-boost", rev = "801802927e36e76b4277fccc60edf372f7442409" }
 acorn-wasm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "c93c8c294d007ab16e12cbf4f7f95051340e9573" }
 acorn-jvm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "c93c8c294d007ab16e12cbf4f7f95051340e9573" }
 acorn-pe = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "c93c8c294d007ab16e12cbf4f7f95051340e9573" }
@@ -55,11 +55,12 @@ acorn-host = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "c9
 # `.odin` 字节码磁盘格式合同由 Acorn 格式适配器仓持有。
 acorn-odin = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "c93c8c294d007ab16e12cbf4f7f95051340e9573" }
 # Oak parser frontend (`examples/oak-voc` publishes crate `oak-awsl`). Bump `rev` with oak.rs releases.
-oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "b7eac8a9977c446e754de035a53a3ff083aa4a85" }
-oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "b7eac8a9977c446e754de035a53a3ff083aa4a85", features = ["serde"] }
-oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "b7eac8a9977c446e754de035a53a3ff083aa4a85" }
-oak-awsl = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "b7eac8a9977c446e754de035a53a3ff083aa4a85" }
-oak-formats = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "b7eac8a9977c446e754de035a53a3ff083aa4a85" }
+oak-core = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484" }
+oak-von = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484", features = ["serde"] }
+oak-valkyrie = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484" }
+oak-awsl = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484" }
+oak-formats = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484" }
+language-valkyrie = { git = "https://github.com/oovm/rust-boost", rev = "801802927e36e76b4277fccc60edf372f7442409" }
 # Nyar Compiler 编译期组件
 nyar = { path = "compilers/nyar" }
 nyar-analyzer = { path = "compilers/nyar-analyzer" }
