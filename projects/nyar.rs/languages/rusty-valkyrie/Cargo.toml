@@ -29,7 +29,7 @@ base64 = { workspace = true }
 boost-diagnostic = { workspace = true }
 gag = { workspace = true }
 katex-rs = { workspace = true }
-language-valkyrie = { workspace = true }
+compiler-valkyrie = { workspace = true }
 nyar = { workspace = true }
 nyar-analyzer = { workspace = true }
 nyar-emitter = { workspace = true }
