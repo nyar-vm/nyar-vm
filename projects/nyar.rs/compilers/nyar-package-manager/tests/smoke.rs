@@ -273,7 +273,7 @@ fn install_writes_vendors_and_lockfile() {
         });
 
         let mut pm =
-            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT)
+            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT).and_then(|pm| pm.with_credentials(Arc::new(nyar_package_manager::OfficialCliCredentials)))
                 .expect("open package manager");
         let info = pm.install_one("smoke.dep", "2.0.0", "npm", true).expect("install");
 
@@ -307,7 +307,7 @@ fn offline_install_restores_from_cache_after_vendors_removed() {
         });
 
         let mut pm =
-            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT)
+            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT).and_then(|pm| pm.with_credentials(Arc::new(nyar_package_manager::OfficialCliCredentials)))
                 .expect("open package manager");
         pm.install_one("smoke.dep", "2.0.0", "npm", true).expect("online install");
 
@@ -334,7 +334,7 @@ fn offline_install_fails_when_package_missing() {
 
         let mock = Arc::new(MockRegistry::new("npm", "https://mock.npm.local"));
         let mut pm =
-            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT)
+            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT).and_then(|pm| pm.with_credentials(Arc::new(nyar_package_manager::OfficialCliCredentials)))
                 .expect("open package manager");
         pm.offline = true;
         let error = pm.install_dependencies(false, "npm").expect_err("offline install should fail");
@@ -363,7 +363,7 @@ fn peer_dependency_validation_warns_on_missing_peer() {
 
         let mock = Arc::new(MockRegistry::new("npm", "https://mock.npm.local"));
         let mut pm =
-            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT)
+            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT).and_then(|pm| pm.with_credentials(Arc::new(nyar_package_manager::OfficialCliCredentials)))
                 .expect("open package manager");
         pm.install_dependencies(false, "npm").expect("install with peer warning");
     });
@@ -384,7 +384,7 @@ fn audit_offline_checks_licenses_from_lockfile() {
         });
 
         let mut pm =
-            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT)
+            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT).and_then(|pm| pm.with_credentials(Arc::new(nyar_package_manager::OfficialCliCredentials)))
                 .expect("open package manager");
         pm.install_one("smoke.dep", "2.0.0", "npm", true).expect("install");
 
@@ -401,11 +401,11 @@ fn audit_offline_checks_licenses_from_lockfile() {
 fn registry_sources_persist_custom_endpoint() {
     with_isolated_home(|_| {
         let layout = nyar_package_manager::PRODUCT_LAYOUT;
-        let mut manager = RegistrySourceManager::open_with_layout(layout).expect("open");
+        let mut manager = nyar_package_manager::open_registry_sources().expect("open");
         manager.add("npm", "https://npm.example.test").expect("add");
         assert_eq!(manager.get_endpoint("npm"), Some("https://npm.example.test"));
 
-        let reloaded = RegistrySourceManager::open_with_layout(layout).expect("reload");
+        let reloaded = nyar_package_manager::open_registry_sources().expect("reload");
         assert_eq!(reloaded.get_endpoint("npm"), Some("https://npm.example.test"));
         assert!(reloaded.get_endpoint("valhalla").is_some());
 
@@ -505,7 +505,7 @@ fn login_discovers_npmrc_without_auth_von() {
         let mock = Arc::new(MockRegistry::new("npm", "https://mock.npm.local"));
         mock.insert_token("discovered-token", "npm-user");
         let mut pm =
-            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT)
+            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT).and_then(|pm| pm.with_credentials(Arc::new(nyar_package_manager::OfficialCliCredentials)))
                 .expect("open package manager");
 
         let result = pm.login(Some("npm"), None).expect("login");
@@ -720,7 +720,7 @@ fn update_preserves_dev_dependency_bucket() {
         });
 
         let mut pm =
-            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT)
+            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT).and_then(|pm| pm.with_credentials(Arc::new(nyar_package_manager::OfficialCliCredentials)))
                 .expect("open");
         pm.update_one_with_manifest("smoke.dev", "2.0.0", "npm", true).expect("update");
 
@@ -749,7 +749,7 @@ fn remove_cleans_registry_vendor_path() {
         });
 
         let mut pm =
-            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT)
+            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT).and_then(|pm| pm.with_credentials(Arc::new(nyar_package_manager::OfficialCliCredentials)))
                 .expect("open");
         pm.install_one("smoke.dep", "2.0.0", "npm", true).expect("install");
 
@@ -777,7 +777,7 @@ fn add_dev_dependency_writes_dev_bucket() {
         });
 
         let mut pm =
-            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT)
+            PackageManager::open_with_registries(package_dir.path(), mock_registries(mock), nyar_package_manager::PRODUCT_LAYOUT).and_then(|pm| pm.with_credentials(Arc::new(nyar_package_manager::OfficialCliCredentials)))
                 .expect("open");
         pm.add_dev_dependency("smoke.dev", "1.5.0", "npm").expect("add dev");
 

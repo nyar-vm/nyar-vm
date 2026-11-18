@@ -4,25 +4,16 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Nyar package manager core (install / resolve / publish)"
+description = "Nyar package manager facade: product layout, Valhalla channel and official CLI credential policy"
 
 [dependencies]
-base64 = { workspace = true }
-flate2 = { workspace = true }
-miette = { workspace = true }
-nyar = { workspace = true }
-nyar-format = { workspace = true, features = ["serde"] }
 nyar-package-registry = { workspace = true }
-package-cache = { git = "https://github.com/oovm/rust-boost", rev = "968ff19d6af9d5f7bfbcf001712f9c16e703b85e" }
-package-resolve = { git = "https://github.com/oovm/rust-boost", rev = "968ff19d6af9d5f7bfbcf001712f9c16e703b85e" }
-acorn-odin = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-sha2 = { workspace = true }
-oak-core = { workspace = true }
-oak-von = { workspace = true, features = ["serde"] }
-tar = { workspace = true }
-thiserror = { workspace = true }
+package-cache = { git = "https://github.com/oovm/rust-boost", rev = "81ddc9d8081449e19cd704f74f55e25710848ad0" }
+package-manager = { git = "https://github.com/oovm/rust-boost", rev = "81ddc9d8081449e19cd704f74f55e25710848ad0" }
+package-publish = { git = "https://github.com/oovm/rust-boost", rev = "81ddc9d8081449e19cd704f74f55e25710848ad0" }
+package-registry = { git = "https://github.com/oovm/rust-boost", rev = "81ddc9d8081449e19cd704f74f55e25710848ad0" }
+package-resolve = { git = "https://github.com/oovm/rust-boost", rev = "81ddc9d8081449e19cd704f74f55e25710848ad0" }
 
 [dev-dependencies]
+acorn-odin = { workspace = true }
 tempfile = { workspace = true }
