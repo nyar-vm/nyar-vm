@@ -39,9 +39,9 @@ repository = "https://github.com/nyar-vm/nyar-vm"
 # Boost 库，已使用本地 `.cargo/config.toml` 覆盖
 boost-diagnostic = { git = "https://github.com/oovm/rust-boost", rev = "9aa52745d6eae2d7748c76e4e3e6555e1f6e4b86", default-features = false, features = ["std", "serde"] }
 compiler-optimize = { git = "https://github.com/oovm/rust-boost", rev = "983345197f174af86ea2bbb8aff98deb943e052d" }
-interpreter-gc = { git = "https://github.com/oovm/rust-boost", rev = "866e6428d9c3d711095662393eddd1574986a473" }
-interpreter-jit = { git = "https://github.com/oovm/rust-boost", rev = "866e6428d9c3d711095662393eddd1574986a473" }
-interpreter-odin = { git = "https://github.com/oovm/rust-boost", rev = "866e6428d9c3d711095662393eddd1574986a473" }
+interpreter-gc = { git = "https://github.com/oovm/rust-boost", rev = "b88e4ea2a9ec6c4866dd2a52c13c79ce779ba2cf" }
+interpreter-jit = { git = "https://github.com/oovm/rust-boost", rev = "b88e4ea2a9ec6c4866dd2a52c13c79ce779ba2cf" }
+interpreter-vm-odin-vm = { git = "https://github.com/oovm/rust-boost", rev = "b88e4ea2a9ec6c4866dd2a52c13c79ce779ba2cf" }
 acorn-wasm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "beccbdf77374dbb2ca67395be19af3e2048c57ca" }
 acorn-jvm = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "beccbdf77374dbb2ca67395be19af3e2048c57ca" }
 acorn-pe = { git = "https://github.com/yggdrasil-language/acorn.rs", rev = "beccbdf77374dbb2ca67395be19af3e2048c57ca" }

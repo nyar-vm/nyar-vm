@@ -5,7 +5,7 @@ use interpreter_gc::{ObjectHeap, ObjectPayload};
 use acorn_odin::{OvmAbiExport, OvmAbiType, OvmOptionBoxing, OvmTextRepresentation};
 use serde_json::Value as JsonValue;
 
-use interpreter_odin::{array_runtime, error::OdinRuntimeError, text_runtime, value::Value};
+use interpreter_vm_odin_vm::{array_runtime, error::OdinRuntimeError, text_runtime, value::Value};
 
 /// `Option<Option<T>>` 的 boxed 线格式：`null` 表示外层 `None`，
 /// `{"$some": <inner>}` 表示外层 `Some`（内层 `None` 即 `{"$some": null}`）。
