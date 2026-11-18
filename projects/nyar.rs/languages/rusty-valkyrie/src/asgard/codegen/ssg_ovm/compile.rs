@@ -8,7 +8,7 @@
 use std::{fs, path::Path};
 
 use nyar::{ArtifactKind, CanonicalTarget};
-use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
+use nyar_emitter::emitter_backend_wasi::WasmPackageKind;
 
 use crate::{
     asgard::{

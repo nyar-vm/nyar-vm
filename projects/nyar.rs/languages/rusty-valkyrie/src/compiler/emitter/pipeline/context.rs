@@ -4,7 +4,7 @@
 //! 这些字段是后续 adaptor 链接与表示规划的前置事实，不能留在源码行扫描里。
 
 use nyar::{ArtifactPurpose, ClrSuspendStrategy, ResolvedTarget};
-use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
+use nyar_emitter::emitter_backend_wasi::WasmPackageKind;
 
 use crate::compiler::semantic::closure::DeclarationKey;
 

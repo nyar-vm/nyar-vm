@@ -70,7 +70,7 @@ fn host_command(invocation: &str, artifact: &std::path::Path) -> std::process::C
 /// 产物本身，没有外部解释器命令）。
 fn compile_and_run_on_host(target: &str, invocation: Option<&str>) {
     use nyar::ClrSuspendStrategy;
-    use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
+    use nyar_emitter::emitter_backend_wasi::WasmPackageKind;
     use rusty_valkyrie::compiler::emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts};
 
     let groups = vec![CompilerSourceGroup::single_source("smoke", "smoke", "[main] micro main() { }").as_entry()];
@@ -143,7 +143,7 @@ fn minimal_entry_runs_on_native() {
         return;
     }
     use nyar::ClrSuspendStrategy;
-    use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
+    use nyar_emitter::emitter_backend_wasi::WasmPackageKind;
     use rusty_valkyrie::compiler::emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts};
 
     let groups = vec![CompilerSourceGroup::single_source("smoke", "smoke", "[main] micro main() { }").as_entry()];
@@ -171,7 +171,7 @@ fn minimal_entry_runs_on_native() {
 #[test]
 fn minimal_entry_runs_on_wasi_with_real_argv() {
     use nyar::ClrSuspendStrategy;
-    use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
+    use nyar_emitter::emitter_backend_wasi::WasmPackageKind;
     use rusty_valkyrie::compiler::emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts};
 
     let source = "[main]\nmicro main(args: [utf8]) {\n}\n";
@@ -222,7 +222,7 @@ fn minimal_entry_runs_on_wasi_with_real_argv() {
 #[test]
 fn minimal_entry_runs_on_ovm() {
     use nyar::ClrSuspendStrategy;
-    use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
+    use nyar_emitter::emitter_backend_wasi::WasmPackageKind;
     use rusty_valkyrie::compiler::emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts};
 
     let groups = vec![CompilerSourceGroup::single_source("smoke", "smoke", "[main] micro main() { }").as_entry()];
@@ -252,7 +252,7 @@ fn minimal_entry_runs_on_ovm() {
 #[test]
 fn minimal_entry_emits_wasm_artifact() {
     use nyar::ClrSuspendStrategy;
-    use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
+    use nyar_emitter::emitter_backend_wasi::WasmPackageKind;
     use rusty_valkyrie::compiler::emitter::pipeline::{CompilerBuildContext, compile_source_groups_to_artifacts};
 
     let groups = vec![CompilerSourceGroup::single_source("smoke", "smoke", "[main] micro main() { }").as_entry()];

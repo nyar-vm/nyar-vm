@@ -239,7 +239,7 @@ fn build_plan(
         pending.extend(callees);
         functions.insert(instance, lowered);
     }
-    let mut aggregate_layout_by_nyar_type = BTreeMap::new();
+    let mut aggregate_layout_by_semantic_type = BTreeMap::new();
     // 字段声明侧的身份：布局计划只记构造器拼写，SSA 记结算布局；字段合同
     // 必须以 canonical 为两侧冻结的同一布局身份比对，而不是比较拼写形态。
     let mut field_type_layouts = BTreeMap::new();
@@ -252,14 +252,14 @@ fn build_plan(
         // lower_type 只对“可执行类型”有结果；函数签名等非值类型跳过即可，
         // 它们不会成为容器元素或导出位置。
         if let Ok(ty) = lower_type(canonical, *type_id) {
-            aggregate_layout_by_nyar_type.insert(ty.clone(), *layout_id);
+            aggregate_layout_by_semantic_type.insert(ty.clone(), *layout_id);
             // 同一实例类型有两种冻结形态：SSA/签名已结算为携带布局身份的
             // `Nominal`，而布局计划的字段事实仍以未结算的 `Apply` 记录。
             // 两者必须指向同一布局，否则字段合同会因形态差异误判为不同类型。
             // 键按 `contract_type_key` 归一（抹掉诊断拼写），两侧同一键即同一类型。
-            aggregate_layout_by_nyar_type.insert(ty.contract_key(), *layout_id);
+            aggregate_layout_by_semantic_type.insert(ty.contract_key(), *layout_id);
             if let Ok(unsettled) = lower_unsettled_contract_key(canonical, *type_id) {
-                aggregate_layout_by_nyar_type.insert(unsettled, *layout_id);
+                aggregate_layout_by_semantic_type.insert(unsettled, *layout_id);
             }
         }
         // 文本载体声明（`std.text::Utf8Text`/`Utf16Text`）在签名里折叠成编码基元，
@@ -281,7 +281,7 @@ fn build_plan(
                     ));
                 }
             };
-            if let Some(existing) = aggregate_layout_by_nyar_type.get(&folded).copied() {
+            if let Some(existing) = aggregate_layout_by_semantic_type.get(&folded).copied() {
                 if existing != *layout_id {
                     return Err(TargetPlanError::unsound(
                         AdapterStage::Representation,
@@ -291,19 +291,19 @@ fn build_plan(
                     ));
                 }
             }
-            aggregate_layout_by_nyar_type.insert(folded, *layout_id);
+            aggregate_layout_by_semantic_type.insert(folded, *layout_id);
         }
     }
     // unite 没有物理布局身份，只能按已冻结的名义实例类型回查；因此用
     // `nominal_instances` 的声明 TypeId 逐一 `lower_type`，不按名字拼写匹配。
-    let mut sum_layout_by_nyar_type = BTreeMap::new();
+    let mut sum_layout_by_semantic_type = BTreeMap::new();
     for sum in &canonical.linked.sum_types {
         if !sum.is_unite {
             continue;
         }
         if let Some(record) = canonical.linked.nominal_instances.get(&sum.nominal) {
             if let Ok(ty) = lower_type(canonical, record.ty) {
-                sum_layout_by_nyar_type.insert(ty, sum.clone());
+                sum_layout_by_semantic_type.insert(ty, sum.clone());
             }
         }
     }
@@ -323,8 +323,8 @@ fn build_plan(
         aggregate_layout_by_field: canonical.linked.aggregate_layout_by_field.clone(),
         field_type_layouts,
         aggregate_layout_by_type: canonical.linked.aggregate_layout_by_type.clone(),
-        aggregate_layout_by_nyar_type,
-        sum_layout_by_nyar_type,
+        aggregate_layout_by_semantic_type,
+        sum_layout_by_semantic_type,
         flags_types: canonical.linked.flags_types.clone(),
         singleton_instances: canonical.linked.singleton_instances.clone(),
         functions,

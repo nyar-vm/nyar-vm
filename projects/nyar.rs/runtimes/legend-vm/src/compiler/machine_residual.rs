@@ -15,8 +15,8 @@ use std::rc::Rc;
 
 use miette::Result;
 use nyar_analyzer::residual::ResidualSink;
-pub use nyar_emitter::nyar_backend_machine::{HostModule, X64Platform, X64ProductTarget};
-use nyar_emitter::nyar_backend_machine::{
+pub use nyar_emitter::emitter_backend_machine::{HostModule, X64Platform, X64ProductTarget};
+use nyar_emitter::emitter_backend_machine::{
     HostMethod, HostProperty, HostValueKind, X64_TEXT_ARENA_CAPACITY, X64DataTarget, X64TextInstruction, X64ProgramFunction,
     X64ProgramImage, any_returns_bool, any_returns_utf8, append_text_arena, compile_shared_container,
     encode_x64_program_with_dependencies, is_c_identifier, node_addon_registration, node_method_wrapper, node_module_data,
@@ -2020,7 +2020,7 @@ mod tests {
     /// Linux 产品 lane 产出 `ET_DYN` 共享库并按名导出残差函数。
     #[test]
     fn linux_product_emits_a_shared_object_with_exports() {
-        use nyar_emitter::nyar_backend_machine::{MachineImageKind, classify_machine_image};
+        use nyar_emitter::emitter_backend_machine::{MachineImageKind, classify_machine_image};
 
         let module = residual_main(vec![MachineResidualOp::PushI64(7), MachineResidualOp::Ret]);
         let bytes = emit_machine_elf_library(&module).expect("emit linux residual .so");
@@ -2034,7 +2034,7 @@ mod tests {
     /// Node 扩展产物：Node-API 注册导出 + 导出对象属性写入所需的动态导入。
     #[test]
     fn node_addon_exposes_registration_and_napi_import() {
-        use nyar_emitter::nyar_backend_machine::{MachineImageKind, classify_machine_image};
+        use nyar_emitter::emitter_backend_machine::{MachineImageKind, classify_machine_image};
 
         let module = residual_main(vec![MachineResidualOp::PushI64(42), MachineResidualOp::Ret]);
         let bytes = emit_machine_node_addon(&module, X64Platform::linux_x64()).expect("emit node addon");

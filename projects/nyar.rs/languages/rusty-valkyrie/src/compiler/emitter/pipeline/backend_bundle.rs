@@ -50,7 +50,7 @@ pub struct CompilerBuildBundle {
     compiled_program: crate::compiler::valkyrie_mir::CompiledValkyrieProgram,
     artifact_plan: ArtifactPartitionPlan,
     artifact_purpose: nyar::ArtifactPurpose,
-    wasm_package_kind: nyar_emitter::nyar_backend_wasi::WasmPackageKind,
+    wasm_package_kind: nyar_emitter::emitter_backend_wasi::WasmPackageKind,
     resolved: nyar::ResolvedTarget,
     test_entry_names: Vec<String>,
 }
@@ -145,7 +145,7 @@ fn validate_artifact_surface(bundle: &CompilerBuildBundle) -> PipelineResult<()>
     // 应用入口检查仍只约束 wasm（其余 lane 的 host 入口由各自后端按用途冻结）。
     if bundle.artifact_purpose == nyar::ArtifactPurpose::Application
         && bundle.artifact_plan.target.to_profile(None).backend_family == TargetBackendFamily::Wasm
-        && bundle.wasm_package_kind == nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary
+        && bundle.wasm_package_kind == nyar_emitter::emitter_backend_wasi::WasmPackageKind::Binary
         && entry_count == 0
     {
         return Err(PipelineError::Surface(ArtifactSurfaceError::BinaryMissingEntry));
@@ -162,7 +162,7 @@ impl FrontendBuildBundle for CompilerBuildBundle {
         self.artifact_purpose
     }
 
-    fn wasm_package_kind(&self) -> nyar_emitter::nyar_backend_wasi::WasmPackageKind {
+    fn wasm_package_kind(&self) -> nyar_emitter::emitter_backend_wasi::WasmPackageKind {
         self.wasm_package_kind
     }
 

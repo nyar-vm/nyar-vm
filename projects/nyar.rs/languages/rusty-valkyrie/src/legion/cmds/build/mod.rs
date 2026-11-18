@@ -266,10 +266,10 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<nyar_emitte
         }
     };
     let wasm_package_kind = if matches!(artifact_purpose, nyar::ArtifactPurpose::TestBundle | nyar::ArtifactPurpose::Library) {
-        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Library
+        nyar_emitter::emitter_backend_wasi::WasmPackageKind::Library
     }
     else {
-        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary
+        nyar_emitter::emitter_backend_wasi::WasmPackageKind::Binary
     };
     fs::create_dir_all(&plan.output_dir).map_err(|e| LegionError::msg(format!("创建输出目录失败: {}: {e}", plan.output_dir.display())))?;
     let host_bindings =

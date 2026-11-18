@@ -202,8 +202,8 @@ pub fn compile_v_bundle(
         _ => nyar::ArtifactPurpose::Application,
     };
     let wasm_package_kind = match backend {
-        HostBackend::BrowserDom => nyar_emitter::nyar_backend_wasi::WasmPackageKind::Library,
-        _ => nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
+        HostBackend::BrowserDom => nyar_emitter::emitter_backend_wasi::WasmPackageKind::Library,
+        _ => nyar_emitter::emitter_backend_wasi::WasmPackageKind::Binary,
     };
     let build_context = CompilerBuildContext::new(
         target.arch.as_str(),
