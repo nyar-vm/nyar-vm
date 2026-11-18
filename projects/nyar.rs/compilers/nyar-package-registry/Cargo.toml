@@ -4,20 +4,15 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Nyar package registry adapters (npm / jsr / nuget / maven / conda / valhalla)"
+description = "Nyar package registry facade: Valhalla channel, publisher keys and official CLI credential stores"
 
 [dependencies]
+package-registry = { git = "https://github.com/oovm/rust-boost", rev = "5302a0ae54dd4128ae54c31393d80ede7157659c" }
 base64 = { workspace = true }
 ed25519-dalek = { workspace = true }
-flate2 = { workspace = true }
-reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-sha1 = { workspace = true }
 sha2 = { workspace = true }
-tar = { workspace = true }
-thiserror = { workspace = true }
-url = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

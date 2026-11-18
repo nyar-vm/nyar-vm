@@ -439,7 +439,8 @@ fn nuget_publish_requires_official_tool_jsr_requires_token() {
         .expect("jsr publish result");
     assert!(!result.success);
     assert!(!result.official_tool_required);
-    assert!(result.message.contains("JSR token"));
+    assert!(result.message.contains("JSR"), "unexpected JSR publish message: {}", result.message);
+    assert!(result.message.contains("auth_token"), "unexpected JSR publish message: {}", result.message);
 }
 
 #[test]

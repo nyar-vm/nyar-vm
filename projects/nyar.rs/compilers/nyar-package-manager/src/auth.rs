@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use nyar_package_registry::{PublisherKey, Registry, TokenVerifyResult};
+use nyar_package_registry::{PublisherKey, Registry, RegistryCredentials, TokenVerifyResult};
 use serde::{Deserialize, Serialize};
 
 use crate::{DiscoveredCredential, PackageManagerError, ProjectLayout, Result, credentials};

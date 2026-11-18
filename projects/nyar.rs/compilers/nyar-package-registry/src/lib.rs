@@ -1,174 +1,66 @@
-//! Pluggable registry adapters for the Nyar package manager.
+//! Nyar 包注册表门面。
+//!
+//! 渠道合同、第三方适配器与制品解包由 Boost 的 `package-registry` 提供；本 crate 只保留
+//! 产品侧自有内容：
+//!
+//! - Valhalla 渠道（自有注册表与 Ed25519 发布者密钥）。
+//! - 官方 CLI 凭据存储的发现与写回。凭证是宿主策略，因此不进入 Boost。
 #![deny(missing_docs)]
 
-mod conda;
 pub mod credentials;
-mod error;
-mod http;
-mod jsr;
-mod maven;
-mod npm;
-mod nuget;
 mod publisher_key;
-mod registry;
-mod types;
 mod valhalla;
-
-pub use conda::CondaRegistry;
-pub use credentials::{DiscoveredCredential, discover_token, sync_token_to_official_store, uses_external_credential_store};
-pub use error::RegistryError;
-pub use http::{extract_tarball, proxy_env_hint, sha256_hex, verify_sri};
-pub use jsr::JsrRegistry;
-pub use maven::MavenRegistry;
-pub use npm::NpmRegistry;
-pub use nuget::NugetRegistry;
-pub use publisher_key::{PublisherKey, canonicalize_package_name, normalize_fingerprint};
-pub use registry::Registry;
-pub use types::{Package, PublishOptions, PublishResult, RetryConfig, TokenVerifyResult, VersionBump};
-pub use valhalla::ValhallaRegistry;
 
 use std::{
     collections::{BTreeMap, HashMap},
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
-/// Build the default set of registry adapters.
+pub use package_registry::*;
+
+pub use credentials::{DiscoveredCredential, discover_token, sync_token_to_official_store, uses_external_credential_store};
+pub use publisher_key::{PublisherKey, canonicalize_package_name, normalize_fingerprint};
+pub use valhalla::ValhallaRegistry;
+
+/// 注册表凭据的发现与写回（宿主策略）。
+///
+/// Boost 的 [`Registry`] 合同只拥有渠道请求，不认识任何官方 CLI 存储；需要按适配器 id
+/// 读写 `.npmrc`、Deno 配置、NuGet.Config 等文件的宿主通过本扩展 trait 获得该能力。
+pub trait RegistryCredentials {
+    /// 该注册表是否只使用外部 CLI 凭据存储（不写入 `auth.von`）。
+    fn uses_external_credentials(&self) -> bool;
+
+    /// 从官方 CLI 配置发现令牌。
+    fn discover_credential(&self, project_dir: Option<&Path>) -> Option<DiscoveredCredential>;
+
+    /// 把已验证令牌写回对应的官方 CLI 存储。
+    fn sync_credential(&self, token: &str) -> Result<Option<PathBuf>, RegistryError>;
+}
+
+impl<T: Registry + ?Sized> RegistryCredentials for T {
+    fn uses_external_credentials(&self) -> bool {
+        uses_external_credential_store(self.name())
+    }
+
+    fn discover_credential(&self, project_dir: Option<&Path>) -> Option<DiscoveredCredential> {
+        discover_token(self.name(), Some(self.endpoint()), project_dir)
+    }
+
+    fn sync_credential(&self, token: &str) -> Result<Option<PathBuf>, RegistryError> {
+        sync_token_to_official_store(self.name(), Some(self.endpoint()), token)
+    }
+}
+
+/// 构建产品内置的注册表适配器集合：第三方渠道由 Boost 提供，Valhalla 由本 crate 追加。
 pub fn default_registries() -> Result<HashMap<String, Arc<dyn Registry>>, RegistryError> {
     registries_with_endpoints(&BTreeMap::new())
 }
 
-/// Build registries, applying custom endpoints when present.
+/// 按 endpoint 覆盖构建产品内置适配器集合。
 pub fn registries_with_endpoints(endpoints: &BTreeMap<String, String>) -> Result<HashMap<String, Arc<dyn Registry>>, RegistryError> {
-    let mut registries: HashMap<String, Arc<dyn Registry>> = HashMap::new();
-    registries.insert("npm".to_string(), Arc::new(NpmRegistry::new(endpoint_or(endpoints, "npm", NpmRegistry::DEFAULT_ENDPOINT))?));
-    registries.insert("jsr".to_string(), Arc::new(JsrRegistry::new(endpoint_or(endpoints, "jsr", JsrRegistry::DEFAULT_ENDPOINT))?));
-    registries.insert("nuget".to_string(), Arc::new(NugetRegistry::new(endpoint_or(endpoints, "nuget", NugetRegistry::DEFAULT_ENDPOINT))?));
-    registries.insert("maven".to_string(), Arc::new(MavenRegistry::new(endpoint_or(endpoints, "maven", MavenRegistry::DEFAULT_ENDPOINT))?));
-    registries.insert("conda".to_string(), Arc::new(CondaRegistry::new(endpoint_or(endpoints, "conda", CondaRegistry::DEFAULT_ENDPOINT))?));
-    registries.insert(
-        "valhalla".to_string(),
-        Arc::new(ValhallaRegistry::new(endpoint_or(endpoints, "valhalla", ValhallaRegistry::DEFAULT_ENDPOINT))?),
-    );
+    let mut registries = package_registry::registries_with_endpoints(endpoints)?;
+    let endpoint = endpoints.get("valhalla").map(String::as_str).unwrap_or(ValhallaRegistry::DEFAULT_ENDPOINT);
+    registries.insert("valhalla".to_string(), Arc::new(ValhallaRegistry::new(endpoint)?));
     Ok(registries)
-}
-
-fn endpoint_or<'a>(endpoints: &'a BTreeMap<String, String>, name: &str, default: &'a str) -> &'a str {
-    endpoints.get(name).map(String::as_str).unwrap_or(default)
-}
-
-/// In-memory registry used by unit / smoke tests.
-#[derive(Debug, Default)]
-pub struct MockRegistry {
-    name: String,
-    endpoint: String,
-    packages: std::sync::Mutex<HashMap<String, Package>>,
-    published: std::sync::Mutex<Vec<(String, String, Vec<u8>)>>,
-    tokens: std::sync::Mutex<HashMap<String, String>>,
-}
-
-impl MockRegistry {
-    /// Create an empty in-memory registry bound to `name` and `endpoint`.
-    pub fn new(name: impl Into<String>, endpoint: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            endpoint: endpoint.into().trim_end_matches('/').to_string(),
-            packages: std::sync::Mutex::new(HashMap::new()),
-            published: std::sync::Mutex::new(Vec::new()),
-            tokens: std::sync::Mutex::new(HashMap::new()),
-        }
-    }
-
-    /// Seed package metadata for later lookup.
-    pub fn insert_package(&self, package: Package) {
-        let key = format!("{}@{}", package.name, package.version);
-        self.packages.lock().expect("packages lock").insert(key, package);
-    }
-
-    /// Register a token that [`Registry::verify_token`] should accept.
-    pub fn insert_token(&self, token: impl Into<String>, username: impl Into<String>) {
-        self.tokens.lock().expect("tokens lock").insert(token.into(), username.into());
-    }
-
-    /// Return publish records captured by [`Registry::publish_package`].
-    pub fn published(&self) -> Vec<(String, String, Vec<u8>)> {
-        self.published.lock().expect("published lock").clone()
-    }
-}
-
-impl Registry for MockRegistry {
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn endpoint(&self) -> &str {
-        &self.endpoint
-    }
-
-    fn set_endpoint(&mut self, endpoint: &str) {
-        self.endpoint = endpoint.trim_end_matches('/').to_string();
-    }
-
-    fn get_package(&self, package_name: &str, version: &str) -> Result<Package, RegistryError> {
-        let packages = self.packages.lock().expect("packages lock");
-        if version == "latest" {
-            return packages
-                .values()
-                .filter(|package| package.name == package_name)
-                .max_by(|left, right| left.version.cmp(&right.version))
-                .cloned()
-                .ok_or_else(|| RegistryError::NotFound(package_name.to_string()));
-        }
-        packages.get(&format!("{package_name}@{version}")).cloned().ok_or_else(|| RegistryError::NotFound(format!("{package_name}@{version}")))
-    }
-
-    fn search_packages(&self, query: &str) -> Result<Vec<Package>, RegistryError> {
-        let packages = self.packages.lock().expect("packages lock");
-        Ok(packages.values().filter(|package| package.name.contains(query) || package.description.contains(query)).cloned().collect())
-    }
-
-    fn publish_package(&self, options: &PublishOptions, tarball_data: &[u8]) -> Result<PublishResult, RegistryError> {
-        self.published.lock().expect("published lock").push((options.package_name.clone(), options.version.clone(), tarball_data.to_vec()));
-        let package = Package {
-            name: options.package_name.clone(),
-            version: options.version.clone(),
-            description: options.description.clone(),
-            homepage: options.homepage.clone().unwrap_or_default(),
-            license: options.license.clone().unwrap_or_default(),
-            ..Package::default()
-        };
-        self.insert_package(package);
-        Ok(PublishResult {
-            success: true,
-            package_name: options.package_name.clone(),
-            version: options.version.clone(),
-            message: "发布成功".to_string(),
-            published_url: Some(format!("{}/{}/{}", self.endpoint, options.package_name, options.version)),
-            dry_run: false,
-            sha256: Some(sha256_hex(tarball_data)),
-            size: Some(tarball_data.len()),
-            file_count: None,
-            official_tool_required: false,
-        })
-    }
-
-    fn download_package(&self, package: &Package, target_directory: &Path) -> Result<String, RegistryError> {
-        std::fs::create_dir_all(target_directory)?;
-        let manifest = format!("{{\n    name: \"{}\",\n    version: \"{}\",\n}}\n", package.name, package.version);
-        std::fs::write(target_directory.join("package.von"), manifest)?;
-        Ok(target_directory.display().to_string())
-    }
-
-    fn get_package_versions(&self, package_name: &str) -> Result<Vec<String>, RegistryError> {
-        let packages = self.packages.lock().expect("packages lock");
-        Ok(packages.values().filter(|package| package.name == package_name).map(|package| package.version.clone()).collect())
-    }
-
-    fn verify_token(&self, token: &str) -> Result<TokenVerifyResult, RegistryError> {
-        let tokens = self.tokens.lock().expect("tokens lock");
-        match tokens.get(token) {
-            Some(username) => Ok(TokenVerifyResult::success(username.clone())),
-            None => Ok(TokenVerifyResult::failure("invalid token")),
-        }
-    }
 }

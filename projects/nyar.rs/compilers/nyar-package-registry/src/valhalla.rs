@@ -1,13 +1,13 @@
 use std::path::Path;
 
+use package_registry::{
+    HttpClient, Package, PublishOptions, PublishResult, Registry, RegistryError, RetryConfig, TokenVerifyResult, build_url, extract_tarball,
+    sha256_hex, url_encode,
+};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-use crate::{
-    Package, PublishOptions, PublishResult, PublisherKey, Registry, RegistryError, RetryConfig, TokenVerifyResult, canonicalize_package_name,
-    http::{HttpClient, build_url, extract_tarball, url_encode},
-    sha256_hex,
-};
+use crate::{PublisherKey, canonicalize_package_name};
 
 /// Valhalla registry adapter (Ed25519 publisher-key auth).
 #[derive(Debug, Clone)]
@@ -125,9 +125,8 @@ impl Registry for ValhallaRegistry {
         let authorization = key.authorization_header(&body)?;
         let url = build_url(&self.endpoint, &format!("api/packages/{}/versions", url_encode(&package_name)));
         let response = self.http.post_bytes_with_authorization(&url, &body, &authorization, &content_type)?;
-        let status = response.status();
-        let response_text = response.text().unwrap_or_default();
-        if status.is_success() {
+        let response_text = response.text();
+        if response.is_success() {
             Ok(PublishResult {
                 success: true,
                 package_name,
@@ -146,7 +145,7 @@ impl Registry for ValhallaRegistry {
                 success: false,
                 package_name,
                 version: options.version.clone(),
-                message: format!("Valhalla 发布失败 HTTP {}: {}", status.as_u16(), response_text.trim()),
+                message: format!("Valhalla 发布失败 HTTP {}: {}", response.status, response_text.trim()),
                 published_url: Some(url),
                 dry_run: false,
                 sha256: Some(sha256_hex(tarball_data)),
