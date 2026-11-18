@@ -15,7 +15,7 @@
 
 use std::any::Any;
 
-pub use oak_formats::{awsl, contract, formatter, printer, von};
+pub use language_format::{awsl, contract, formatter, printer, von};
 
 /// MSIL 文本书写器（模型与写出归 `acorn-pe`）。
 pub mod msil {

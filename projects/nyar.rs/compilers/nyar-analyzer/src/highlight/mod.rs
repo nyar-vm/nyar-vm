@@ -2,4 +2,4 @@
 //!
 //! 保留本模块只为既有消费者路径（`nyar_analyzer::highlight::*`）不变；本仓不再持有实现。
 
-pub use oak_formats::highlight::*;
+pub use language_highlight::*;

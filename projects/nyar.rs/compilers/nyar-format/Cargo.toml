@@ -9,12 +9,12 @@ repository = "https://github.com/valkyrie-language/valkyrie.rs"
 
 [features]
 default = []
-serde = ["oak-formats/serde"]
+serde = ["language-format/serde"]
 
 [dependencies]
 acorn-pe = { workspace = true }
 acorn-wasm = { workspace = true }
-oak-formats = { workspace = true }
+language-format = { workspace = true }
 
 [dev-dependencies]
 nyar-analyzer = { workspace = true }
