@@ -13,3 +13,11 @@ ovm-lane = ["compiler-emitter/ovm-lane"]
 
 [dependencies]
 compiler-emitter = { workspace = true }
+
+[dev-dependencies]
+acorn-odin = { workspace = true }
+acorn-pe = { workspace = true }
+acorn-wasm = { workspace = true }
+nyar = { workspace = true }
+nyar-types = { workspace = true }
+serde_json = { workspace = true }

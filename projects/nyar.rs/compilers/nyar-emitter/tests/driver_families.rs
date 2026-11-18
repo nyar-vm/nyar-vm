@@ -1,0 +1,87 @@
+use std::path::PathBuf;
+
+use nyar::{BackendInputKind, HostProjectionBoundary, TargetBackendFamily, TargetFamily, TargetLane};
+use nyar_emitter::{
+    FragmentSubmission, bundled_backend_capability_descriptor, driver_compiler_names, lowering::lower_fragment_to_driver_input,
+    emitter_backend_wasi::WasmPackageKind,
+};
+
+#[test]
+fn jvm_family_advertises_capability_and_driver_compiler() {
+    let descriptor = bundled_backend_capability_descriptor(TargetBackendFamily::Jvm).expect("jvm capability");
+    assert_eq!(descriptor.backend_name, "jvm-jar");
+    assert_eq!(descriptor.interpreter, "jvm.classfile");
+    assert_eq!(descriptor.lane, TargetLane::Jvm);
+    assert_eq!(descriptor.input_kind, Some(BackendInputKind::JvmClassFile));
+    assert_eq!(descriptor.target_family, TargetFamily::Jvm);
+    assert!(descriptor.supported_host_boundaries.contains(&HostProjectionBoundary::Jvm));
+    assert!(driver_compiler_names().contains(&"jvm-jar"), "{:?}", driver_compiler_names());
+}
+
+#[test]
+fn clr_family_advertises_capability_and_driver_compiler() {
+    let descriptor = bundled_backend_capability_descriptor(TargetBackendFamily::Clr).expect("clr capability");
+    assert_eq!(descriptor.backend_name, "clr-binary");
+    assert_eq!(descriptor.interpreter, "clr.msil");
+    assert_eq!(descriptor.lane, TargetLane::Clr);
+    assert_eq!(descriptor.input_kind, Some(BackendInputKind::MsilText));
+    assert_eq!(descriptor.target_family, TargetFamily::Clr);
+    assert!(descriptor.supported_host_boundaries.contains(&HostProjectionBoundary::Clr));
+    assert!(driver_compiler_names().contains(&"clr-binary"), "{:?}", driver_compiler_names());
+}
+
+#[test]
+fn native_family_exposes_capability_and_requires_adapter_prepared_input() {
+    let descriptor = bundled_backend_capability_descriptor(TargetBackendFamily::MachineCode).expect("机器码 lane must expose a capability descriptor");
+    assert_eq!(descriptor.backend_name, "machine-code");
+    assert_eq!(descriptor.lane, nyar::TargetLane::MachineCode);
+    // 原生镜像输入必须由语言 × 目标适配器在持有已解析目标四元组时准备；
+    // 通用片段路径没有 target 事实，拒绝凭空猜容器或补造产物。
+    let result = lower_fragment_to_driver_input(
+        &FragmentSubmission::default(),
+        TargetBackendFamily::MachineCode,
+        HostProjectionBoundary::MachineCode,
+        PathBuf::new(),
+        "",
+        nyar::ArtifactPurpose::Application,
+        WasmPackageKind::Binary,
+    );
+    let error = result.expect_err("generic native lowering must refuse without a resolved target");
+    assert!(error.to_string().contains("拒绝切换目标或补造产物"), "{error}");
+}
+
+#[test]
+fn jvm_lowering_rejects_fragment_without_executable_operations() {
+    let result = lower_fragment_to_driver_input(
+        &FragmentSubmission::default(),
+        TargetBackendFamily::Jvm,
+        HostProjectionBoundary::Jvm,
+        PathBuf::new(),
+        "",
+        nyar::ArtifactPurpose::Application,
+        WasmPackageKind::Binary,
+    );
+    let error = result.expect_err("empty fragment must not produce a class");
+    assert!(error.to_string().contains("没有可导出的可执行函数"), "{error}");
+}
+
+#[cfg(not(feature = "ovm-lane"))]
+#[test]
+fn disabled_vm_does_not_advertise_capability() {
+    assert!(bundled_backend_capability_descriptor(TargetBackendFamily::Ovm).is_none());
+}
+
+#[test]
+fn clr_lowering_rejects_fragment_without_executable_operations() {
+    let result = lower_fragment_to_driver_input(
+        &FragmentSubmission::default(),
+        TargetBackendFamily::Clr,
+        HostProjectionBoundary::Clr,
+        PathBuf::new(),
+        "",
+        nyar::ArtifactPurpose::Application,
+        WasmPackageKind::Binary,
+    );
+    let error = result.expect_err("empty fragment must not produce an MSIL module");
+    assert!(error.to_string().contains("没有可导出的可执行函数"), "{error}");
+}
