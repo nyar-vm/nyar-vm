@@ -7,5 +7,6 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+compiler-optimize = { workspace = true }
 nyar-types = { workspace = true, features = ["serde"] }
 serde = { workspace = true }

@@ -33,12 +33,12 @@ fn constant_fold_addition() {
 #[test]
 fn identity_rewrite_eliminates_add_zero() {
     let session = OptimizationSession;
-    let x = qualified(&["demo", "x"]);
+    let x = qualified_from_dotted("demo.x");
     let result = session.optimize(OptimizationRequest {
         program: ObjectAlgebraicProgram {
             module_name: qualified(&["demo"]),
             structured_terms: vec![AlgebraicTerm::apply(
-                qualified(&["core", "add"]),
+                qualified_from_dotted("core.add"),
                 vec![AlgebraicTerm::symbol(x.clone()), AlgebraicTerm::literal(0)],
             )],
             ..Default::default()
@@ -86,10 +86,10 @@ fn nested_constant_fold() {
 fn flat_equation_union_still_works() {
     let mut rewrite_theory = RewriteTheory::default();
     rewrite_theory.equate(RewriteEquation {
-        left: qualified(&["graphic", "dot"]),
-        right: qualified(&["graphic", "dot_commutative"]),
+        left: qualified_from_dotted("graphic.dot"),
+        right: qualified_from_dotted("graphic.dot_commutative"),
         phase: RewritePhase::Saturate,
-        required_capabilities: vec![CapabilityTag::new("gpu-shader")],
+        required_capabilities: vec!["gpu-shader".into()],
     });
 
     let session = OptimizationSession;

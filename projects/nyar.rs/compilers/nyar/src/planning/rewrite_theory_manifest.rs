@@ -1,7 +1,9 @@
 //! 跨语言 `RewriteTheory` manifest 加载（与 C# `Nyar.Dialect.Theory` 对齐）。
 
-use nyar_optimizer::{FutamuraProjectionFamily, RewriteEquation, RewritePhase, RewriteRule, RewriteTheory, TermRewrite, parse_pattern};
-use nyar_types::{CapabilityTag, Identifier, QualifiedName};
+use nyar_optimizer::{
+    FutamuraProjectionFamily, RewriteEquation, RewritePhase, RewriteRule, RewriteTheory, TermRewrite, parse_pattern, qualified_from_dotted,
+};
+use nyar_types::{CapabilityTag, Identifier};
 use serde::Deserialize;
 
 /// Manifest v1 根对象。
@@ -118,7 +120,7 @@ fn register_manifest_entry(theory: &mut RewriteTheory, name: &str, left: &str, r
         left: qualified_from_dotted(left),
         right: qualified_from_dotted(right),
         phase: parse_phase(phase),
-        required_capabilities: capabilities.iter().map(|cap| CapabilityTag::new(cap)).collect(),
+        required_capabilities: capabilities.iter().map(|cap| cap.as_str().into()).collect(),
     });
 }
 
@@ -134,12 +136,8 @@ fn term_rewrite_from_strings(name: &str, left: &str, right: &str, phase: &str, c
     let right_pattern = parse_pattern(right).ok()?;
     Some(
         TermRewrite::new(name, left_pattern, right_pattern, parse_phase(phase))
-            .with_capabilities(capabilities.iter().map(|cap| CapabilityTag::new(cap)).collect()),
+            .with_capabilities(capabilities.iter().map(|cap| cap.as_str().into()).collect()),
     )
-}
-
-fn qualified_from_dotted(value: &str) -> QualifiedName {
-    QualifiedName::new(value.split('.').map(Identifier::new).collect())
 }
 
 fn parse_phase(value: &str) -> RewritePhase {

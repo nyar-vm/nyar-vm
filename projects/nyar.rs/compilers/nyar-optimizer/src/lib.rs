@@ -1,21 +1,20 @@
 #![doc = include_str!("readme.md")]
 #![deny(missing_docs)]
 
-mod egraph;
-mod extract;
-mod pattern;
-mod term;
 mod theory;
 
-pub use egraph::{EGraphHost, EGraphStats, StructuredRewrite};
-pub use pattern::{TermPattern, parse_pattern};
-pub use term::{AlgebraicTerm, parse_term, qualified_from_dotted};
-pub use theory::{TermRewrite, builtin_core_rewrite_theory, builtin_core_term_rewrites, filter_equations, filter_term_rewrites};
+pub use compiler_optimize::{
+    ConstantInterpreter, EGraphHost, EGraphStats, RewriteEquation, RewritePhase, StructuredRewrite, TermPattern, TermRewrite,
+    atom_pattern, filter_equations, filter_term_rewrites, parse_pattern, parse_term, qualified_from_dotted,
+};
+pub use nyar_types::ReferenceManagement;
+pub use theory::{CoreConstantInterpreter, builtin_core_rewrite_theory, builtin_core_term_rewrites, core_lit_name};
 
-use egraph::EGraphHost as OptimizerEGraph;
+use compiler_optimize::{CapabilityTag as OptCapabilityTag, EGraphHost as OptimizerEGraph, Identifier as OptIdentifier, QualifiedName as OptQualifiedName, Term};
 use nyar_types::{CapabilityTag, Identifier, QualifiedName};
 
-pub use nyar_types::ReferenceManagement;
+/// `Object Algebraic` 结构化项即中立底座的 `E-Graph` 项。
+pub type AlgebraicTerm = Term;
 
 /// 单个 `Object Algebraic` 语义维度的清单。
 ///
@@ -91,17 +90,6 @@ pub trait ObjectAlgebraicInterpreter {
     fn supported_capabilities(&self) -> &[CapabilityTag];
 }
 
-/// `E-Graph` 重写所在阶段。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RewritePhase {
-    /// 规范化阶段。
-    Normalize,
-    /// 等价饱和阶段。
-    Saturate,
-    /// 为目标投影做收口的阶段。
-    PreProjection,
-}
-
 /// 单条等价重写规则。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RewriteRule {
@@ -148,19 +136,6 @@ impl RewriteTheory {
     pub fn register_term_rewrite(&mut self, rewrite: TermRewrite) {
         self.term_rewrites.push(rewrite);
     }
-}
-
-/// 单条可进入 `E-Graph` 的等式。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RewriteEquation {
-    /// 等式左侧操作。
-    pub left: QualifiedName,
-    /// 等式右侧操作。
-    pub right: QualifiedName,
-    /// 所属阶段。
-    pub phase: RewritePhase,
-    /// 触发等式所需能力。
-    pub required_capabilities: Vec<CapabilityTag>,
 }
 
 /// 供片段提交携带的理论 bundle。
@@ -328,7 +303,7 @@ pub struct OptimizationResult {
 pub struct OptimizationSession;
 
 impl OptimizationSession {
-    /// 执行 `E-Graph` 饱和、常量折叠与代表元抽取。
+    /// 委托中立底座执行 `E-Graph` 饱和、常量折叠与代表元抽取。
     pub fn optimize(&self, request: OptimizationRequest) -> OptimizationResult {
         let theory = merge_with_builtin_core(request.rewrite_theory);
         let applied_rules = theory
@@ -343,19 +318,37 @@ impl OptimizationSession {
             .map(|rule| rule.name.clone())
             .collect::<Vec<_>>();
 
-        let mut egraph = OptimizerEGraph::default();
-        egraph.ingest_program(&request.program);
+        let capabilities: Vec<OptCapabilityTag> =
+            request.capabilities.iter().map(|capability| OptCapabilityTag::new(capability.as_str())).collect();
 
+        let mut egraph = OptimizerEGraph::default();
+        for export in &request.program.exports {
+            egraph.add_flat_symbol(to_opt_name(export));
+        }
+        for dimension in &request.program.dimensions {
+            for operation in &dimension.exported_operations {
+                egraph.add_flat_symbol(to_opt_name(operation));
+            }
+        }
+        let structured_roots = request.program.structured_terms.iter().map(|term| egraph.add_term(term)).collect::<Vec<_>>();
+
+        let folding: &dyn ConstantInterpreter = &CoreConstantInterpreter;
         let phases = [RewritePhase::Normalize, RewritePhase::Saturate, RewritePhase::PreProjection];
         let mut stats = egraph.stats().clone();
         for phase in phases {
-            let rewrites = filter_term_rewrites(&theory.term_rewrites, phase, &request.capabilities);
-            let equations = filter_equations(&theory.equations, phase, &request.capabilities);
-            stats = egraph.saturate(&rewrites, &equations);
+            let rewrites = filter_term_rewrites(&theory.term_rewrites, phase, &capabilities);
+            let equations = filter_equations(&theory.equations, phase, &capabilities);
+            stats = egraph.saturate(&rewrites, &equations, Some(folding));
         }
 
-        let optimized_program = egraph.extract_program(request.program);
-        let operation_count = optimized_program.dimensions.iter().map(|dimension| dimension.exported_operations.len()).sum();
+        let mut program = request.program;
+        program.exports = canonicalize_flat(&egraph, &program.exports);
+        for dimension in &mut program.dimensions {
+            dimension.exported_operations = canonicalize_flat(&egraph, &dimension.exported_operations);
+        }
+        program.structured_terms = structured_roots.iter().map(|root| egraph.extract_term(*root)).collect();
+
+        let operation_count = program.dimensions.iter().map(|dimension| dimension.exported_operations.len()).sum();
         let preserved_capabilities = request
             .capabilities
             .iter()
@@ -364,7 +357,7 @@ impl OptimizationSession {
             .collect();
 
         OptimizationResult {
-            program: optimized_program,
+            program,
             egraph: EGraphSnapshot {
                 equivalence_class_count: stats.equivalence_class_count,
                 operation_count,
@@ -393,4 +386,39 @@ fn merge_with_builtin_core(mut theory: RewriteTheory) -> RewriteTheory {
         }
     }
     theory
+}
+
+fn to_opt_name(name: &QualifiedName) -> OptQualifiedName {
+    OptQualifiedName::new(name.parts().iter().map(|part| OptIdentifier::new(part.as_str())).collect())
+}
+
+fn from_opt_name(name: &OptQualifiedName) -> QualifiedName {
+    QualifiedName::new(name.parts().iter().map(|part| Identifier::new(part.as_str())).collect())
+}
+
+fn term_to_flat_name(term: &Term) -> OptQualifiedName {
+    match term {
+        Term::Literal(value) => core_lit_name(*value),
+        Term::Symbol(name) => name.clone(),
+        Term::Apply { operator, .. } => operator.clone(),
+    }
+}
+
+fn extract_flat(host: &EGraphHost, name: &QualifiedName) -> QualifiedName {
+    let Some(class) = host.class_of_symbol(&to_opt_name(name))
+    else {
+        return name.clone();
+    };
+    from_opt_name(&term_to_flat_name(&host.extract_term(class)))
+}
+
+fn canonicalize_flat(host: &EGraphHost, operations: &[QualifiedName]) -> Vec<QualifiedName> {
+    let mut canonical = Vec::new();
+    for operation in operations {
+        let representative = extract_flat(host, operation);
+        if !canonical.contains(&representative) {
+            canonical.push(representative);
+        }
+    }
+    canonical
 }
