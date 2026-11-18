@@ -4,12 +4,11 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Workspace-level disk cache mechanism (bucket store + hashing)"
+description = "Nyar workspace cache facade over Boost package-cache"
 
 [dependencies]
-sha2 = { workspace = true }
-acorn-odin = { workspace = true }
-thiserror = { workspace = true }
+package-cache = { git = "https://github.com/oovm/rust-boost", rev = "968ff19d6af9d5f7bfbcf001712f9c16e703b85e" }
 
 [dev-dependencies]
+acorn-odin = { workspace = true }
 tempfile = { workspace = true }

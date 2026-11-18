@@ -66,7 +66,7 @@ impl PackageManager {
         let source_manager = RegistrySourceManager::open_with_layout(layout)?;
         let registries = source_manager.build_registries()?;
         let lock_file = LockFile::load(mode.root(), layout)?;
-        let cache = PackageCache::open(PackageCache::root_for(layout))?;
+        let cache = PackageCache::open(layout.cache_dir())?;
         let publisher = PackagePublisher::new(registries.clone(), layout);
         let vendor = VendorManager::open_with_layout(layout)?;
         Ok(Self { mode, layout, registries, lock_file, cache, publisher, vendor, source_manager, frozen_lockfile: false, offline: false })
@@ -80,7 +80,7 @@ impl PackageManager {
     ) -> Result<Self> {
         let mode = ProjectMode::discover(directory, layout)?;
         let lock_file = LockFile::load(mode.root(), layout)?;
-        let cache = PackageCache::open(PackageCache::root_for(layout))?;
+        let cache = PackageCache::open(layout.cache_dir())?;
         let publisher = PackagePublisher::new(registries.clone(), layout);
         let vendor = VendorManager::open_with_layout(layout)?;
         let source_manager = RegistrySourceManager::open_with_layout(layout)?;
@@ -109,7 +109,7 @@ impl PackageManager {
         let root = directory.as_ref().to_path_buf();
         let mode = ProjectMode::Package { root, manifest };
         let lock_file = LockFile::load(mode.root(), layout)?;
-        let cache = PackageCache::open(PackageCache::root_for(layout))?;
+        let cache = PackageCache::open(layout.cache_dir())?;
         let publisher = PackagePublisher::new(registries.clone(), layout);
         let vendor = VendorManager::open_with_layout(layout)?;
         let source_manager = RegistrySourceManager::open_with_layout(layout)?;
@@ -727,7 +727,7 @@ impl PackageManager {
 
     /// 清空本地包缓存目录与索引。
     pub fn clear_cache(&mut self) -> Result<()> {
-        self.cache.clear()
+        Ok(self.cache.clear()?)
     }
 
     fn find_locked_entry(&self, name: &str, requested: &str) -> Option<LockEntry> {

@@ -1,15 +1,6 @@
-//! Workspace-level content-addressed disk cache for Nyar tooling.
+//! Nyar 工作区缓存门面。
+//!
+//! 内容寻址的制品桶、哈希与标记根发现由 Boost 的 `package-cache` 提供；本 crate 只做再导出。
 #![deny(missing_docs)]
 
-mod error;
-mod hash;
-mod path;
-mod store;
-
-pub use error::WorkspaceCacheError;
-pub use hash::{combined_hash, file_hash, files_hash};
-pub use path::{resolve_marker_root, sanitize_bucket_name};
-pub use store::WorkspaceCache;
-
-/// Result type for workspace cache operations.
-pub type Result<T> = std::result::Result<T, WorkspaceCacheError>;
+pub use package_cache::{CacheError as WorkspaceCacheError, Result, WorkspaceCache, combined_hash, file_hash, files_hash, resolve_marker_root, sanitize_bucket_name};

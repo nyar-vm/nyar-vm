@@ -15,6 +15,10 @@ pub enum PackageManagerError {
     #[error(transparent)]
     #[diagnostic(code(nyar::package_manager::resolve))]
     Resolve(#[from] PackageError),
+    /// 包缓存读写错误。
+    #[error(transparent)]
+    #[diagnostic(code(nyar::package_manager::cache))]
+    Cache(#[from] package_cache::CacheError),
     /// VON 解析或序列化失败。
     #[error(transparent)]
     #[diagnostic(code(nyar::package_manager::von))]

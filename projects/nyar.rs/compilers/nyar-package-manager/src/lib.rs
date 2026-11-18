@@ -5,7 +5,6 @@
 #![deny(missing_docs)]
 
 mod auth;
-mod cache;
 mod credentials;
 mod error;
 mod manager;
@@ -17,7 +16,6 @@ mod scripts;
 mod security;
 
 pub use auth::{LoginResult, VendorAuthStore, VendorManager};
-pub use cache::PackageCache;
 pub use credentials::{
     DiscoveredCredential, RegistryCredentialId, TokenDiscovery, discover_token, is_external_registry, sync_token_to_official_store,
 };
@@ -33,6 +31,7 @@ pub use registry_sources::RegistrySourceManager;
 pub use scripts::{ScriptResult, ScriptRunner};
 pub use security::{LicenseInfo, SecurityAudit, SecurityAuditResult, VulnerabilityReport, check_license};
 
+pub use package_cache::PackageCache;
 pub use package_resolve::{
     DependencyBucket, DependencyNode, DependencyResolver, DependencySpec, EntryAliasFn, LockEntry, LockFile, PackageError,
     PackageManifest, ProjectLayout, ProjectMode, PublishConfig, PublishTarget, SemanticVersion, WorkspaceManifest, YearlyVersion,
