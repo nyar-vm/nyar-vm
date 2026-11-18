@@ -19,7 +19,16 @@ fn von_print_via_registry() {
 
 #[test]
 fn wrong_document_type() {
+    // 平台自带的 WAT printer 由宿主编排显式装配，不再随注册表默认创建。
+    nyar_format::register_platform_printers();
     let value = VonValue::Null;
     let err = print_document("wat", &value, PrintStyle::Indented, &FormatOptions::default()).unwrap_err();
     assert!(matches!(err, FormatError::WrongDocument { .. }));
+}
+
+#[test]
+fn unregistered_language_fails_closed() {
+    let value = VonValue::Null;
+    let err = print_document("no-such-language", &value, PrintStyle::Compact, &FormatOptions::default()).unwrap_err();
+    assert!(matches!(err, FormatError::Unsupported { .. }), "{err}");
 }

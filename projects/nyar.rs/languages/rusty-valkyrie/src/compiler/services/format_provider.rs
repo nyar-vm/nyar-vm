@@ -109,6 +109,7 @@ fn map_print_error(error: oak_valkyrie::printer::PrintError) -> FormatError {
 
 /// 向 `nyar-format` 注册 Valkyrie formatter / printer provider（幂等，可在入口重复调用）。
 pub fn register_format_providers() {
+    nyar_format::register_platform_printers();
     nyar_format::formatter::register_source_provider(&ValkyrieSourceFormatterProvider);
     nyar_format::printer::register_printer_provider(&ValkyriePrinterProvider);
 }

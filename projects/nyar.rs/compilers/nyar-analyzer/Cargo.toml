@@ -10,4 +10,5 @@ license.workspace = true
 compiler-analysis = { workspace = true }
 compiler-specialize = { workspace = true }
 compiler-types = { workspace = true }
+oak-formats = { workspace = true }
 serde = { workspace = true }

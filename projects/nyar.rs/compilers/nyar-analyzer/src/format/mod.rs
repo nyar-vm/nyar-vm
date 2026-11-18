@@ -1,25 +1,5 @@
-#![doc = include_str!("readme.md")]
-
-//! 前端无关格式化基础设施（对齐 `highlight`：平台契约 + 语言插件实现）。
+//! 前端无关的格式化契约（实现、注册表与 `Document`/CST/`SourceMap` 归 Oak `oak-formats`）。
 //!
-//! - **本模块**：`FormatOptions` / `FormatError`、
-//!   `Document` 布局引擎、`syntax` CST、`SourceMap`、`SourceFormatter` / `Printer` 与注册表。
-//! - **语言插件**：在前端 crate 中按不透明 `language_id` 注册实现。
+//! 保留本模块只为既有消费者路径（`nyar_analyzer::format::*`）不变；本仓不再持有实现。
 
-mod config;
-mod document;
-mod error;
-mod options;
-mod printer;
-mod source;
-mod source_map;
-mod syntax;
-
-pub use config::{FormatConfigLoader, FormatConfigResolution};
-pub use document::Document;
-pub use error::FormatError;
-pub use options::FormatOptions;
-pub use printer::{PrintStyle, Printer, PrinterProvider, PrinterRegistry};
-pub use source::{SourceFormatter, SourceFormatterProvider, SourceFormatterRegistry};
-pub use source_map::{FormattedOutput, SourceMap, SourceMapEntry};
-pub use syntax::{ByteRange, SyntaxElement, SyntaxNode, SyntaxRoot, SyntaxToken, TriviaKind};
+pub use oak_formats::contract::*;
