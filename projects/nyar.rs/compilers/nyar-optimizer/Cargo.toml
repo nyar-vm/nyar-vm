@@ -2,11 +2,10 @@
 name = "nyar-optimizer"
 version.workspace = true
 edition.workspace = true
-description = "Object Algebraic and E-Graph optimizer for the Nyar backend platform"
+description = "Consumer facade re-exporting Boost compiler-optimize"
 authors.workspace = true
 license.workspace = true
 
 [dependencies]
 compiler-optimize = { workspace = true }
-nyar-types = { workspace = true, features = ["serde"] }
-serde = { workspace = true }
+compiler-types = { workspace = true }
