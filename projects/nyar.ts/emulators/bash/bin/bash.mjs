@@ -3,13 +3,13 @@
  * `bash` 模拟入口。
  *
  * 覆盖原版 bash 最常用的三种调用：`bash script.sh`、`bash -c '命令'`、stdin。
- * 执行本身走 `@nyar/odin-vm`（legend-vm 基板），本包不实现解释器。
+ * 执行本身走 `@nyar/nyar`（legend-vm 基板），本包不实现解释器。
  */
 
 import {readFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
 
-import {runHostScript} from '@nyar/odin-vm';
+import {runHostScript} from '@nyar/nyar';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json');

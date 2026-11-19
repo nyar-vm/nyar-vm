@@ -38,12 +38,12 @@ export default defineConfig({
     },
     publish: {
         packages: [
-            "@nyar/odin-vm-win32-x64",
-            "@nyar/odin-vm-linux-x64",
-            "@nyar/odin-vm-darwin-x64",
-            "@nyar/odin-vm-darwin-arm64",
-            "@nyar/odin-vm-unknown-wasm32",
-            "@nyar/odin-vm",
+            "@nyar/nyar-win32-x64",
+            "@nyar/nyar-linux-x64",
+            "@nyar/nyar-darwin-x64",
+            "@nyar/nyar-darwin-arm64",
+            "@nyar/nyar-unknown-wasm32",
+            "@nyar/nyar",
         ],
     },
 });

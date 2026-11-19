@@ -13,12 +13,12 @@ const TS_ROOT = join(ROOT, "projects", "nyar.ts");
 
 /** @type {{ name: string, dir: string }[]} */
 const PUBLISH_SPECS = [
-    { name: "@nyar/odin-vm-win32-x64", dir: "platforms/odin-vm-win32-x64" },
-    { name: "@nyar/odin-vm-linux-x64", dir: "platforms/odin-vm-linux-x64" },
-    { name: "@nyar/odin-vm-darwin-x64", dir: "platforms/odin-vm-darwin-x64" },
-    { name: "@nyar/odin-vm-darwin-arm64", dir: "platforms/odin-vm-darwin-arm64" },
-    { name: "@nyar/odin-vm-unknown-wasm32", dir: "platforms/odin-vm-unknown-wasm32" },
-    { name: "@nyar/odin-vm", dir: "packages/odin-vm" },
+    { name: "@nyar/nyar-win32-x64", dir: "platforms/nyar-win32-x64" },
+    { name: "@nyar/nyar-linux-x64", dir: "platforms/nyar-linux-x64" },
+    { name: "@nyar/nyar-darwin-x64", dir: "platforms/nyar-darwin-x64" },
+    { name: "@nyar/nyar-darwin-arm64", dir: "platforms/nyar-darwin-arm64" },
+    { name: "@nyar/nyar-unknown-wasm32", dir: "platforms/nyar-unknown-wasm32" },
+    { name: "@nyar/nyar", dir: "packages/nyar" },
 ];
 
 /** @returns {{ name: string, dir: string, packageJsonPath: string }[]} */

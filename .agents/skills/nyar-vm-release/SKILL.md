@@ -59,7 +59,7 @@ git push origin v0.0.15
 ## 发布后验证
 
 - 确认所有 `publish.packages` 中的包都出现在 npm registry，版本一致。
-- 确认 `@nyar/odin-vm` 及各平台包读取的版本号来自其 `package.json`，与发布版本一致。
+- 确认 `@nyar/nyar` 及各平台包读取的版本号来自其 `package.json`，与发布版本一致。
 - 若只发布了部分包，不要直接 bump 下一版；先按下方排障处理。
 
 ## 排障

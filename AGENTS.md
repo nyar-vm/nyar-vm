@@ -35,7 +35,7 @@ projects/nyar.rs/
 └── ffis/          nyar-napi、nyar-wasm
 
 projects/nyar.ts/
-├── packages/      @nyar/odin-vm 与 skills 包
+├── packages/      @nyar/nyar 与 skills 包
 ├── platforms/     按平台打包的 .node 产物
 └── emulators/     脚本语言模拟器
 ```

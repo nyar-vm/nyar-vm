@@ -6,7 +6,7 @@
  * - 不使用 NPM_TOKEN；OIDC Trusted Publisher（permissions.id-token: write）
  * - 工作流合同：file=publish-npm.yml env=NPM_PUBLISH repo=nyar-vm/nyar-vm
  *
- * 前置：native 产物在 NYAR_NATIVE_ARTIFACTS/<short>/（`odin-vm.<triple>.node`）；
+ * 前置：native 产物在 NYAR_NATIVE_ARTIFACTS/<short>/（`nyar.<triple>.node`）；
  */
 
 import { spawnSync } from 'node:child_process';
@@ -29,27 +29,27 @@ function packageAbs(packageDir) {
 
 /** @type {{ short: string, packageDir: string, os: string[], cpu: string[], artifact: string }[]} */
 const NATIVE_PLATFORMS = [
-    { short: 'win32-x64', packageDir: 'odin-vm-win32-x64', os: ['win32'], cpu: ['x64'], artifact: 'odin-vm.win32-x64-msvc.node' },
-    { short: 'linux-x64', packageDir: 'odin-vm-linux-x64', os: ['linux'], cpu: ['x64'], artifact: 'odin-vm.linux-x64-gnu.node' },
-    { short: 'darwin-x64', packageDir: 'odin-vm-darwin-x64', os: ['darwin'], cpu: ['x64'], artifact: 'odin-vm.darwin-x64.node' },
+    { short: 'win32-x64', packageDir: 'nyar-win32-x64', os: ['win32'], cpu: ['x64'], artifact: 'nyar.win32-x64-msvc.node' },
+    { short: 'linux-x64', packageDir: 'nyar-linux-x64', os: ['linux'], cpu: ['x64'], artifact: 'nyar.linux-x64-gnu.node' },
+    { short: 'darwin-x64', packageDir: 'nyar-darwin-x64', os: ['darwin'], cpu: ['x64'], artifact: 'nyar.darwin-x64.node' },
     {
         short: 'darwin-arm64',
-        packageDir: 'odin-vm-darwin-arm64',
+        packageDir: 'nyar-darwin-arm64',
         os: ['darwin'],
         cpu: ['arm64'],
-        artifact: 'odin-vm.darwin-arm64.node',
+        artifact: 'nyar.darwin-arm64.node',
     },
 ];
 
 const WASM_COLLECT = {
     short: 'unknown-wasm32',
-    packageDir: 'odin-vm-unknown-wasm32',
+    packageDir: 'nyar-unknown-wasm32',
     artifact: 'nyar_wasm.wasm',
 };
 
 const MAIN_PACKAGE = {
-    dir: packageAbs('odin-vm'),
-    name: '@nyar/odin-vm',
+    dir: packageAbs('nyar'),
+    name: '@nyar/nyar',
 };
 
 function fail(msg) {
@@ -359,7 +359,7 @@ function publishMain(version, artifactsRoot) {
     /** @type {Record<string, string>} */
     const optionalNatives = {};
     for (const plat of NATIVE_PLATFORMS) {
-        const collectName = `@nyar/odin-vm-${plat.short}`;
+        const collectName = `@nyar/nyar-${plat.short}`;
         const artDir = path.join(artifactsRoot, plat.short);
         const hasArtifact =
             fs.existsSync(path.join(artDir, 'lib', plat.artifact)) ||

@@ -10,7 +10,7 @@
 | `formats/` | 已迁出：`.odin` 磁盘字节码合同由上游 Acorn 的 `acorn-odin` crate 持有，本仓以 git `rev` 消费 |
 | `runtimes/` | `odin-vm`（VM）、`legend-vm`（guest execution and specialization）；托管堆与 JIT 底座已迁至 Boost `interpreter-gc` / `interpreter-jit` |
 | `languages/` | 5 个 guest 前端 `rusty-{bash,c,lua,powershell,tcl}`；其余 `rusty-*` 目录不在 workspace |
-| `ffis/` | 宿主绑定：`nyar-napi`（通用宿主 + OdinVM 调用）、`nyar-wasm`（占位）；Valkyrie 产品绑定已迁至 `valkyrie.rs` |
+| `ffis/` | 宿主绑定：`nyar-napi`（通用宿主）、`nyar-wasm`（占位）；Valkyrie 产品绑定已迁至 `valkyrie.rs` |
 
 ## Dependency boundaries
 
@@ -24,8 +24,8 @@
 
 | 路径 | 角色 |
 |------|------|
-| `packages/` | `@nyar/odin-vm`（OdinVM 调用面与宿主 API）与 skills 包 |
-| `platforms/` | 按平台打包的原生 `.node` 产物：`@nyar/odin-vm-<target>` |
+| `packages/` | `@nyar/nyar`（Nyar 宿主 API）与 skills 包 |
+| `platforms/` | 按平台打包的原生 `.node` 产物：`@nyar/nyar-<target>` |
 | `emulators/` | bash/lua/tcl 模拟器 |
 
 ## Optional integration tests

@@ -10,7 +10,7 @@
  *
  * 用法：
  *   node scripts/build-npm-package-js.mjs                       # 构建全部发布包
- *   node scripts/build-npm-package-js.mjs projects/nyar.ts/packages/odin-vm
+ *   node scripts/build-npm-package-js.mjs projects/nyar.ts/packages/nyar
  */
 
 import {mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
@@ -22,7 +22,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /** 需要生成 JS 发布入口的包（相对仓库根）。 */
 const PACKAGE_DIRS = [
-    'projects/nyar.ts/packages/odin-vm',
+    'projects/nyar.ts/packages/nyar',
 ];
 
 /** 只改写相对说明符的扩展名：`'./x.ts'`、`"../x.ts"` → `.js`。 */
