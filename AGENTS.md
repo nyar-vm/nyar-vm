@@ -31,11 +31,11 @@
 projects/nyar.rs/
 ├── compilers/     语言无关的规划、分析、优化、降低与产物装配
 ├── runtimes/      odin-vm、legend-vm（GC/JIT 底座在 Boost interpreter-gc / interpreter-jit）
-├── languages/     rusty-valkyrie（主链单包）与 5 个 guest 前端
+├── languages/     5 个 guest 前端（rusty-bash/lua/tcl/powershell/c）
 └── ffis/          nyar-napi、nyar-wasm
 
 projects/nyar.ts/
-├── packages/      @nyar/nyar 与 skills 包
+├── packages/      @nyar/odin-vm 与 skills 包
 ├── platforms/     按平台打包的 .node 产物
 └── emulators/     脚本语言模拟器
 ```
@@ -44,19 +44,15 @@ projects/nyar.ts/
 
 ```text
 Oak       ──不能依赖──> Nyar
-Nyar      ──不能依赖──> rusty-valkyrie / Legion / Asgard
-Valkyrie 前端 ──不能依赖──> Legion / Asgard
+Nyar      ──不能依赖──> Valkyrie 产品（Legion / Asgard 归 `valkyrie.rs`）
 ```
 
-- `rusty-valkyrie` 是 **单一 Cargo package**：`src/` 是前端本体，`src/legion`、`src/asgard`、`src/workspace`
-  是包内产品模块；包内不得出现第二个 `Cargo.toml`，前端模块不得导入产品模块。
-- Nyar 核心 crate 不得依赖 `rusty-valkyrie`、`legion`、`asgard`。
 - `odin-vm` 不得导入任何语言的 AST、解析器或编译流水线。
 - `legend-vm` 不得新增完整的语言 tree-walk；guest 的解析与解释留在 `rusty-<lang>` crate。
 - `nyar-types` 仅承载中性合同与身份。canonical 语言语义必须归还 Valkyrie；共享 executable 视图归目标侧 `nyar-emitter` 私有合同，不得回挂 `nyar-types`/Nyar，也不得改成可选共享 MIR。
 - Nyar 只提供统一工具、编排及中性合同，各语言拥有 IR/MIR、解释器与语义，各目标拥有计划/LIR 和 runtime wrapper。
 - Python/Lua/动态 TypeScript 通过解释器特化保留未知运行时操作，不能以常量折叠或 stub 替代编译。
-- **[valkyrie.rs](https://github.com/valkyrie-language/valkyrie.rs) 是下游语料仓**（fixtures / golden / harness 黑盒），经 git 依赖消费 `nyar-vm` 的 CLI 与编译栈。**本仓不得引用、写入或假设 valkyrie.rs 路径**；语义与集成 Rust 测试只留在 `rusty-valkyrie/tests/`。
+- **[valkyrie.rs](https://github.com/valkyrie-language/valkyrie.rs) 是下游语料仓**（fixtures / golden / harness 黑盒），经 git 依赖消费 `nyar-vm` 的 CLI 与编译栈。**本仓不得引用、写入或假设 valkyrie.rs 路径**；Valkyrie 语义与集成 Rust 测试归 `valkyrie.rs`。
 
 ## 硬性约束
 
@@ -119,12 +115,12 @@ gitignore），不要提交。
 
 - 不要在仓库根做无界 glob；`node_modules/`、`projects/nyar.rs/target/`、`dist/` 会拖垮会话。
 - 已知 crate → 直读该 crate 的 `src/`、`tests/` 与 `readme.md`。
-- 搜符号先限定到 `compilers/`、`runtimes/`、`languages/rusty-valkyrie/` 等具体目录，并限制结果条数。
+- 搜符号先限定到 `compilers/`、`runtimes/`、`languages/` 等具体目录，并限制结果条数。
 - 需要跨 crate 约定时读 `projects/readme.md` 与 `documentation/`，再回到源码核对。
 
 ## 常见陷阱
 
-- `languages/` 下只有 `rusty-valkyrie` 与 `rusty-{bash,c,lua,powershell,tcl}` 在 workspace `members` 中；其余 `rusty-*`
+- `languages/` 下只有 `rusty-{bash,c,lua,powershell,tcl}` 在 workspace `members` 中；其余 `rusty-*`
   目录不参与构建。
 - `legend-vm` 当前只有有限 native residual 接线，不能把现状限制写成永久禁止 OVM/CLR/JVM/Wasm 适配的架构规则。
 - `odin-vm` 只消费 `acorn-odin`，不解析源码，也不拥有 `.odin` 的磁盘格式合同。

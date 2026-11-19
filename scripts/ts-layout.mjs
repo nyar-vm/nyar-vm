@@ -3,11 +3,11 @@ import { join } from "node:path";
 export const TS_ROOT = join("projects", "nyar.ts");
 
 const PLATFORM_DIRS = new Set([
-    "nyar-win32-x64",
-    "nyar-linux-x64",
-    "nyar-darwin-x64",
-    "nyar-darwin-arm64",
-    "nyar-unknown-wasm32",
+    "odin-vm-win32-x64",
+    "odin-vm-linux-x64",
+    "odin-vm-darwin-x64",
+    "odin-vm-darwin-arm64",
+    "odin-vm-unknown-wasm32",
 ]);
 
 const EMULATOR_DIRS = new Set(["bash", "lua", "tcl"]);

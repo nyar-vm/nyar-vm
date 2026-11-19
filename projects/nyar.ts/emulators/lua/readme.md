@@ -1,14 +1,14 @@
 # @nyar/lua
 
-Lua 模拟包。提供与原版 Lua 解释器同名、同调用形式的 `lua` 入口，执行由 `@nyar/nyar`（legend-vm 基板）承担；解析与求值在 `examples/rusty-lua` 中实现，本包不重复实现。
+Lua 模拟包。提供与原版 Lua 解释器同名、同调用形式的 `lua` 入口，执行由 `@nyar/odin-vm`（legend-vm 基板）承担；解析与求值在 `examples/rusty-lua` 中实现，本包不重复实现。
 
 ## 依赖顺序
 
 ```text
-@nyar/lua ──► @nyar/nyar ──► @nyar/nyar-<platform>
+@nyar/lua ──► @nyar/odin-vm ──► @nyar/odin-vm-<platform>
 ```
 
-`@nyar/nyar` 按当前 OS/arch 选择已安装的平台 collect（原生优先、Wasm 兜底），因此本包不直接依赖任何平台包。
+`@nyar/odin-vm` 按当前 OS/arch 选择已安装的平台 collect（原生优先、Wasm 兜底），因此本包不直接依赖任何平台包。
 
 ## 用法
 
@@ -24,7 +24,7 @@ lua -
 
 - `LANGUAGE`：语言 id 与源文件扩展名
 - `guestArtifact()`：该语言 guest 模块的约定路径 `guest/lua.odin`
-- `createNyarHost()` / `resolveCollect` / `runHostScript`：来自 `@nyar/nyar` 的宿主入口
+- `createNyarHost()` / `resolveCollect` / `runHostScript`：来自 `@nyar/odin-vm` 的宿主入口
 
 ## License
 

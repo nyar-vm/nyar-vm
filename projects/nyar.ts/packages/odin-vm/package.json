@@ -1,0 +1,56 @@
+{
+    "name": "@nyar/odin-vm",
+    "version": "0.1.0",
+    "description": "OdinVM CLI and Node-API bindings (nyar-napi host surface).",
+    "type": "module",
+    "license": "MIT",
+    "main": "./dist/index.js",
+    "exports": {
+        ".": "./dist/index.js",
+        "./cli": "./dist/cli/cli.js"
+    },
+    "bin": {
+        "odin-vm": "bin/odin-vm.js"
+    },
+    "files": [
+        "bin",
+        "dist",
+        "src",
+        "readme.md",
+        "README.md"
+    ],
+    "scripts": {
+        "build": "node ../../../../scripts/build-npm-package-js.mjs projects/nyar.ts/packages/odin-vm",
+        "prepare": "node ../../../../scripts/build-npm-package-js.mjs projects/nyar.ts/packages/odin-vm",
+        "prepack": "node ../../../../scripts/build-npm-package-js.mjs projects/nyar.ts/packages/odin-vm && node ../../../../scripts/prepare-npm-publish.mjs",
+        "test": "node --experimental-strip-types --test tests/**/*.test.ts"
+    },
+    "dependencies": {
+        "@vmz/commander": "^0.3.5",
+        "@vmz/diagnostic": "^0.3.5"
+    },
+    "optionalDependencies": {
+        "@nyar/odin-vm-darwin-arm64": "workspace:*",
+        "@nyar/odin-vm-darwin-x64": "workspace:*",
+        "@nyar/odin-vm-linux-x64": "workspace:*",
+        "@nyar/odin-vm-unknown-wasm32": "workspace:*",
+        "@nyar/odin-vm-win32-x64": "workspace:*"
+    },
+    "engines": {
+        "node": ">=22.18.0"
+    },
+    "keywords": [
+        "nyar",
+        "odin-vm",
+        "virtual-machine",
+        "runtime"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/nyar-vm/nyar-vm.git",
+        "directory": "projects/nyar.ts/packages/odin-vm"
+    },
+    "publishConfig": {
+        "access": "public"
+    }
+}

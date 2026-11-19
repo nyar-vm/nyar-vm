@@ -4,7 +4,6 @@
 
 [patch."https://github.com/oovm/rust-boost"]
 boost-harness = { path = "<your-path>/rust-boost/projects/boost/boost.harness" }
-compiler-valkyrie = { path = "<your-path>/rust-boost/projects/compiler/compiler.valkyrie" }
 data-binary-odin = { path = "<your-path>/rust-boost/projects/data/data.binary.odin" }
 data-binary-pe = { path = "<your-path>/rust-boost/projects/data/data.binary.pe" }
 data-binary-wasm = { path = "<your-path>/rust-boost/projects/data/data.binary.wasm" }

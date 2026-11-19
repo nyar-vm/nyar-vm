@@ -5,7 +5,7 @@
 //!
 //! 与 `backend_wasm_js_glue.rs`（launcher 骨架/CLI 隔离）互补：本文件只覆盖
 //! library 模式的 ABI 桥合同。端到端行为（真实构建 + Node 调用）在
-//! `rusty-valkyrie/tests/asgard/glue_contract.rs`，两处不重复造求值。
+//! `valkyrie.rs` 的 `tests/asgard/glue_contract.rs`，两处不重复造求值。
 
 use nyar_emitter::{build_node_launcher, collect_import_bindings};
 

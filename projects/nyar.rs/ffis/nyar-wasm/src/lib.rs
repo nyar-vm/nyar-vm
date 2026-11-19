@@ -1,5 +1,5 @@
 //! Wasm GC 绑定层：把 Nyar 运行时编译为 `nyar.wasm` 等产物，
-//! 由构建管线写入 `packages/nyar-unknown-wasm32`。
+//! 由构建管线写入 `platforms/odin-vm-unknown-wasm32`。
 
 #![deny(missing_docs)]
 

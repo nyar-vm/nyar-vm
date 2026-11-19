@@ -3,13 +3,13 @@
  * `tclsh` 模拟入口。
  *
  * 覆盖原版 tclsh 最常用的调用：`tclsh script.tcl` 与 stdin。
- * 执行本身走 `@nyar/nyar`（legend-vm 基板），本包不实现解释器。
+ * 执行本身走 `@nyar/odin-vm`（legend-vm 基板），本包不实现解释器。
  */
 
 import {readFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
 
-import {runHostScript} from '@nyar/nyar';
+import {runHostScript} from '@nyar/odin-vm';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json');

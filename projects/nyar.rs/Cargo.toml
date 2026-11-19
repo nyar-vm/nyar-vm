@@ -6,7 +6,6 @@ members = [
     "languages/rusty-lua",
     "languages/rusty-powershell",
     "languages/rusty-tcl",
-    "languages/rusty-valkyrie",
     "runtimes/legend-vm",
     "runtimes/odin-vm",
     "ffis/nyar-napi",
@@ -23,7 +22,6 @@ members = [
 ]
 default-members = [
     "runtimes/odin-vm",
-    "languages/rusty-valkyrie",
 ]
 
 [workspace.package]
@@ -91,7 +89,6 @@ data-text-zig = { git = "https://github.com/oovm/rust-boost", rev = "71db8fa50f4
 language-repl = { git = "https://github.com/oovm/rust-boost", rev = "71db8fa50f49e3693640cbd19e64ad9c797e5932" }
 language-format = { git = "https://github.com/oovm/rust-boost", rev = "71db8fa50f49e3693640cbd19e64ad9c797e5932" }
 language-highlight = { git = "https://github.com/oovm/rust-boost", rev = "71db8fa50f49e3693640cbd19e64ad9c797e5932" }
-compiler-valkyrie = { git = "https://github.com/oovm/rust-boost", rev = "71db8fa50f49e3693640cbd19e64ad9c797e5932" }
 # Nyar Compiler 编译期组件
 nyar = { path = "compilers/nyar" }
 nyar-analyzer = { path = "compilers/nyar-analyzer" }
@@ -106,7 +103,6 @@ nyar-emitter = { path = "compilers/nyar-emitter" }
 legend-vm = { path = "runtimes/legend-vm" }
 odin-vm = { path = "runtimes/odin-vm" }
 # Guest 语言前端（各自独立 crate）
-rusty-valkyrie = { path = "languages/rusty-valkyrie" }
 rusty-bash = { path = "languages/rusty-bash" }
 rusty-c = { path = "languages/rusty-c" }
 rusty-lua = { path = "languages/rusty-lua" }

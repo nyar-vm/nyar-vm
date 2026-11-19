@@ -1,7 +1,7 @@
 /**
  * `@nyar/lua` —— Lua 语言包。
  *
- * 只声明语言身份，宿主能力全部委托给 `@nyar/nyar`；lexer / parser / interpret
+ * 只声明语言身份，宿主能力全部委托给 `@nyar/odin-vm`；lexer / parser / interpret
  * 属于 `examples/rusty-lua`，本包不重复实现。
  */
 
@@ -23,5 +23,5 @@ export function guestArtifact(): string {
     return path.join(packageRoot, 'guest', `${LANGUAGE.id}.odin`);
 }
 
-export {createNyarHost, resolveCollect} from '@nyar/nyar';
-export type {NyarCollect, NyarHost} from '@nyar/nyar';
+export {createNyarHost, resolveCollect} from '@nyar/odin-vm';
+export type {NyarCollect, NyarHost} from '@nyar/odin-vm';

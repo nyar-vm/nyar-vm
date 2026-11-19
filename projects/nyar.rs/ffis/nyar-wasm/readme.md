@@ -4,7 +4,7 @@ WebAssembly **cdylib/rlib** binding layer for the Nyar runtime.
 
 ## Overview
 
-`nyar-wasm` builds the Wasm GC-facing artifact consumed by `@nyar/nyar` platform packages (`nyar-unknown-wasm32`). It
+`nyar-wasm` builds the Wasm GC-facing artifact consumed by `@nyar/odin-vm` platform packages (`odin-vm-unknown-wasm32`). It
 re-exports `nyar-runner` for shared host dispatch. There is **no** `[[bin]]` or `main` in this crate—the user-facing CLI
 lives under `projects/nyar.ts/platforms/`.
 
@@ -22,5 +22,5 @@ not frozen. Actual lowering and module bytes are produced by the Nyar compile pi
 
 ## Boundaries
 
-- Not a public import target for application code—install the main `nyar` npm package instead.
+- Not a public import target for application code—install `@nyar/odin-vm` instead.
 - Does not implement any language frontend; frontend compilers live in their own language crates.

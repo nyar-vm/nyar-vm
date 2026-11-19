@@ -2,7 +2,7 @@
 name: nyar-vm-compiler
 description: >-
   改 nyar-vm 的编译链：HIR、Semantic MIR、CanonicalProgram、nyar-analyzer、
-  nyar-optimizer、nyar-emitter、rusty-valkyrie 前端与目标降低/产物装配。
+  nyar-optimizer、nyar-emitter 与目标降低/产物装配。
   用户要求修语义、类型、泛型、调用闭合、后端 lowering、导出或产物时加载。
 ---
 
@@ -20,7 +20,7 @@ description: >-
 
 | 位置 | 拥有 |
 |------|------|
-| `languages/rusty-valkyrie` | Valkyrie HIR / MIR / 规范程序与表示计划；legion/asgard 产品模块 |
+| `valkyrie.rs`（独立仓） | Valkyrie HIR / MIR / 规范程序与表示计划；legion/asgard 产品模块 |
 | `compilers/nyar-analyzer` | 前端事实到 `ProgramFacts` |
 | `compilers/nyar-optimizer` | 对象代数与 E-Graph 优化会话 |
 | `compilers/nyar` | 分区、后端选择、验证与编译编排 |
@@ -36,8 +36,7 @@ description: >-
 - Valkyrie 静态调用必须在自身 HIR 阶段闭合，禁止 deferred member 或后置泛型物化旁路。动态语言按自身语义保留动态操作，不套用该静态要求。
 - 错误类型全链保留原错误身份、参数与定位，禁止 `to_string()` 降级为纯文本。
 - 禁止规范外的魔法函数、名字表映射、硬编码特判；缺事实时修上游证据，不扩大匹配范围。
-- `rusty-valkyrie` 前端模块不得导入 `crate::{legion,asgard,workspace}`；包内不得新增第二个 `Cargo.toml`。
-- `languages/` 只有 `rusty-valkyrie` 与 `rusty-{bash,c,lua,powershell,tcl}` 在 workspace 中；其余 `rusty-*` 不参与构建。
+- `languages/` 只有 `rusty-{bash,c,lua,powershell,tcl}` 在 workspace 中；其余 `rusty-*` 不参与构建。
 
 ## 工作流
 
@@ -47,8 +46,6 @@ description: >-
 4. 逐层验证：
 
 ```powershell
-cargo test -p rusty-valkyrie --lib
-cargo test -p rusty-valkyrie --tests
 cargo test -p nyar-analyzer
 cargo test -p nyar-optimizer
 cargo test -p nyar

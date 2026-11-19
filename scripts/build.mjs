@@ -27,28 +27,28 @@ const CARGO_MANIFEST_ARGS = ["--manifest-path", RUST_MANIFEST];
 const NATIVE_TARGETS = [
     {
         triple: "x86_64-pc-windows-msvc",
-        packageDir: "nyar-win32-x64",
+        packageDir: "odin-vm-win32-x64",
         tool: "cargo",
         npmTriple: "win32-x64-msvc",
         short: "win32-x64",
     },
     {
         triple: "x86_64-unknown-linux-musl",
-        packageDir: "nyar-linux-x64",
+        packageDir: "odin-vm-linux-x64",
         tool: "zigbuild",
         npmTriple: "linux-x64-gnu",
         short: "linux-x64",
     },
     {
         triple: "x86_64-apple-darwin",
-        packageDir: "nyar-darwin-x64",
+        packageDir: "odin-vm-darwin-x64",
         tool: "zigbuild",
         npmTriple: "darwin-x64",
         short: "darwin-x64",
     },
     {
         triple: "aarch64-apple-darwin",
-        packageDir: "nyar-darwin-arm64",
+        packageDir: "odin-vm-darwin-arm64",
         tool: "zigbuild",
         npmTriple: "darwin-arm64",
         short: "darwin-arm64",
@@ -58,7 +58,7 @@ const NATIVE_TARGETS = [
 const WASM_TARGETS = [
     {
         triple: "wasm32-unknown-unknown",
-        packageDir: "nyar-unknown-wasm32",
+        packageDir: "odin-vm-unknown-wasm32",
         libName: "nyar_wasm",
         destName: "nyar_wasm.wasm",
     },
@@ -130,7 +130,7 @@ function selectNativeTargets(targets, all) {
         return [exact];
     }
     if (process.platform === "linux") {
-        const linux = targets.find((target) => target.packageDir === "nyar-linux-x64");
+        const linux = targets.find((target) => target.packageDir === "odin-vm-linux-x64");
         if (linux) {
             return [{ ...linux, triple: host }];
         }
@@ -152,10 +152,10 @@ function resolveNativeBuild(target) {
         return { triple: target.triple, tool: "cargo" };
     }
     const host = hostTriple();
-    if (process.platform === "win32" && target.packageDir === "nyar-win32-x64") {
+    if (process.platform === "win32" && target.packageDir === "odin-vm-win32-x64") {
         return { triple: host, tool: "cargo" };
     }
-    if (process.platform === "linux" && target.packageDir === "nyar-linux-x64") {
+    if (process.platform === "linux" && target.packageDir === "odin-vm-linux-x64") {
         return { triple: host, tool: "cargo" };
     }
     return { triple: target.triple, tool: target.tool };
@@ -229,7 +229,7 @@ function copyArtifact(src, dest) {
  * @param {string} npmTriple
  */
 function nativeCollectBinaryName(npmTriple) {
-    return `nyar.${npmTriple}.node`;
+    return `odin-vm.${npmTriple}.node`;
 }
 
 /**
@@ -279,10 +279,19 @@ function buildNapi(opts) {
         const destDir = join(ROOT, resolveTsPackageDir(target.packageDir));
         const dest = join(destDir, "lib", destName);
         copyArtifact(src, dest);
-        for (const legacy of ["nyar_napi.dll", "libnyar_napi.so", "libnyar_napi.dylib", "nyar.node", destName]) {
-            const legacyPath = join(destDir, legacy);
-            if (existsSync(legacyPath)) {
-                unlinkSync(legacyPath);
+        // 兼容旧的 `nyar.<triple>.node` / 裸库名：包根与 `lib/` 两处都可能残留。
+        for (const dir of [destDir, join(destDir, "lib")]) {
+            for (const legacy of [
+                "nyar_napi.dll",
+                "libnyar_napi.so",
+                "libnyar_napi.dylib",
+                "nyar.node",
+                `nyar.${target.npmTriple}.node`,
+            ]) {
+                const legacyPath = join(dir, legacy);
+                if (existsSync(legacyPath)) {
+                    unlinkSync(legacyPath);
+                }
             }
         }
         console.log(`  copied lib/${destName}`);

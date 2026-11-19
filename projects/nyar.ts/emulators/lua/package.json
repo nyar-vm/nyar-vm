@@ -18,7 +18,7 @@
         "README.md"
     ],
     "dependencies": {
-        "@nyar/nyar": "workspace:*"
+        "@nyar/odin-vm": "workspace:*"
     },
     "engines": {
         "node": ">=20"
