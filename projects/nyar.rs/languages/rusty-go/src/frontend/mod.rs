@@ -1,8 +1,8 @@
 use chomsky_types::Loc;
 use chomsky_uir::{Analysis, IKun};
 use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_core::source::SourceText;
-use oak_go::{ast, GoBuilder, GoLanguage, GoRoot};
+use data_text_core::source::SourceText;
+use data_text_go::{ast, GoBuilder, GoLanguage, GoRoot};
 use std::ops::Range;
 
 /// Rusty Go 前端实现
@@ -22,10 +22,10 @@ impl NyarFrontend<(), GoRoot> for RustyGoFrontend {
     type Language = GoLanguage;
 
     fn parse(&self, source: &str) -> Result<GoRoot, TypesError> {
-        use oak_core::Builder;
+        use data_text_core::Builder;
         let builder = GoBuilder::new(&self.language);
         let source_text = SourceText::new(source.to_string());
-        let mut session = oak_core::parser::ParseSession::<GoLanguage>::default();
+        let mut session = data_text_core::parser::ParseSession::<GoLanguage>::default();
         let output = builder.build(&source_text, &[], &mut session);
 
         output.result.map_err(|e| TypesError::Compile(format!("Build error: {:?}", e)))

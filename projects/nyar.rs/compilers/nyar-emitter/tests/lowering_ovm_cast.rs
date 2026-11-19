@@ -19,7 +19,7 @@ use nyar_emitter::{
     testing::lower_fragment_to_ovm_module,
 };
 use nyar_types::{InstructionId, SemanticType, ProvenanceId};
-use acorn_odin::{OdinConstant, OdinHeadCode, OdinInstruction, OdinModuleData, decode_at};
+use data_binary_odin::{OdinConstant, OdinHeadCode, OdinInstruction, OdinModuleData, decode_at};
 
 fn i8_(signed: bool) -> SemanticType {
     SemanticType::Integer8 { signed }

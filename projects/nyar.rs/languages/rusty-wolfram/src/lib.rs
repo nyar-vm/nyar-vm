@@ -1,8 +1,8 @@
 #![deny(missing_docs)]
 use nyar_types::{Id, Loc, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_core::tree::TypedNode;
-use oak_core::{Builder, Source, SourceText};
-use oak_wolfram::{ast::WolframRoot, WolframBuilder, WolframLanguage};
+use data_text_core::tree::TypedNode;
+use data_text_core::{Builder, Source, SourceText};
+use data_text_wolfram::{ast::WolframRoot, WolframBuilder, WolframLanguage};
 
 pub struct RustyWolframFrontend {
     language: WolframLanguage,
@@ -28,7 +28,7 @@ impl NyarFrontend for RustyWolframFrontend {
     fn parse(&self, source: &str) -> Result<WolframRoot, TypesError> {
         let builder = WolframBuilder::new(&self.language);
         let source_text = SourceText::new(source);
-        let mut session = oak_core::parser::ParseSession::<WolframLanguage>::default();
+        let mut session = data_text_core::parser::ParseSession::<WolframLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
         output
@@ -40,7 +40,7 @@ impl NyarFrontend for RustyWolframFrontend {
     where
         A::Data: chomsky_uir::egraph::HasDebugInfo,
     {
-        let uri = ctx.vfs.get_uri(ctx.source_id.into()).unwrap_or_else(|| oak_core::Arc::from("anonymous"));
+        let uri = ctx.vfs.get_uri(ctx.source_id.into()).unwrap_or_else(|| data_text_core::Arc::from("anonymous"));
         let source = ctx.vfs.get_source(&uri).expect("Source not found");
         let mut stmts = Vec::new();
         let mut offset = 0;
@@ -57,7 +57,7 @@ impl NyarFrontend for RustyWolframFrontend {
 impl RustyWolframFrontend {
     fn lower_node<V: Vfs, A: chomsky_uir::Analysis<IKun>>(
         &self,
-        tree: &oak_core::tree::GreenTree<WolframLanguage>,
+        tree: &data_text_core::tree::GreenTree<WolframLanguage>,
         ctx: &mut NyarContext<V, A>,
         source: &V::Source,
         offset: usize,
@@ -65,9 +65,9 @@ impl RustyWolframFrontend {
     where
         A::Data: chomsky_uir::egraph::HasDebugInfo,
     {
-        use oak_wolfram::ast::*;
+        use data_text_wolfram::ast::*;
         let node = tree.as_node()?;
-        let red = oak_core::tree::RedNode::new(node, offset);
+        let red = data_text_core::tree::RedNode::new(node, offset);
 
         if let Some(symbol) = WolframSymbol::cast(red.clone()) {
             let name = source.get_text_in(red.span()).to_string();
@@ -111,7 +111,7 @@ impl RustyWolframFrontend {
                 let mut args = Vec::new();
                 for next_tree in children {
                     if let Some(node) = next_tree.as_node() {
-                        if let Some(wolfram_args) = WolframArguments::cast(oak_core::tree::RedNode::new(node, current_offset)) {
+                        if let Some(wolfram_args) = WolframArguments::cast(data_text_core::tree::RedNode::new(node, current_offset)) {
                             let mut arg_offset = current_offset;
                             for arg_tree in wolfram_args.green().children() {
                                 if let Some(arg_id) = self.lower_node(arg_tree, ctx, source, arg_offset) {
@@ -140,9 +140,9 @@ impl RustyWolframFrontend {
                 let right_id = self.lower_node(right_tree, ctx, source, right_offset)?;
 
                 let op_text = match op_tree {
-                    oak_core::tree::GreenTree::Node(n) => source.get_text_from(oak_core::tree::RedNode::new(n, op_offset).span()),
-                    oak_core::tree::GreenTree::Leaf(l) => {
-                        let span = oak_core::Range {
+                    data_text_core::tree::GreenTree::Node(n) => source.get_text_from(data_text_core::tree::RedNode::new(n, op_offset).span()),
+                    data_text_core::tree::GreenTree::Leaf(l) => {
+                        let span = data_text_core::Range {
                             start: op_offset,
                             end: op_offset + l.length as usize,
                         };
@@ -186,9 +186,9 @@ impl RustyWolframFrontend {
                 let op_len = op_tree.len() as usize;
                 let arg_id = self.lower_node(arg_tree, ctx, source, current_offset + op_len)?;
                 let op_text = match op_tree {
-                    oak_core::tree::GreenTree::Node(n) => source.get_text_from(oak_core::tree::RedNode::new(n, current_offset).span()),
-                    oak_core::tree::GreenTree::Leaf(l) => {
-                        let span = oak_core::Range {
+                    data_text_core::tree::GreenTree::Node(n) => source.get_text_from(data_text_core::tree::RedNode::new(n, current_offset).span()),
+                    data_text_core::tree::GreenTree::Leaf(l) => {
+                        let span = data_text_core::Range {
                             start: current_offset,
                             end: current_offset + l.length as usize,
                         };
@@ -210,9 +210,9 @@ impl RustyWolframFrontend {
                 let arg_id = self.lower_node(arg_tree, ctx, source, current_offset)?;
                 let arg_len = arg_tree.len() as usize;
                 let op_text = match op_tree {
-                    oak_core::tree::GreenTree::Node(n) => source.get_text_from(oak_core::tree::RedNode::new(n, current_offset + arg_len).span()),
-                    oak_core::tree::GreenTree::Leaf(l) => {
-                        let span = oak_core::Range {
+                    data_text_core::tree::GreenTree::Node(n) => source.get_text_from(data_text_core::tree::RedNode::new(n, current_offset + arg_len).span()),
+                    data_text_core::tree::GreenTree::Leaf(l) => {
+                        let span = data_text_core::Range {
                             start: current_offset + arg_len,
                             end: current_offset + arg_len + l.length as usize,
                         };

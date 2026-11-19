@@ -1,13 +1,14 @@
 # Copy to `config.toml` (gitignored). Do not commit real paths.
-# Replace `<your-path>` with the directory that contains sibling checkouts `oak.rs` / `nyar-vm.rs`.
+# Replace `<your-path>` with the directory that contains the sibling `rust-boost` checkout.
 # CI and fresh clones use git `rev` from workspace `Cargo.toml` only.
 
-[patch."https://github.com/yggdrasil-language/oak.rs"]
-oak-awsl = { path = "<your-path>/oak.rs/examples/oak-voc" }
-oak-core = { path = "<your-path>/oak.rs/projects/oak-core" }
-oak-dejavu = { path = "<your-path>/oak.rs/examples/oak-dejavu" }
-oak-formatter = { path = "<your-path>/oak.rs/projects/oak-formatter" }
-oak-pretty-print = { path = "<your-path>/oak.rs/projects/oak-pretty-print" }
-oak-testing = { path = "<your-path>/oak.rs/projects/oak-testing" }
-oak-valkyrie = { path = "<your-path>/oak.rs/examples/oak-valkyrie" }
-oak-von = { path = "<your-path>/oak.rs/examples/oak-von" }
+[patch."https://github.com/oovm/rust-boost"]
+boost-harness = { path = "<your-path>/rust-boost/projects/boost/boost.harness" }
+compiler-valkyrie = { path = "<your-path>/rust-boost/projects/compiler/compiler.valkyrie" }
+data-binary-odin = { path = "<your-path>/rust-boost/projects/data/data.binary.odin" }
+data-binary-pe = { path = "<your-path>/rust-boost/projects/data/data.binary.pe" }
+data-binary-wasm = { path = "<your-path>/rust-boost/projects/data/data.binary.wasm" }
+data-text-awsl = { path = "<your-path>/rust-boost/projects/data/data.text.awsl" }
+data-text-core = { path = "<your-path>/rust-boost/projects/data/data.text.core" }
+data-text-valkyrie = { path = "<your-path>/rust-boost/projects/data/data.text.valkyrie" }
+data-text-von = { path = "<your-path>/rust-boost/projects/data/data.text.von" }

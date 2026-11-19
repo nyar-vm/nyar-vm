@@ -8,7 +8,7 @@ mod tempdir_support;
 use tempdir_support::tempdir;
 
 
-use acorn_wasm::{WasmBinaryModule, WasmOpcode};
+use data_binary_wasm::{WasmBinaryModule, WasmOpcode};
 use nyar::{Identifier, SemanticType, QualifiedName};
 use nyar_emitter::{
     FragmentSubmission, TargetExecutionPlan,

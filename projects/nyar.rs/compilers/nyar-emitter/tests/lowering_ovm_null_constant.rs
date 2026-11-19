@@ -12,7 +12,7 @@ use nyar_emitter::{
     testing::lower_fragment_to_ovm_module,
 };
 use nyar_types::SemanticType;
-use acorn_odin::{OdinHeadCode, OdinModuleData, decode_at};
+use data_binary_odin::{OdinHeadCode, OdinModuleData, decode_at};
 
 fn nullable_slot() -> SemanticType {
     SemanticType::Nullable(Box::new(SemanticType::Integer64 { signed: true }))
@@ -64,7 +64,7 @@ fn ovm_null_constant_lowers_to_explicit_odin_null() {
         assert!(instruction.size > 0, "无法解码的字节码 pc={pc}");
         pc += usize::from(instruction.size);
         if instruction.code == OdinHeadCode::Constant
-            && module.constants.get(instruction.operand1 as usize) == Some(&acorn_odin::OdinConstant::Null)
+            && module.constants.get(instruction.operand1 as usize) == Some(&data_binary_odin::OdinConstant::Null)
         {
             saw_null_constant = true;
         }

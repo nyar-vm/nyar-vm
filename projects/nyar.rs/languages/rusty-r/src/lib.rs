@@ -6,8 +6,8 @@ pub mod codegen;
 
 use chomsky_uir::ConstraintAnalysis;
 use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_core::source::SourceText;
-use oak_r::{ast::RRoot, RBuilder, RLanguage};
+use data_text_core::source::SourceText;
+use data_text_r::{ast::RRoot, RBuilder, RLanguage};
 
 /// Rusty R 前端
 pub struct RustyRFrontend {
@@ -33,7 +33,7 @@ impl NyarFrontend<ConstraintAnalysis, RRoot> for RustyRFrontend {
     fn parse(&self, source: &str) -> Result<RRoot, TypesError> {
         let builder = RBuilder::new(&self.language);
         let source_text = SourceText::new(source);
-        let mut session = oak_core::parser::ParseSession::<RLanguage>::default();
+        let mut session = data_text_core::parser::ParseSession::<RLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
         output.result.map_err(|e| TypesError::Parse(format!("{:?}", e)))

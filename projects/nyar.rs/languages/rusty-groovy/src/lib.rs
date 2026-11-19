@@ -12,8 +12,8 @@ pub mod visitor;
 
 use chomsky_uir::ConstraintAnalysis;
 use nyar_types::{Id, Loc, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_core::{parser::Parser, source::SourceText};
-use oak_groovy::{language::GroovyLanguage, parser::GroovyParser};
+use data_text_core::{parser::Parser, source::SourceText};
+use data_text_groovy::{language::GroovyLanguage, parser::GroovyParser};
 
 /// Rusty Groovy 前端
 pub struct RustyGroovyFrontend {
@@ -40,7 +40,7 @@ impl NyarFrontend<ConstraintAnalysis, ()> for RustyGroovyFrontend {
     fn parse(&self, source: &str) -> Result<(), TypesError> {
         let parser = GroovyParser::new(&self.language);
         let source_text = SourceText::new(source);
-        let mut cache = oak_core::parser::ParseSession::<GroovyLanguage>::default();
+        let mut cache = data_text_core::parser::ParseSession::<GroovyLanguage>::default();
         let output = parser.parse(&source_text, &[], &mut cache);
         if output.result.is_ok() {
             println!("Parsed Groovy source");

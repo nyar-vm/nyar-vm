@@ -11,8 +11,7 @@ path = "src/lib.rs"
 [dependencies]
 odin-vm = { workspace = true }
 nyar-types = { workspace = true }
-oak-core = { workspace = true }
-oak-vfs = { workspace = true }
-oak-julia = { workspace = true }
+data-text-core = { workspace = true, features = ["vfs"] }
+data-text-julia = { workspace = true }
 chomsky-uir = { workspace = true }
 chomsky-types = { workspace = true }

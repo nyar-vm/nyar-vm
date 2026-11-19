@@ -3,7 +3,7 @@
 use chomsky_types::Loc;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, IntentBuilder};
 use nyar_types::TypesError;
-use oak_csharp::ast::*;
+use data_text_csharp::ast::*;
 
 /// CSharp 翻译器上下文
 ///

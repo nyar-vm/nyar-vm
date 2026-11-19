@@ -9,8 +9,8 @@ pub mod codegen;
 
 use chomsky_uir::ConstraintAnalysis;
 use nyar_types::{Id, Loc, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_mojo::ast::MojoStatement;
-pub use oak_mojo::MojoLanguage;
+use data_text_mojo::ast::MojoStatement;
+pub use data_text_mojo::MojoLanguage;
 
 /// Rusty Mojo 前端
 pub struct RustyMojoFrontend {
@@ -34,11 +34,11 @@ impl NyarFrontend<ConstraintAnalysis, Vec<MojoStatement>> for RustyMojoFrontend 
     type Language = MojoLanguage;
 
     fn parse(&self, source: &str) -> Result<Vec<MojoStatement>, TypesError> {
-        use oak_core::{parser::Parser, source::SourceText};
-        use oak_mojo::{builder::MojoBuilder, parser::MojoParser};
+        use data_text_core::{parser::Parser, source::SourceText};
+        use data_text_mojo::{builder::MojoBuilder, parser::MojoParser};
 
         let parser = MojoParser::new();
-        let mut session = oak_core::parser::ParseSession::<MojoLanguage>::default();
+        let mut session = data_text_core::parser::ParseSession::<MojoLanguage>::default();
         let output = parser.parse(source, &[], &mut session);
 
         let green = output.result.map_err(|e| TypesError::Compile(format!("{:?}", e)))?;

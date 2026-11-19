@@ -10,7 +10,7 @@ use tempdir_support::tempdir;
 
 use std::{collections::BTreeMap, process::Command};
 
-use acorn_wasm::{VALTYPE_ANYREF, WasmOpcode, encode_ref_null_anyref};
+use data_binary_wasm::{VALTYPE_ANYREF, WasmOpcode, encode_ref_null_anyref};
 use nyar::{HostProjectionBoundary, Identifier, QualifiedName};
 use nyar_emitter::{
     FragmentSubmission, TargetExecutionPlan,

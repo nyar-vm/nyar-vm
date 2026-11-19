@@ -17,7 +17,7 @@ use nyar_emitter::{
     testing::lower_fragment_to_ovm_module,
 };
 use nyar_types::{ImportIndex, InstructionId, ItemInstanceId, SemanticType, ProvenanceId};
-use acorn_odin::{OdinConstant, OdinImport, OdinModuleData};
+use data_binary_odin::{OdinConstant, OdinImport, OdinModuleData};
 
 fn integer64() -> SemanticType {
     SemanticType::Integer64 { signed: true }

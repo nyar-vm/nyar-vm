@@ -10,7 +10,7 @@ fn test_oop_conversion() {
     let ast = frontend.parse(source).expect("Failed to parse Java");
 
     // 2. 转换为 UIR
-    let vfs = oak_vfs::MemoryVfs::new();
+    let vfs = data_text_core::vfs::MemoryVfs::new();
     let uir = frontend.lower(&ast, &vfs).expect("Failed to lower to UIR");
 
     // 3. 打印 UIR (调试用)

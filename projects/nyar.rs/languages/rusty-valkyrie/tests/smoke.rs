@@ -5,7 +5,7 @@
 //! 反向约束架构重构。
 
 use rusty_valkyrie::compiler::hir::{CompilerSourceGroup, ValkyrieCompiler};
-use rusty_valkyrie::compiler::syntax::oak::parse_source;
+use rusty_valkyrie::compiler::syntax::surface::parse_source;
 
 #[test]
 fn parses_a_minimal_function() {

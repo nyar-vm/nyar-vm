@@ -1,5 +1,5 @@
 use nyar_types::{NyarContext, NyarFrontend};
-use oak_vfs::MemoryVfs;
+use data_text_core::vfs::MemoryVfs;
 use rusty_cmd::RustyCmdFrontend;
 
 #[test]

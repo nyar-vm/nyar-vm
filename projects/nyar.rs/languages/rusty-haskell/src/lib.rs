@@ -7,8 +7,8 @@
 pub mod codegen;
 
 use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_core::{source::SourceText, Builder};
-use oak_haskell::HaskellLanguage;
+use data_text_core::{source::SourceText, Builder};
+use data_text_haskell::HaskellLanguage;
 
 /// Rusty Haskell 前端
 pub struct RustyHaskellFrontend {
@@ -28,19 +28,19 @@ impl RustyHaskellFrontend {
     }
 }
 
-impl NyarFrontend<(), oak_haskell::ast::HaskellRoot> for RustyHaskellFrontend {
+impl NyarFrontend<(), data_text_haskell::ast::HaskellRoot> for RustyHaskellFrontend {
     type Language = HaskellLanguage;
 
-    fn parse(&self, source: &str) -> Result<oak_haskell::ast::HaskellRoot, TypesError> {
+    fn parse(&self, source: &str) -> Result<data_text_haskell::ast::HaskellRoot, TypesError> {
         let source_text = SourceText::new(source);
-        let mut session = oak_core::parser::ParseSession::<HaskellLanguage>::default();
-        let builder = oak_haskell::builder::HaskellBuilder::new(&self.language);
+        let mut session = data_text_core::parser::ParseSession::<HaskellLanguage>::default();
+        let builder = data_text_haskell::builder::HaskellBuilder::new(&self.language);
         let output = builder.build(&source_text, &[], &mut session);
 
         output.result.map_err(|e| TypesError::Parse(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: Vfs>(&self, _ast: &oak_haskell::ast::HaskellRoot, _ctx: &mut NyarContext<'_, V>) -> Id {
+    fn lower_unified<V: Vfs>(&self, _ast: &data_text_haskell::ast::HaskellRoot, _ctx: &mut NyarContext<'_, V>) -> Id {
         let _translator = crate::codegen::NyarTranslator::new();
         // let mut translator_ctx = crate::codegen::TranslatorContext::new_with_builder(ctx.builder());
         // translator.translate_root(ast, &mut translator_ctx).unwrap_or_else(|_| ctx.egraph.add(chomsky_uir::IKun::Seq(vec![])))

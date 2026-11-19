@@ -13,8 +13,8 @@ pub use crate::runtime::RustyClojureRuntime;
 
 use chomsky_uir::ConstraintAnalysis;
 use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_clojure::{ClojureLanguage, ClojureParser};
-use oak_core::source::SourceText;
+use data_text_clojure::{ClojureLanguage, ClojureParser};
+use data_text_core::source::SourceText;
 
 /// Rusty Clojure 前端
 pub struct RustyClojureFrontend {
@@ -39,10 +39,10 @@ impl NyarFrontend<ConstraintAnalysis, ()> for RustyClojureFrontend {
     type Language = ClojureLanguage;
 
     fn parse(&self, source: &str) -> Result<(), TypesError> {
-        use oak_core::parser::Parser;
+        use data_text_core::parser::Parser;
         let parser = ClojureParser::new(&self.language);
         let source_text = SourceText::new(source);
-        let mut session = oak_core::parser::ParseSession::<ClojureLanguage>::default();
+        let mut session = data_text_core::parser::ParseSession::<ClojureLanguage>::default();
         let output = parser.parse(&source_text, &[], &mut session);
         if output.result.is_ok() {
             println!("Parsed Clojure source");

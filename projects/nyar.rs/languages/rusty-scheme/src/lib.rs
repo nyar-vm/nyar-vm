@@ -1,8 +1,8 @@
 #![deny(missing_docs)]
 
 use nyar_types::{Id, Loc, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_core::{Builder, SourceText};
-use oak_scheme::{SchemeBuilder, SchemeLanguage};
+use data_text_core::{Builder, SourceText};
+use data_text_scheme::{SchemeBuilder, SchemeLanguage};
 
 pub struct RustySchemeFrontend {
     language: SchemeLanguage,
@@ -26,7 +26,7 @@ impl NyarFrontend<(), ()> for RustySchemeFrontend {
     fn parse(&self, source: &str) -> Result<(), TypesError> {
         let builder = SchemeBuilder::new(&self.language);
         let source_text = SourceText::new(source);
-        let mut session = oak_core::parser::ParseSession::<SchemeLanguage>::default();
+        let mut session = data_text_core::parser::ParseSession::<SchemeLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
         output.result.map_err(|e| TypesError::Parse(format!("{:?}", e)))

@@ -8,7 +8,7 @@ pub mod codegen;
 
 use chomsky_uir::ConstraintAnalysis;
 use nyar_types::{Id, Loc, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_zig::ZigLanguage;
+use data_text_zig::ZigLanguage;
 
 /// Rusty Zig 前端
 pub struct RustyZigFrontend {

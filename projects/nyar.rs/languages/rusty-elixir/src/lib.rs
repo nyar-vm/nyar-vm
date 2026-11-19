@@ -9,7 +9,7 @@
 pub mod codegen;
 
 use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_elixir::{ElixirLanguage, ElixirRoot};
+use data_text_elixir::{ElixirLanguage, ElixirRoot};
 
 /// Rusty Elixir 前端
 pub struct RustyElixirFrontend {
@@ -33,11 +33,11 @@ impl NyarFrontend<(), ElixirRoot> for RustyElixirFrontend {
     type Language = ElixirLanguage;
 
     fn parse(&self, source: &str) -> Result<ElixirRoot, TypesError> {
-        use oak_core::builder::Builder;
-        use oak_elixir::builder::ElixirBuilder;
+        use data_text_core::builder::Builder;
+        use data_text_elixir::builder::ElixirBuilder;
 
         let builder = ElixirBuilder::new(&self.language);
-        let mut cache = oak_core::parser::ParseSession::<ElixirLanguage>::default();
+        let mut cache = data_text_core::parser::ParseSession::<ElixirLanguage>::default();
 
         // ElixirBuilder expects a Source + TextEdit
         let result = builder.build(source, &[], &mut cache);

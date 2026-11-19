@@ -1,6 +1,6 @@
 use chomsky_uir::ConstraintAnalysis;
 use nyar_types::{Id, Loc, NyarContext, Vfs};
-use oak_mojo::ast::{MojoExpression, MojoLiteral, MojoStatement};
+use data_text_mojo::ast::{MojoExpression, MojoLiteral, MojoStatement};
 
 /// Mojo 代码生成器
 pub struct MojoCodegen<'a, 'b, V: Vfs> {

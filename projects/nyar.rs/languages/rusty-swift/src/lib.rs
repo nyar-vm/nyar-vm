@@ -5,8 +5,8 @@ pub mod codegen;
 
 use chomsky_uir::ConstraintAnalysis;
 use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_core::source::SourceText;
-use oak_swift::{
+use data_text_core::source::SourceText;
+use data_text_swift::{
     ast::{Expression, Literal, Statement, SwiftRoot},
     SwiftBuilder, SwiftLanguage,
 };
@@ -35,7 +35,7 @@ impl NyarFrontend<ConstraintAnalysis, SwiftRoot> for RustySwiftFrontend {
     fn parse(&self, source: &str) -> Result<SwiftRoot, TypesError> {
         let builder = SwiftBuilder::new(&self.language);
         let source_text = SourceText::new(source);
-        let mut session = oak_core::parser::ParseSession::<SwiftLanguage>::default();
+        let mut session = data_text_core::parser::ParseSession::<SwiftLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
         output.result.map_err(|e| TypesError::Compile(format!("{:?}", e)))

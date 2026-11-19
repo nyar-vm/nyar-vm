@@ -17,12 +17,11 @@ chomsky-extract = { workspace = true }
 chomsky-types = { workspace = true }
 chomsky-cost = { workspace = true }
 chomsky-emit = { workspace = true }
-oak-core = { workspace = true }
-oak-typescript = { workspace = true, default-features = false }
+data-text-core = { workspace = true, features = ["vfs"] }
+data-text-typescript = { workspace = true, default-features = false }
 nyar-types = { workspace = true }
 nyar-aot = { workspace = true }
 odin-vm = { workspace = true }
-oak-vfs = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }

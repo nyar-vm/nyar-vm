@@ -2,7 +2,7 @@
 //! `ArrayNew` 登记对应 gc arraytype 时，消费侧必须在编码期返回 `Err`（与 `Cast`
 //! 臂同构），禁止 panic 把可执行合同缺陷升级成编译器崩溃。
 
-use acorn_wasm::WasmBinaryModule;
+use data_binary_wasm::WasmBinaryModule;
 use nyar::{Identifier, QualifiedName};
 use nyar_emitter::{
     FragmentSubmission, TargetExecutionPlan,

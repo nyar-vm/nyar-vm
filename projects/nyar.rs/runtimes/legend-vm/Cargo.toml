@@ -11,7 +11,7 @@ name = "legend_vm"
 path = "src/lib.rs"
 
 [dependencies]
-acorn-pe = { workspace = true }
+data-binary-pe = { workspace = true }
 miette = { workspace = true }
 nyar = { workspace = true }
 nyar-analyzer = { workspace = true }

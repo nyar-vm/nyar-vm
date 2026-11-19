@@ -24,7 +24,7 @@ use nyar_emitter::{
     testing::lower_fragment_to_ovm_module,
 };
 use nyar_types::{AggregateLayout, FieldLayout, LayoutId, SemanticType, StorageKind};
-use acorn_odin::OdinModuleData;
+use data_binary_odin::OdinModuleData;
 
 /// 计划冻结的 `utf8` 托管布局身份：单一 `[u8]` 槽配方（与 `Utf8Text` 同形）。
 const TEXT_LAYOUT_ID: LayoutId = 11;

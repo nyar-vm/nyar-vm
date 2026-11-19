@@ -3,8 +3,8 @@
 //! # 分层
 //!
 //! - 契约、注册表、`Document`/CST/`SourceMap`、editorconfig、批量与 CLI，以及 VON / AWSL 的委托实现
-//!   全部由 Oak 的 **`oak-formats`** 拥有，本 crate 只做原样再导出。
-//! - MSIL 文本书写器归 **`acorn-pe`**（CLR 格式域），WAT / WIT 文本模型归 **`acorn-wasm`**（Wasm 文本格式域）。
+//!   全部由 **`language-format`** 拥有，本 crate 只做原样再导出。
+//! - MSIL 文本书写器归 **`data-binary-pe`**（CLR 格式域），WAT / WIT 文本模型归 **`data-binary-wasm`**（Wasm 文本格式域）。
 //! - 语言前端仍在各自 crate 里向 [`formatter::register_source_provider`] / [`printer::register_printer_provider`]
 //!   注册 provider（方向是前端 → 平台）。平台自带的 WAT / WIT / MSIL printer 由
 //!   [`register_platform_printers`] 显式装配，格式域 crate 不反向依赖本门面。
@@ -17,19 +17,19 @@ use std::any::Any;
 
 pub use language_format::{awsl, contract, formatter, printer, von};
 
-/// MSIL 文本书写器（模型与写出归 `acorn-pe`）。
+/// MSIL 文本书写器（模型与写出归 `data-binary-pe`）。
 pub mod msil {
-    pub use acorn_pe::msil::MsilTextWriter;
+    pub use data_binary_pe::msil::MsilTextWriter;
 }
 
-/// WAT 文本模型与写出（归 `acorn-wasm`）。
+/// WAT 文本模型与写出（归 `data-binary-wasm`）。
 pub mod wat {
-    pub use acorn_wasm::text::wat::{WatDocument, WatError, format_wat_document};
+    pub use data_binary_wasm::text::wat::{WatDocument, WatError, format_wat_document};
 }
 
-/// WIT 文本模型与写出（归 `acorn-wasm`）。
+/// WIT 文本模型与写出（归 `data-binary-wasm`）。
 pub mod wit {
-    pub use acorn_wasm::text::wit::{WitError, WitInterface, WitPackage, format_wit_package};
+    pub use data_binary_wasm::text::wit::{WitError, WitInterface, WitPackage, format_wit_package};
 }
 
 struct WatPrinter;
@@ -71,7 +71,7 @@ impl contract::Printer for MsilPrinter {
 
     fn print(&self, document: &dyn Any, _style: contract::PrintStyle, options: &contract::FormatOptions) -> Result<String, contract::FormatError> {
         let module = document
-            .downcast_ref::<acorn_pe::msil::MsilModule>()
+            .downcast_ref::<data_binary_pe::msil::MsilModule>()
             .ok_or_else(|| contract::FormatError::WrongDocument { expected: "MsilModule".into() })?;
         let writer = msil::MsilTextWriter::new().with_indent_text(" ".repeat(options.indent_width));
         Ok(writer.write_module(module))

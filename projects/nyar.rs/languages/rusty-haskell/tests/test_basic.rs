@@ -1,6 +1,6 @@
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun};
 use nyar_types::NyarFrontend;
-use oak_haskell::ast::*;
+use data_text_haskell::ast::*;
 use rusty_haskell::{
     codegen::{NyarTranslator, TranslatorContext},
     RustyHaskellFrontend,

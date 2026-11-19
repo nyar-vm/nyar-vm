@@ -4,8 +4,8 @@ use chomsky_types::Loc;
 use chomsky_uir::{Analysis, IKun, Id, IntentBuilder};
 use nyar_aot::NyarContext;
 use nyar_types::TypesError;
-use oak_java::ast::*;
-use oak_vfs::Vfs;
+use data_text_java::ast::*;
+use data_text_core::vfs::Vfs;
 
 /// Java 到 UIR 的转换器
 pub struct JavaUirConverter<'a, 'b, V: Vfs, A: Analysis<IKun> = ()> {

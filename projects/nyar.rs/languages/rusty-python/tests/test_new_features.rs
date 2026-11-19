@@ -28,7 +28,7 @@ res = test_nonlocal()
     let ast = frontend.parse(source).expect("Failed to parse source");
 
     let mut egraph = chomsky_uir::EGraph::new();
-    let vfs = oak_vfs::MemoryVfs::new();
+    let vfs = data_text_core::vfs::MemoryVfs::new();
     let mut ctx = nyar_types::NyarContext::new(&mut egraph, &vfs, 1);
 
     let root_id = frontend.lower_unified(&ast, &mut ctx);

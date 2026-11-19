@@ -5,8 +5,8 @@
 use chomsky_types::Loc;
 use chomsky_uir::{egraph::HasDebugInfo, Analysis, IKun};
 use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_core::source::SourceText;
-use oak_java::{JavaBuilder, JavaLanguage, JavaRoot};
+use data_text_core::source::SourceText;
+use data_text_java::{JavaBuilder, JavaLanguage, JavaRoot};
 
 pub mod codegen;
 pub mod row_type;
@@ -45,7 +45,7 @@ where
 
     /// 解析 Java 源代码
     fn parse(&self, source: &str) -> Result<JavaRoot, TypesError> {
-        let mut session = oak_core::parser::ParseSession::<JavaLanguage>::default();
+        let mut session = data_text_core::parser::ParseSession::<JavaLanguage>::default();
         let source_text = SourceText::new(source);
         let output = self.builder.build(&source_text, &[], &mut session);
         output.result.map_err(|e| TypesError::Compile(format!("{:?}", e)))

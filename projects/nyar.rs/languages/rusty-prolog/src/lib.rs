@@ -1,8 +1,8 @@
 #![deny(missing_docs)]
 
 use nyar_types::{Id, Loc, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_core::{Builder, SourceText};
-use oak_prolog::{PrologBuilder, PrologLanguage, PrologRoot};
+use data_text_core::{Builder, SourceText};
+use data_text_prolog::{PrologBuilder, PrologLanguage, PrologRoot};
 
 pub struct RustyPrologFrontend {
     language: PrologLanguage,
@@ -26,7 +26,7 @@ impl NyarFrontend<(), PrologRoot> for RustyPrologFrontend {
     fn parse(&self, source: &str) -> Result<PrologRoot, TypesError> {
         let builder = PrologBuilder::new(self.language);
         let source_text = SourceText::new(source);
-        let mut session = oak_core::parser::ParseSession::<PrologLanguage>::default();
+        let mut session = data_text_core::parser::ParseSession::<PrologLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
         output.result.map_err(|e| TypesError::Parse(format!("{:?}", e)))

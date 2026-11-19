@@ -831,7 +831,7 @@ fn npm_envelope_declares_odin_execution_identity() {
     assert!(package_json.contains("\"kind\": \"execution\""), "envelope must declare execution artifact: {package_json}");
     assert!(package_json.contains("\"format\": \"odin\""), "envelope must declare `.odin` format: {package_json}");
     assert!(
-        package_json.contains(&format!("\"format_version\": {}", acorn_odin::Odin_VERSION)),
+        package_json.contains(&format!("\"format_version\": {}", data_binary_odin::Odin_VERSION)),
         "envelope must carry the bytecode format version: {package_json}"
     );
 }

@@ -46,7 +46,7 @@ fn call_import_requires_a_declared_slot() {
 #[cfg(windows)]
 #[test]
 fn exported_dll_resolves_a_host_import_at_load_time() {
-    use acorn_pe::pe::{NativeExport, NativePeImage, NativePeWriter};
+    use data_binary_pe::pe::{NativeExport, NativePeImage, NativePeWriter};
 
     unsafe extern "system" {
         fn LoadLibraryA(name: *const u8) -> *mut core::ffi::c_void;

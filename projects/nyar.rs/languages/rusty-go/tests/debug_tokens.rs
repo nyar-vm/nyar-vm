@@ -1,6 +1,6 @@
-use oak_core::{Lexer, ParseSession};
-use oak_go::{GoLanguage, GoLexer};
-use oak_vfs::{DiskVfs, Vfs};
+use data_text_core::{Lexer, ParseSession};
+use data_text_go::{GoLanguage, GoLexer};
+use data_text_core::vfs::{DiskVfs, Vfs};
 
 fn main() {
     let vfs = DiskVfs::new();

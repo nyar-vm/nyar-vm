@@ -11,9 +11,8 @@ path = "src/lib.rs"
 
 [dependencies]
 chomsky-uir = { workspace = true }
-oak-core = { workspace = true }
-oak-vfs = { workspace = true }
-oak-python = { workspace = true }
+data-text-core = { workspace = true, features = ["vfs"] }
+data-text-python = { workspace = true }
 nyar-types = { workspace = true }
 odin-vm = { workspace = true }
 nyar-aot = { workspace = true }

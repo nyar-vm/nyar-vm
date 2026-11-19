@@ -33,10 +33,10 @@ fn json_array_requires_heap() {
     assert!(matches!(result, Err(OdinRuntimeError::TypeMismatch { .. })));
 }
 
-fn echo_contract(ty: acorn_odin::OvmAbiType) -> acorn_odin::OvmAbiExport {
-    acorn_odin::OvmAbiExport {
+fn echo_contract(ty: data_binary_odin::OvmAbiType) -> data_binary_odin::OvmAbiExport {
+    data_binary_odin::OvmAbiExport {
         logical_name: "echo".to_string(),
-        params: vec![acorn_odin::OvmAbiParam { index: 0, name: "value".to_string(), ty: ty.clone(), carrier: "handle".to_string() }],
+        params: vec![data_binary_odin::OvmAbiParam { index: 0, name: "value".to_string(), ty: ty.clone(), carrier: "handle".to_string() }],
         returns: ty,
         returns_carrier: "handle".to_string(),
     }
@@ -44,7 +44,7 @@ fn echo_contract(ty: acorn_odin::OvmAbiType) -> acorn_odin::OvmAbiExport {
 
 #[test]
 fn reference_instance_cannot_be_rebuilt_from_an_array_or_field_snapshot() {
-    use acorn_odin::OvmAbiType;
+    use data_binary_odin::OvmAbiType;
     use odin_vm::json_bridge::{parse_call_args_json_with_contract, value_to_json_with_contract};
 
     let contract = echo_contract(OvmAbiType::InstanceHandle { layout: 0, name: "Measurement".to_string(), module_path: "demo".to_string() });
@@ -61,7 +61,7 @@ fn reference_instance_cannot_be_rebuilt_from_an_array_or_field_snapshot() {
 
 #[test]
 fn declared_arrays_roundtrip_elements_without_nominal_layout() {
-    use acorn_odin::OvmAbiType;
+    use data_binary_odin::OvmAbiType;
     use odin_vm::json_bridge::{parse_call_args_json_with_contract, value_to_json_with_contract};
 
     let contract = echo_contract(OvmAbiType::Array { element: Box::new(OvmAbiType::Array { element: Box::new(OvmAbiType::I64) }) });

@@ -3,8 +3,8 @@
 
 use chomsky_uir::ConstraintAnalysis;
 use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_core::source::SourceText;
-use oak_nim::{NimBuilder, NimLanguage, NimRoot};
+use data_text_core::source::SourceText;
+use data_text_nim::{NimBuilder, NimLanguage, NimRoot};
 
 /// Rusty Nim 前端
 pub struct RustyNimFrontend {
@@ -30,7 +30,7 @@ impl NyarFrontend<ConstraintAnalysis, NimRoot> for RustyNimFrontend {
     fn parse(&self, source: &str) -> Result<NimRoot, TypesError> {
         let builder = NimBuilder::new(&self.language);
         let source_text = SourceText::new(source);
-        let mut session = oak_core::parser::ParseSession::<NimLanguage>::default();
+        let mut session = data_text_core::parser::ParseSession::<NimLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
         output.result.map_err(|e| TypesError::Parse(format!("{:?}", e)))

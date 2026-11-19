@@ -4,7 +4,7 @@ use chomsky_cost::DefaultCostModel;
 use chomsky_extract::IKunExtractor;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, Id, IntentBuilder};
 use nyar_types::{Loc, TypesError};
-use oak_kotlin::{ast::*, kind::KotlinSyntaxKind, language::KotlinLanguage};
+use data_text_kotlin::{ast::*, kind::KotlinSyntaxKind, language::KotlinLanguage};
 
 pub struct NyarTranslator;
 

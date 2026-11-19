@@ -1,9 +1,9 @@
 #![deny(missing_docs)]
 use chomsky_uir::Id;
 use nyar_types::{NyarContext, TypesError, NyarFrontend};
-use oak_core::{Builder, SourceText};
-use oak_nix::{NixBuilder, NixLanguage};
-use oak_vfs::Vfs;
+use data_text_core::{Builder, SourceText};
+use data_text_nix::{NixBuilder, NixLanguage};
+use data_text_core::vfs::Vfs;
 
 pub struct RustyNixFrontend {
     language: NixLanguage,
@@ -27,7 +27,7 @@ impl NyarFrontend for RustyNixFrontend {
     fn parse(&self, source: &str) -> Result<(), TypesError> {
         let builder = NixBuilder::new(&self.language);
         let source_text = SourceText::new(source);
-        let mut session = oak_core::parser::ParseSession::<NixLanguage>::default();
+        let mut session = data_text_core::parser::ParseSession::<NixLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
         output.result.map_err(|e| TypesError::Parse(format!("{:?}", e)))

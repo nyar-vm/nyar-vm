@@ -1,7 +1,7 @@
 //! Elixir 代码生成实现
 
 use nyar_types::{Id, Loc, NyarContext, Vfs};
-use oak_elixir::ast::{Block, ElixirRoot, Expr, Function, Item, Module, Statement};
+use data_text_elixir::ast::{Block, ElixirRoot, Expr, Function, Item, Module, Statement};
 // use chomsky_uir::IKun;
 
 /// 将 Elixir AST 根节点转换为 Nyar IR

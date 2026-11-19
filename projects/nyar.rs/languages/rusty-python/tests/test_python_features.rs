@@ -17,7 +17,7 @@ finally:
     let ast = frontend.parse(source).expect("Failed to parse source");
 
     let mut egraph = chomsky_uir::EGraph::new();
-    let vfs = oak_vfs::MemoryVfs::new();
+    let vfs = data_text_core::vfs::MemoryVfs::new();
     let mut ctx = nyar_types::NyarContext::new(&mut egraph, &vfs, 1);
 
     let root_id = frontend.lower_unified(&ast, &mut ctx);
@@ -36,7 +36,7 @@ assert y == 10
     let ast = frontend.parse(source).expect("Failed to parse source");
 
     let mut egraph = chomsky_uir::EGraph::new();
-    let vfs = oak_vfs::MemoryVfs::new();
+    let vfs = data_text_core::vfs::MemoryVfs::new();
     let mut ctx = nyar_types::NyarContext::new(&mut egraph, &vfs, 1);
 
     let root_id = frontend.lower_unified(&ast, &mut ctx);
@@ -58,7 +58,7 @@ with a() as x, b() as y:
     let ast = frontend.parse(source).expect("Failed to parse source");
 
     let mut egraph = chomsky_uir::EGraph::new();
-    let vfs = oak_vfs::MemoryVfs::new();
+    let vfs = data_text_core::vfs::MemoryVfs::new();
     let mut ctx = nyar_types::NyarContext::new(&mut egraph, &vfs, 1);
 
     let root_id = frontend.lower_unified(&ast, &mut ctx);
@@ -82,7 +82,7 @@ finally:
     let frontend = RustyPythonFrontend::new();
     let ast = frontend.parse(source).expect("Failed to parse source");
 
-    let vfs = oak_vfs::MemoryVfs::new();
+    let vfs = data_text_core::vfs::MemoryVfs::new();
     let ikun = frontend.lower(&ast, &vfs).expect("Failed to lower to IKunTree");
 
     use odin_vm::bytecode::compiler::NyarBackend;

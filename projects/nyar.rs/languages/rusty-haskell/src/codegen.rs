@@ -3,7 +3,7 @@
 use chomsky_types::Loc;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, IntentBuilder};
 use nyar_types::TypesError;
-use oak_haskell::ast::*;
+use data_text_haskell::ast::*;
 
 /// Haskell 翻译器上下文
 pub struct TranslatorContext<'a, A: chomsky_uir::Analysis<IKun> = ()> {

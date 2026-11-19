@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
 use nyar_types::{Id, Loc, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_cobol::{ast::CobolRoot, CobolBuilder, CobolLanguage};
-use oak_core::{Builder, SourceText};
+use data_text_cobol::{ast::CobolRoot, CobolBuilder, CobolLanguage};
+use data_text_core::{Builder, SourceText};
 
 pub struct RustyCobolFrontend {
     language: CobolLanguage,
@@ -25,7 +25,7 @@ impl NyarFrontend<(), CobolRoot> for RustyCobolFrontend {
     fn parse(&self, source: &str) -> Result<CobolRoot, TypesError> {
         let builder = CobolBuilder::new(&self.language);
         let source_text = SourceText::new(source);
-        let mut session = oak_core::parser::ParseSession::<CobolLanguage>::default();
+        let mut session = data_text_core::parser::ParseSession::<CobolLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
         output.result.map_err(|e| TypesError::Parse(format!("{:?}", e)))
@@ -58,25 +58,25 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> CobolLowerer<'
         builder.module("rusty-cobol-program", items, Loc::default())
     }
 
-    fn lower_procedure_division(&mut self, proc_div: &oak_cobol::ast::ProcedureDivision, items: &mut Vec<Id>) {
+    fn lower_procedure_division(&mut self, proc_div: &data_text_cobol::ast::ProcedureDivision, items: &mut Vec<Id>) {
         let mut stmts = Vec::new();
 
         for stmt in &proc_div.statements {
             let mut builder = self.ctx.builder();
             match stmt {
-                oak_cobol::ast::Statement::Display(display) => {
+                data_text_cobol::ast::Statement::Display(display) => {
                     let mut args = Vec::new();
                     for arg in &display.items {
                         args.push(builder.string(arg, Loc::default()));
                     }
                     stmts.push(builder.extension("display", args, Loc::default()));
                 }
-                oak_cobol::ast::Statement::Stop(stop) => {
+                data_text_cobol::ast::Statement::Stop(stop) => {
                     if stop.run {
                         stmts.push(builder.extension("stop", Vec::new(), Loc::default()));
                     }
                 }
-                oak_cobol::ast::Statement::Move(move_stmt) => {
+                data_text_cobol::ast::Statement::Move(move_stmt) => {
                     let mut args = Vec::new();
                     args.push(builder.string(&move_stmt.source, Loc::default()));
                     for target in &move_stmt.targets {

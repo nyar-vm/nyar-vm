@@ -8,7 +8,6 @@ authors.workspace = true
 [dependencies]
 odin-vm = { workspace = true }
 nyar-types = { workspace = true }
-oak-core = { workspace = true }
-oak-vfs = { workspace = true }
-oak-dart = { workspace = true }
+data-text-core = { workspace = true, features = ["vfs"] }
+data-text-dart = { workspace = true }
 chomsky-uir = { workspace = true }

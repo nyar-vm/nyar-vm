@@ -8,8 +8,8 @@ authors.workspace = true
 [dependencies]
 odin-vm = { workspace = true }
 nyar-types = { workspace = true }
-oak-core = { workspace = true }
-oak-haskell = { workspace = true }
+data-text-core = { workspace = true }
+data-text-haskell = { workspace = true }
 chomsky = { workspace = true }
 chomsky-uir = { workspace = true }
 chomsky-extract = { workspace = true }

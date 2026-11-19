@@ -4,8 +4,8 @@
 pub mod codegen;
 
 use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_core::source::SourceText;
-use oak_fortran::{ast::FortranRoot, FortranBuilder, FortranLanguage};
+use data_text_core::source::SourceText;
+use data_text_fortran::{ast::FortranRoot, FortranBuilder, FortranLanguage};
 
 /// Rusty Fortran 前端
 #[derive(Default)]
@@ -24,7 +24,7 @@ impl NyarFrontend<(), FortranRoot> for RustyFortranFrontend {
     type Language = FortranLanguage;
 
     fn parse(&self, source: &str) -> Result<FortranRoot, TypesError> {
-        let mut session = oak_core::parser::ParseSession::<FortranLanguage>::default();
+        let mut session = data_text_core::parser::ParseSession::<FortranLanguage>::default();
         let source_text = SourceText::new(source);
         let builder = FortranBuilder::new(&self.language);
         let output = builder.build(&source_text, &[], &mut session);

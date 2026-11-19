@@ -1,12 +1,12 @@
 //! 平台 printer 注册表测试（VON / 语言中立错误路径）。
 
-use oak_von::language::value::{VonField, VonObject};
+use data_text_von::language::value::{VonField, VonObject};
 
 use nyar_format::{
     formatter::{FormatError, FormatOptions, PrintStyle},
     printer::{print_document, print_von},
 };
-use oak_von::language::value::VonValue;
+use data_text_von::language::value::VonValue;
 
 #[test]
 fn von_print_via_registry() {

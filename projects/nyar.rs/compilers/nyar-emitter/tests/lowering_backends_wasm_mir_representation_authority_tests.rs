@@ -16,7 +16,7 @@ mod tempdir_support;
 use tempdir_support::tempdir;
 
 
-use acorn_wasm::WasmBinaryModule;
+use data_binary_wasm::WasmBinaryModule;
 use nyar::{Identifier, QualifiedName};
 use nyar_emitter::{
     FragmentSubmission, TargetExecutionPlan,

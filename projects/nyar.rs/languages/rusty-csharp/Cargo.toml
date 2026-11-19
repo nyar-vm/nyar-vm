@@ -16,10 +16,9 @@ chomsky-extract = { workspace = true }
 chomsky-cost = { workspace = true }
 chomsky-emit = { workspace = true }
 chomsky-types = { workspace = true }
-oak-core = { workspace = true }
-oak-java = { workspace = true }
-oak-csharp = { workspace = true }
-oak-vfs = { workspace = true }
+data-text-core = { workspace = true, features = ["vfs"] }
+data-text-java = { workspace = true }
+data-text-csharp = { workspace = true }
 nyar-types = { workspace = true }
 nyar-aot = { workspace = true }
 odin-vm = { workspace = true }

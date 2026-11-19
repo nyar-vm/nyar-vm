@@ -10,8 +10,8 @@ pub mod visitor;
 
 use chomsky_uir::ConstraintAnalysis;
 use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_core::source::SourceText;
-use oak_scala::{ScalaBuilder, ScalaLanguage, ScalaRoot};
+use data_text_core::source::SourceText;
+use data_text_scala::{ScalaBuilder, ScalaLanguage, ScalaRoot};
 
 /// Rusty Scala 前端
 pub struct RustyScalaFrontend {
@@ -38,7 +38,7 @@ impl NyarFrontend<ConstraintAnalysis, ScalaRoot> for RustyScalaFrontend {
     type Language = ScalaLanguage;
 
     fn parse(&self, source: &str) -> Result<ScalaRoot, TypesError> {
-        let mut session = oak_core::parser::ParseSession::<ScalaLanguage>::default();
+        let mut session = data_text_core::parser::ParseSession::<ScalaLanguage>::default();
         let source_text = SourceText::new(source);
         let output = self.builder.build(&source_text, &[], &mut session);
         if let Ok(_root) = &output.result {

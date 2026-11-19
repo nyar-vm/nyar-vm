@@ -10,8 +10,8 @@ pub use crate::runtime::RustyRustRuntime;
 
 use chomsky_uir::{egraph::HasDebugInfo, Analysis, IKun};
 use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_core::source::SourceText;
-use oak_rust::{RustBuilder, RustLanguage, RustRoot};
+use data_text_core::source::SourceText;
+use data_text_rust::{RustBuilder, RustLanguage, RustRoot};
 
 /// Mini Rust 前端实现
 #[derive(Default)]
@@ -35,9 +35,9 @@ where
     fn parse(&self, source: &str) -> Result<RustRoot, TypesError> {
         let builder = RustBuilder::new(&self.language);
         let source_text = SourceText::new(source);
-        let mut session = oak_core::parser::ParseSession::<RustLanguage>::default();
+        let mut session = data_text_core::parser::ParseSession::<RustLanguage>::default();
 
-        let output = oak_core::Builder::build(&builder, &source_text, &[], &mut session);
+        let output = data_text_core::Builder::build(&builder, &source_text, &[], &mut session);
         output.result.map_err(|e| TypesError::Parse(format!("{:?}", e)))
     }
 

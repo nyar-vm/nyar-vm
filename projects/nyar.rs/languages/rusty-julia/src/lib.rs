@@ -5,8 +5,8 @@ pub mod codegen;
 
 use chomsky_uir::ConstraintAnalysis;
 use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_core::source::SourceText;
-use oak_julia::{JuliaBuilder, JuliaLanguage, JuliaRoot};
+use data_text_core::source::SourceText;
+use data_text_julia::{JuliaBuilder, JuliaLanguage, JuliaRoot};
 
 /// Rusty Julia 前端
 pub struct RustyJuliaFrontend {
@@ -32,7 +32,7 @@ impl NyarFrontend<ConstraintAnalysis, JuliaRoot> for RustyJuliaFrontend {
     fn parse(&self, source: &str) -> Result<JuliaRoot, TypesError> {
         let builder = JuliaBuilder::new(&self.language);
         let source_text = SourceText::new(source);
-        let mut session = oak_core::parser::ParseSession::<JuliaLanguage>::default();
+        let mut session = data_text_core::parser::ParseSession::<JuliaLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
         output.result.map_err(|e| TypesError::Parse(format!("{:?}", e)))

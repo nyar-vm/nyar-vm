@@ -1,6 +1,6 @@
 use chomsky_uir::ConstraintAnalysis;
 use nyar_types::{EGraph, NyarContext, NyarFrontend};
-use oak_vfs::MemoryVfs;
+use data_text_core::vfs::MemoryVfs;
 use rusty_julia::RustyJuliaFrontend;
 
 #[test]

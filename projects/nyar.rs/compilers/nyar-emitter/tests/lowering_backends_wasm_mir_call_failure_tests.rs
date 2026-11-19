@@ -3,7 +3,7 @@
 //! `8050500c` 同构），禁止 panic 把可执行合同缺陷升级成编译器崩溃。
 //! 同时以「已登记 wasm 宿主导入的静态调用」作正向对照，证明判定逻辑零改动。
 
-use acorn_wasm::WasmBinaryModule;
+use data_binary_wasm::WasmBinaryModule;
 use nyar::{Identifier, QualifiedName};
 use nyar_emitter::{
     BackendImport, FragmentSubmission, TargetExecutionPlan,

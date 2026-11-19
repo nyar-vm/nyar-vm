@@ -35,7 +35,7 @@ fn function(instructions: Vec<Instruction>, value_types: BTreeMap<ValueRef, Sema
     }
 }
 
-fn lower(function: ExecutableFunction, layouts: Option<AggregateLayoutPlan>) -> nyar_emitter::Result<acorn_wasm::WasmBinaryModule> {
+fn lower(function: ExecutableFunction, layouts: Option<AggregateLayoutPlan>) -> nyar_emitter::Result<data_binary_wasm::WasmBinaryModule> {
     let main_name = nyar::QualifiedName::new(vec![Identifier::new("main")]);
     let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(main_name.clone(), function)]));
     plan.testing_module_name("wasm_fail_closed").testing_entry_operation(main_name);

@@ -1,4 +1,4 @@
-use oak_awsl::AwslParser;
+use data_text_awsl::AwslParser;
 use rusty_valkyrie::asgard::{
     awsl::{LoweringOptions, lower_component},
     codegen::{ScalarBootstrap, build_awsl_wasm_source},

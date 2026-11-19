@@ -4,7 +4,7 @@ use chomsky_cost::DefaultCostModel;
 use chomsky_extract::IKunExtractor;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, Id, IntentBuilder};
 use nyar_types::{Loc, TypesError};
-use oak_scala::ast::*;
+use data_text_scala::ast::*;
 
 pub struct NyarTranslator;
 

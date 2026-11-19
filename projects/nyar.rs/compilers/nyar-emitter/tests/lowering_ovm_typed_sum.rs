@@ -16,7 +16,7 @@ use nyar_emitter::{
 };
 use nyar_emitter::{SumRepresentation, SumVariantRepresentation};
 use nyar_types::{SemanticType, NominalInstanceId, TypeId, VariantId};
-use acorn_odin::{decode_at, OdinConstant, OdinHeadCode, OdinInstruction, OdinModuleData};
+use data_binary_odin::{decode_at, OdinConstant, OdinHeadCode, OdinInstruction, OdinModuleData};
 
 // 返回类型只起「非 unit」占位作用；文本 carrier 在 OVM 返回边界要求冻结的
 // `return_layout`（`d3a8f0b7`），与 sum 表示无关，故用整型载体。

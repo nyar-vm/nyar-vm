@@ -12,8 +12,8 @@ pub mod visitor;
 
 use chomsky_uir::ConstraintAnalysis;
 use nyar_types::{Id, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_core::{builder::Builder, source::SourceText};
-use oak_kotlin::{KotlinBuilder, KotlinLanguage, KotlinRoot};
+use data_text_core::{builder::Builder, source::SourceText};
+use data_text_kotlin::{KotlinBuilder, KotlinLanguage, KotlinRoot};
 
 /// Rusty Kotlin 前端
 pub struct RustyKotlinFrontend {
@@ -40,7 +40,7 @@ impl NyarFrontend<ConstraintAnalysis> for RustyKotlinFrontend {
     type Language = KotlinLanguage;
 
     fn parse(&self, source: &str) -> Result<KotlinRoot, TypesError> {
-        let mut session = oak_core::parser::ParseSession::<KotlinLanguage>::default();
+        let mut session = data_text_core::parser::ParseSession::<KotlinLanguage>::default();
         let source_text = SourceText::new(source);
         let output = self.builder.build(&source_text, &[], &mut session);
         if let Ok(root) = &output.result {

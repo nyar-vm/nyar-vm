@@ -11,12 +11,11 @@ path = "src/lib.rs"
 [dependencies]
 odin-vm = { workspace = true }
 nyar-types = { workspace = true }
-oak-core = { workspace = true }
-oak-fortran = { workspace = true }
+data-text-core = { workspace = true, features = ["vfs"] }
+data-text-fortran = { workspace = true }
 chomsky = { workspace = true }
 chomsky-uir = { workspace = true }
 chomsky-extract = { workspace = true }
 chomsky-cost = { workspace = true }
 
 [dev-dependencies]
-oak-vfs = { workspace = true }

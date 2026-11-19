@@ -1,6 +1,6 @@
 use nyar_types::{NyarFrontend, Vfs};
-use oak_mojo::ast::{MojoExpression, MojoLiteral, MojoStatement};
-use oak_vfs::MemoryVfs;
+use data_text_mojo::ast::{MojoExpression, MojoLiteral, MojoStatement};
+use data_text_core::vfs::MemoryVfs;
 use rusty_mojo::{MojoLanguage, RustyMojoFrontend};
 
 #[test]

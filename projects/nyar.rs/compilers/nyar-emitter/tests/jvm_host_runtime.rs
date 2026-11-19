@@ -1,6 +1,6 @@
 //! 真实 JVM 宿主冒烟：`JvmBinaryBackend` → `.class`/`.jar` → `java -jar`。
 //!
-//! 不经 bundled driver（JVM 家族当前冻结）；二进制检查走 `acorn-jvm`。
+//! 不经 bundled driver（JVM 家族当前冻结）；二进制检查走 `data-binary-jvm`。
 #[path = "tempdir.rs"]
 mod tempdir_support;
 use tempdir_support::tempdir;

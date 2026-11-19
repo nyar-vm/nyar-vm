@@ -1,4 +1,4 @@
-use acorn_wasm::{WasmMiscOpcode, WasmOpcode};
+use data_binary_wasm::{WasmMiscOpcode, WasmOpcode};
 use nyar_emitter::lowering::backends::wasm::cabi::{
     CABI_HEAP_DEFAULT_BASE, LINEAR_HEAP_MIN_BASE, align_up_u32, cabi_heap_base_after_data, cabi_heap_global_section,
     memory_min_pages_for_heap_base, wasm_cabi_realloc_bump_body,

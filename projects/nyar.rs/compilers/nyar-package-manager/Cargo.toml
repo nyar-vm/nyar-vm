@@ -8,12 +8,12 @@ description = "Nyar package manager facade: product layout, Valhalla channel and
 
 [dependencies]
 nyar-package-registry = { workspace = true }
-package-cache = { git = "https://github.com/oovm/rust-boost", rev = "43cd1d71d7bdadee9941065054aed6d029d0c108" }
-package-manager = { git = "https://github.com/oovm/rust-boost", rev = "43cd1d71d7bdadee9941065054aed6d029d0c108" }
-package-publish = { git = "https://github.com/oovm/rust-boost", rev = "43cd1d71d7bdadee9941065054aed6d029d0c108" }
-package-registry = { git = "https://github.com/oovm/rust-boost", rev = "43cd1d71d7bdadee9941065054aed6d029d0c108" }
-package-resolve = { git = "https://github.com/oovm/rust-boost", rev = "43cd1d71d7bdadee9941065054aed6d029d0c108" }
+package-cache = { git = "https://github.com/oovm/rust-boost", rev = "71db8fa50f49e3693640cbd19e64ad9c797e5932" }
+package-manager = { git = "https://github.com/oovm/rust-boost", rev = "71db8fa50f49e3693640cbd19e64ad9c797e5932" }
+package-publish = { git = "https://github.com/oovm/rust-boost", rev = "71db8fa50f49e3693640cbd19e64ad9c797e5932" }
+package-registry = { git = "https://github.com/oovm/rust-boost", rev = "71db8fa50f49e3693640cbd19e64ad9c797e5932" }
+package-resolve = { git = "https://github.com/oovm/rust-boost", rev = "71db8fa50f49e3693640cbd19e64ad9c797e5932" }
 
 [dev-dependencies]
-acorn-odin = { workspace = true }
+data-binary-odin = { workspace = true }
 tempfile = { workspace = true }

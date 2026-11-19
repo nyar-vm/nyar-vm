@@ -15,7 +15,7 @@ use nyar_emitter::{
     testing::lower_fragment_to_ovm_module,
 };
 use nyar_types::SemanticType;
-use acorn_odin::{OdinHeadCode, OdinModuleData, decode_at};
+use data_binary_odin::{OdinHeadCode, OdinModuleData, decode_at};
 
 /// `main() -> void`：入口块 `Raise`，resume 块带一个 `Bottom` 形参后 `return`。
 fn raising_function() -> ExecutableFunction {

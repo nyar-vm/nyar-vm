@@ -2,7 +2,7 @@
 
 use chomsky_uir::ConstraintAnalysis;
 use nyar_types::{Id, Loc, NyarContext, Vfs};
-use oak_julia::ast::{JuliaExpression, JuliaRoot, JuliaStatement};
+use data_text_julia::ast::{JuliaExpression, JuliaRoot, JuliaStatement};
 
 /// Julia 到 UIR 的转换器
 pub struct UirConverter<'a, 'b, V: Vfs> {

@@ -2,12 +2,12 @@
 
 use chomsky_uir::IKun;
 use nyar_types::{Id, NyarContext, TypesError, NyarFrontend};
-use oak_cmd::{
+use data_text_cmd::{
     ast::{CmdRoot, Element},
     Builder as CmdBuilder, Language as CmdLanguage,
 };
-use oak_core::{Builder, SourceText};
-use oak_vfs::Vfs;
+use data_text_core::{Builder, SourceText};
+use data_text_core::vfs::Vfs;
 
 pub struct RustyCmdFrontend {
     language: CmdLanguage,
@@ -45,7 +45,7 @@ impl NyarFrontend for RustyCmdFrontend {
     fn parse(&self, source: &str) -> Result<CmdRoot, TypesError> {
         let builder = CmdBuilder::new(&self.language);
         let source_text = SourceText::new(source);
-        let mut session = oak_core::parser::ParseSession::<CmdLanguage>::default();
+        let mut session = data_text_core::parser::ParseSession::<CmdLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
         output.result.map_err(|e| TypesError::Parse(format!("{:?}", e)))

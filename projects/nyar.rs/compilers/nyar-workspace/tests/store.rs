@@ -34,7 +34,7 @@ fn entry_path_sanitizes_triple() {
     let cache = WorkspaceCache::open(PathBuf::from(".cache"));
     let path = cache.entry_path("wasm32-unknown-browser", "abcd");
     assert!(path.to_string_lossy().contains("wasm32_unknown_browser"));
-    assert!(path.ends_with(format!("abcd.v{}.odin", acorn_odin::Odin_VERSION).as_str()));
+    assert!(path.ends_with(format!("abcd.v{}.odin", data_binary_odin::Odin_VERSION).as_str()));
 }
 
 #[test]
@@ -67,7 +67,7 @@ fn persistence_across_instances() {
 fn previous_version_path_is_not_probed() {
     let dir = tempdir().unwrap();
     let cache = WorkspaceCache::open(dir.path().join(".cache"));
-    let stale = cache.entry_path("bucket", "key").with_file_name(format!("key.v{}.odin", acorn_odin::Odin_VERSION - 1));
+    let stale = cache.entry_path("bucket", "key").with_file_name(format!("key.v{}.odin", data_binary_odin::Odin_VERSION - 1));
     std::fs::create_dir_all(stale.parent().unwrap()).unwrap();
     std::fs::write(&stale, b"stale-v5-artifact").unwrap();
     assert!(cache.get("bucket", "key", "ir").unwrap().is_none(), "旧版本路径不得被探测");
@@ -81,8 +81,8 @@ fn previous_version_artifact_at_current_path_is_a_miss() {
     let cache = WorkspaceCache::open(dir.path().join(".cache"));
     let path = cache.entry_path("bucket", "key");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let module = acorn_odin::OdinModuleData {
-        version: acorn_odin::Odin_VERSION - 1,
+    let module = data_binary_odin::OdinModuleData {
+        version: data_binary_odin::Odin_VERSION - 1,
         name: "ir".into(),
         constants: Vec::new(),
         functions: Vec::new(),
@@ -94,6 +94,6 @@ fn previous_version_artifact_at_current_path_is_a_miss() {
         init_function_indices: Vec::new(),
         layouts: Vec::new(),
     };
-    std::fs::write(&path, acorn_odin::encode_module(&module)).unwrap();
+    std::fs::write(&path, data_binary_odin::encode_module(&module)).unwrap();
     assert!(cache.get("bucket", "key", "ir").unwrap().is_none(), "旧版本产物不得命中缓存");
 }

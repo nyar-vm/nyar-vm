@@ -8,9 +8,9 @@ use chomsky_uir::{Analysis, ConstraintAnalysis, EGraph, IKun, IKunTree, Id, Inte
 use nyar_aot::{NyarContext, NyarFrontend};
 use nyar_types::TypesError;
 use odin_vm::bytecode::format::NyarcModule;
-use oak_core::{ParseSession, SourceText};
-use oak_typescript::{ast, TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot};
-use oak_vfs::Vfs;
+use data_text_core::{ParseSession, SourceText};
+use data_text_typescript::{ast, TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot};
+use data_text_core::vfs::Vfs;
 
 use super::frontend_emit::UirConverter;
 
@@ -97,7 +97,7 @@ impl RustyTypescriptFrontend {
 
     fn lower_to_tree(&self, source: &str) -> Result<IKunTree, String> {
         let ast = self.parse(source).map_err(|e| format!("Parse error: {:?}", e))?;
-        let vfs = oak_vfs::MemoryVfs::new();
+        let vfs = data_text_core::vfs::MemoryVfs::new();
         self.lower(&ast, &vfs).map_err(|e| format!("Lowering error: {:?}", e))
     }
 
@@ -120,7 +120,7 @@ impl NyarFrontend<()> for RustyTypescriptFrontend {
         let builder = TypeScriptBuilder::new(&self.language);
         let mut session = ParseSession::<TypeScriptLanguage>::default();
         let source_text = SourceText::new(source);
-        let output = oak_core::Builder::build(&builder, &source_text, &[], &mut session);
+        let output = data_text_core::Builder::build(&builder, &source_text, &[], &mut session);
 
         output.result.map_err(|e| TypesError::Compile(format!("{:?}", e)))
     }
@@ -132,7 +132,7 @@ impl NyarFrontend<()> for RustyTypescriptFrontend {
         converter.convert_root(ast.clone())
     }
 
-    fn lower<V: oak_vfs::Vfs>(&self, ast: &TypeScriptRoot, _vfs: &V) -> Result<IKunTree, TypesError> {
+    fn lower<V: data_text_core::vfs::Vfs>(&self, ast: &TypeScriptRoot, _vfs: &V) -> Result<IKunTree, TypesError> {
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
         let mut builder = IntentBuilder::new(&mut egraph);
         let mut converter = UirConverter::new(&mut builder, self.source_id);

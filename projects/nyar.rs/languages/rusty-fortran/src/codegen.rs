@@ -2,7 +2,7 @@
 
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, IntentBuilder};
 use nyar_types::{Loc, TypesError};
-use oak_fortran::ast::*;
+use data_text_fortran::ast::*;
 
 /// Fortran 翻译器上下文
 ///

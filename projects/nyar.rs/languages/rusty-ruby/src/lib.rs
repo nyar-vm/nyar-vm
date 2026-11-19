@@ -8,8 +8,8 @@ pub mod codegen;
 
 use chomsky_uir::ConstraintAnalysis;
 use nyar_types::{Id, Loc, NyarContext, TypesError, NyarFrontend, Vfs};
-use oak_core::{source::SourceText, Builder};
-use oak_ruby::{ast::RubyAst, RubyBuilder, RubyLanguage};
+use data_text_core::{source::SourceText, Builder};
+use data_text_ruby::{ast::RubyAst, RubyBuilder, RubyLanguage};
 
 /// Rusty Ruby 前端
 pub struct RustyRubyFrontend {
@@ -35,7 +35,7 @@ impl NyarFrontend<ConstraintAnalysis, RubyAst> for RustyRubyFrontend {
     fn parse(&self, source: &str) -> Result<RubyAst, TypesError> {
         let builder = RubyBuilder::new(&self.language);
         let source_text = SourceText::new(source);
-        let mut session = oak_core::parser::ParseSession::<RubyLanguage>::default();
+        let mut session = data_text_core::parser::ParseSession::<RubyLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
         output.result.map_err(|e| TypesError::Parse(format!("{:?}", e)))

@@ -13,7 +13,7 @@ use nyar_emitter::{
     testing::lower_fragment_to_ovm_module,
 };
 use nyar_types::SemanticType;
-use acorn_odin::{decode_at, OdinHeadCode, OdinInstruction, OdinModuleData};
+use data_binary_odin::{decode_at, OdinHeadCode, OdinInstruction, OdinModuleData};
 
 fn fixed_array(length: usize) -> SemanticType {
     SemanticType::FixedArray { element: Box::new(SemanticType::Integer64 { signed: true }), length }

@@ -1,7 +1,7 @@
 use chomsky_types::Loc;
 use chomsky_uir::{egraph::Id, intent::IKun};
 use nyar_types::TypesError;
-use oak_r::{
+use data_text_r::{
     ast::{Expr, RRoot, Statement},
     kind::RSyntaxKind,
 };

@@ -1,7 +1,7 @@
 use crate::RustyTypescriptFrontend;
 use odin_vm::bytecode::format::NyarcModule;
-use oak_core::Source;
-use oak_vfs::Vfs;
+use data_text_core::Source;
+use data_text_core::vfs::Vfs;
 use serde::Deserialize;
 use std::collections::HashMap;
 

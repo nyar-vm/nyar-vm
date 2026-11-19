@@ -5,5 +5,5 @@ pub mod to_document;
 pub mod valkyrie;
 
 pub use format_syntax::FormatSyntax;
-pub use oak_valkyrie::printer::Document as PrettyDocument;
+pub use data_text_valkyrie::printer::Document as PrettyDocument;
 pub use to_document::ToDocument;

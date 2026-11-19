@@ -17,7 +17,7 @@
 //! 导出重定向到 wrapper）；未绑定 layout 的句柄形参直通、不合成 wrapper；缺少冻结 ABI
 //! 载体合同必须结构化失败（崩溃现场 `RuntimeError: illegal cast` 的编译期锁定）。
 
-use acorn_wasm::{
+use data_binary_wasm::{
     WasmBinaryModule, WasmExternalKind, WasmTypeKind, WasmValueType, parse_code_section, parse_export_section, parse_import_section,
     parse_type_section,
 };

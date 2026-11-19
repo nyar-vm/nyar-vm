@@ -20,7 +20,7 @@ res = p.say()
     let frontend = RustyPythonFrontend::new();
     let ast = frontend.parse(source).expect("Failed to parse source");
 
-    let vfs = oak_vfs::MemoryVfs::new();
+    let vfs = data_text_core::vfs::MemoryVfs::new();
     let tree = frontend.lower(&ast, &vfs).expect("Failed to lower AST to tree");
 
     let mut backend = NyarBackend::new();

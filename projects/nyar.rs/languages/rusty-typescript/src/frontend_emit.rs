@@ -8,9 +8,9 @@ use chomsky_uir::{Analysis, ConstraintAnalysis, EGraph, IKun, IKunTree, Id, Inte
 use nyar_aot::{NyarContext, NyarFrontend};
 use nyar_types::TypesError;
 use odin_vm::bytecode::format::NyarcModule;
-use oak_core::{ParseSession, SourceText};
-use oak_typescript::{ast, TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot};
-use oak_vfs::Vfs;
+use data_text_core::{ParseSession, SourceText};
+use data_text_typescript::{ast, TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot};
+use data_text_core::vfs::Vfs;
 
 pub(crate) struct UirConverter<'a, A: Analysis<IKun> = ()> {
     builder: &'a mut IntentBuilder<'a, A>,

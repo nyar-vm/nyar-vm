@@ -2,7 +2,7 @@ use nyar_emitter::transitional::binary::{
     elf::{NativeElfImage, NativeElfWriter, SharedElfImage, SharedElfWriter, SharedObjectExport},
     pe::{NativePeImage, NativePeWriter},
 };
-use acorn_odin::{Odin_VERSION, OdinConstant, OdinFunction, OdinModuleData};
+use data_binary_odin::{Odin_VERSION, OdinConstant, OdinFunction, OdinModuleData};
 
 use nyar::{
     abstractions::{BinaryArch, BinaryFlavor, BinaryTarget, TargetFamily},
