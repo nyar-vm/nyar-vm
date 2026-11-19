@@ -6,8 +6,7 @@
  * - 不使用 NPM_TOKEN；OIDC Trusted Publisher（permissions.id-token: write）
  * - 工作流合同：file=publish-npm.yml env=NPM_PUBLISH repo=nyar-vm/nyar-vm
  *
- * 前置：native 产物在 NYAR_NATIVE_ARTIFACTS/<short>/（`nyar.<triple>.node` 与
- * `valkyrie.<triple>.node`）；wasm 在 NYAR_WASM_ARTIFACTS/ 或同目录 unknown-wasm32/
+ * 前置：native 产物在 NYAR_NATIVE_ARTIFACTS/<short>/（`nyar.<triple>.node`）；
  */
 
 import { spawnSync } from 'node:child_process';
@@ -48,50 +47,9 @@ const WASM_COLLECT = {
     artifact: 'nyar_wasm.wasm',
 };
 
-/**
- * Valkyrie 产品原生绑定平台包：与 NATIVE_PLATFORMS 同 OS/CPU，独立 crate 与产物。
- * @type {{ short: string, packageDir: string, os: string[], cpu: string[], artifact: string }[]}
- */
-const VALKYRIE_NATIVE_PLATFORMS = [
-    {
-        short: 'win32-x64',
-        packageDir: 'valkyrie-win32-x64',
-        os: ['win32'],
-        cpu: ['x64'],
-        artifact: 'valkyrie.win32-x64-msvc.node',
-    },
-    {
-        short: 'linux-x64',
-        packageDir: 'valkyrie-linux-x64',
-        os: ['linux'],
-        cpu: ['x64'],
-        artifact: 'valkyrie.linux-x64-gnu.node',
-    },
-    {
-        short: 'darwin-x64',
-        packageDir: 'valkyrie-darwin-x64',
-        os: ['darwin'],
-        cpu: ['x64'],
-        artifact: 'valkyrie.darwin-x64.node',
-    },
-    {
-        short: 'darwin-arm64',
-        packageDir: 'valkyrie-darwin-arm64',
-        os: ['darwin'],
-        cpu: ['arm64'],
-        artifact: 'valkyrie.darwin-arm64.node',
-    },
-];
-
 const MAIN_PACKAGE = {
     dir: packageAbs('nyar'),
     name: '@nyar/nyar',
-};
-
-/** Valkyrie 产品包装层：只暴露 `asgard` / `legion` 两个命令，全部语义在 Rust 侧。 */
-const VALKYRIE_PACKAGE = {
-    dir: packageAbs('valkyrie'),
-    name: '@nyar/valkyrie',
 };
 
 function fail(msg) {
@@ -441,22 +399,12 @@ for (const plat of NATIVE_PLATFORMS) {
     else skipped += 1;
 }
 
-for (const plat of VALKYRIE_NATIVE_PLATFORMS) {
-    const outcome = publishCollect(plat, version, nativeArtifactsRoot);
-    if (outcome === 'published') published += 1;
-    else skipped += 1;
-}
-
 const wasmOutcome = publishCollect(WASM_COLLECT, version, wasmArtifactsRoot);
 if (wasmOutcome === 'published') published += 1;
 else skipped += 1;
 
 const mainOutcome = publishMain(version, nativeArtifactsRoot);
 if (mainOutcome === 'published') published += 1;
-else skipped += 1;
-
-const valkyrieOutcome = publishJsPackage(VALKYRIE_PACKAGE, version);
-if (valkyrieOutcome === 'published') published += 1;
 else skipped += 1;
 
 console.log(`\nci-publish-npm: done (published=${published} skipped=${skipped})`);

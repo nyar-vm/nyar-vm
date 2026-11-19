@@ -19,11 +19,6 @@ const PUBLISH_SPECS = [
     { name: "@nyar/nyar-darwin-arm64", dir: "platforms/nyar-darwin-arm64" },
     { name: "@nyar/nyar-unknown-wasm32", dir: "platforms/nyar-unknown-wasm32" },
     { name: "@nyar/nyar", dir: "packages/nyar" },
-    { name: "@nyar/valkyrie-win32-x64", dir: "platforms/valkyrie-win32-x64" },
-    { name: "@nyar/valkyrie-linux-x64", dir: "platforms/valkyrie-linux-x64" },
-    { name: "@nyar/valkyrie-darwin-x64", dir: "platforms/valkyrie-darwin-x64" },
-    { name: "@nyar/valkyrie-darwin-arm64", dir: "platforms/valkyrie-darwin-arm64" },
-    { name: "@nyar/valkyrie", dir: "emulators/valkyrie" },
 ];
 
 /** @returns {{ name: string, dir: string, packageJsonPath: string }[]} */

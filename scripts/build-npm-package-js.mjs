@@ -23,7 +23,6 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 /** 需要生成 JS 发布入口的包（相对仓库根）。 */
 const PACKAGE_DIRS = [
     'projects/nyar.ts/packages/nyar',
-    'projects/nyar.ts/emulators/valkyrie',
 ];
 
 /** 只改写相对说明符的扩展名：`'./x.ts'`、`"../x.ts"` → `.js`。 */

@@ -12,7 +12,7 @@
 - **Nyar 编译平台**（`projects/nyar.rs/compilers`）：`nyar`、`nyar-analyzer`、`nyar-optimizer`、`nyar-emitter`、`nyar-types`、
   `nyar-runner`、包管理与 workspace。
 - **nyar-vm 运行时**（`projects/nyar.rs/runtimes`）：`odin-vm`（OdinVM）、`legend-vm`（LegendVM）；托管堆与 JIT 底座已迁至 Boost `interpreter-gc` / `interpreter-jit`，以 git `rev` 消费。
-- **宿主与平台产物**（`projects/nyar.rs/ffis`、`projects/nyar.ts`）：`nyar-napi`、`nyar-wasm`、`valkyrie-napi` 与 npm 平台包。
+- **宿主与平台产物**（`projects/nyar.rs/ffis`、`projects/nyar.ts`）：`nyar-napi`、`nyar-wasm` 与 Nyar npm 平台包；Valkyrie 产品绑定与 `@nyar/valkyrie` 包装层归 `valkyrie.rs`。
 
 维护者文档从 [架构合同](documentation/architecture.md) 开始。过期文档直接合并或删除，修复全部引用，不保留平行历史合同。源码现状与目标架构必须分别标明。
 
@@ -32,12 +32,12 @@ projects/nyar.rs/
 ├── compilers/     语言无关的规划、分析、优化、降低与产物装配
 ├── runtimes/      odin-vm、legend-vm（GC/JIT 底座在 Boost interpreter-gc / interpreter-jit）
 ├── languages/     rusty-valkyrie（主链单包）与 5 个 guest 前端
-└── ffis/          nyar-napi、nyar-wasm、valkyrie-napi
+└── ffis/          nyar-napi、nyar-wasm
 
 projects/nyar.ts/
 ├── packages/      @nyar/nyar 与 skills 包
 ├── platforms/     按平台打包的 .node 产物
-└── emulators/     @nyar/valkyrie（legion/asgard）与脚本语言模拟器
+└── emulators/     脚本语言模拟器
 ```
 
 ## 依赖边界
