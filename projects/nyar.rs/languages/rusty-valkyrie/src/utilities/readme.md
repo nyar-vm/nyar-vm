@@ -8,7 +8,7 @@ Utilities 只包含被 Compiler、Legion、Asgard 共同使用的基础服务，
 
 | 模块 | 作用 |
 |------|------|
-| **`diagnostic`** | 对 `boost_diagnostic` 的 re-export；编译器与 LSP 挂接带 span、code、related 的诊断事实。 |
+| **`diagnostic`** | 对 `boost_harness::diagnostic` 的 re-export；编译器与 LSP 挂接带 span、code、related 的诊断事实。 |
 | **`report`** | `report!`、`report_msg`、`display_failure`：在 CLI 或绑定层 **出口** 把已决定的失败收成用户可见文案。 |
 | **`text`** | 无领域语义的字符串/文本小工具。 |
 
@@ -25,7 +25,7 @@ flowchart TB
   domain --> report
 ```
 
-- 编译期语义在 `compiler` 用 `ValkyrieError` 等表达；宿主展示前可投影为 `boost_diagnostic::Diagnostic`。
+- 编译期语义在 `compiler` 用 `ValkyrieError` 等表达；宿主展示前可投影为 `boost_harness::diagnostic::Diagnostic`。
 - Legion/Asgard 库函数返回各自领域错误，在 CLI 或 N-API 层由 `display_failure` 生成展示文本。
 - `report` 只负责展示，不参与领域错误的产生。
 

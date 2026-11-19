@@ -1,6 +1,6 @@
 //! 命令边界上的**纯文本**失败句（无 span、无 diagnostic code）。
 //!
-//! 库内传播用领域错误 + `?`；见 [`readme`](readme.md)。结构化事实只用 `boost_diagnostic`。
+//! 库内传播用领域错误 + `?`；见 [`readme`](readme.md)。结构化事实只用 `boost_harness::diagnostic`。
 
 /// 最终写给用户/N-API 的短句（不是中间链节点）。
 pub type UserMessage = String;

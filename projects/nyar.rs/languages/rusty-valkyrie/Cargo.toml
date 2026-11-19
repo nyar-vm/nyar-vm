@@ -26,7 +26,7 @@ acorn-pe = { workspace = true }
 acorn-wasm = { workspace = true }
 acorn-x64 = { workspace = true, features = ["serde"] }
 base64 = { workspace = true }
-boost-diagnostic = { workspace = true }
+boost-harness = { workspace = true }
 gag = { workspace = true }
 katex-rs = { workspace = true }
 compiler-valkyrie = { workspace = true }
