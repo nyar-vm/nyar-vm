@@ -25,3 +25,6 @@ pnpm-lock.yaml
 # Python
 __pycache__/
 *.py
+
+# npm secrets (nifty)
+.secrets/
