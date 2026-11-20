@@ -11,3 +11,7 @@ data-text-awsl = { path = "<your-path>/rust-boost/projects/data/data.text.awsl" 
 data-text-core = { path = "<your-path>/rust-boost/projects/data/data.text.core" }
 data-text-valkyrie = { path = "<your-path>/rust-boost/projects/data/data.text.valkyrie" }
 data-text-von = { path = "<your-path>/rust-boost/projects/data/data.text.von" }
+
+# 仅当把依赖 `odin-vm` 的 crate 提升为 workspace member 时才需要（独立仓 `nyar-vm/odin-vm`）：
+[patch."https://github.com/nyar-vm/odin-vm"]
+odin-vm = { path = "<your-path>/odin-vm/projects/runtime/odin-vm" }

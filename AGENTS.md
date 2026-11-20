@@ -11,7 +11,7 @@
 
 - **Nyar 编译平台**（`projects/nyar.rs/compilers`）：`nyar`、`nyar-analyzer`、`nyar-optimizer`、`nyar-emitter`、`nyar-types`、
   `nyar-runner`、包管理与 workspace。
-- **nyar-vm 运行时**（`projects/nyar.rs/runtimes`）：`odin-vm`（OdinVM）、`legend-vm`（LegendVM）；托管堆与 JIT 底座已迁至 Boost `interpreter-gc` / `interpreter-jit`，以 git `rev` 消费。
+- **nyar-vm 运行时**（`projects/nyar.rs/runtimes`）：`legend-vm`（LegendVM）；托管堆与 JIT 底座已迁至 Boost `interpreter-gc` / `interpreter-jit`，以 git `rev` 消费。OdinVM 已独立成仓（`nyar-vm/odin-vm`），本仓以 git `rev` 消费 `odin-vm`。
 - **宿主与平台产物**（`projects/nyar.rs/ffis`、`projects/nyar.ts`）：`nyar-napi`、`nyar-wasm` 与 Nyar npm 平台包；Valkyrie 产品绑定与 `@nyar/valkyrie` 包装层归 `valkyrie.rs`。
 
 维护者文档从 [架构合同](documentation/architecture.md) 开始。过期文档直接合并或删除，修复全部引用，不保留平行历史合同。源码现状与目标架构必须分别标明。
@@ -20,7 +20,8 @@
 
 | 任务                                      | 先读                                                                                          |
 |-------------------------------------------|-----------------------------------------------------------------------------------------------|
-| 改 OdinVM / LegendVM / GC / JIT / 字节码  | [`nyar-vm-runtime`](./.agents/skills/nyar-vm-runtime/SKILL.md)，以及对应 crate 的 `readme.md` |
+| 改 OdinVM                                | 独立仓 [`nyar-vm/odin-vm`](https://github.com/nyar-vm/odin-vm)（本仓只 pin `rev`）             |
+| 改 LegendVM / GC / JIT / 字节码消费       | [`nyar-vm-runtime`](./.agents/skills/nyar-vm-runtime/SKILL.md)，以及对应 crate 的 `readme.md` |
 | 改前端、MIR、优化、后端降低、产物装配     | [`nyar-vm-compiler`](./.agents/skills/nyar-vm-compiler/SKILL.md)                              |
 | bump 版本、打 tag、npm 可信发布、发布排障 | [`nyar-vm-release`](./.agents/skills/nyar-vm-release/SKILL.md)                                |
 | 写用户 readme / 维护者文档                | 本文「文档分工」一节                                                                          |
@@ -30,7 +31,7 @@
 ```text
 projects/nyar.rs/
 ├── compilers/     语言无关的规划、分析、优化、降低与产物装配
-├── runtimes/      odin-vm、legend-vm（GC/JIT 底座在 Boost interpreter-gc / interpreter-jit）
+├── runtimes/      legend-vm（GC/JIT 底座在 Boost interpreter-gc / interpreter-jit）
 ├── languages/     5 个 guest 前端（rusty-bash/lua/tcl/powershell/c）
 └── ffis/          nyar-napi、nyar-wasm
 
@@ -47,7 +48,7 @@ Oak       ──不能依赖──> Nyar
 Nyar      ──不能依赖──> Valkyrie 产品（Legion / Asgard 归 `valkyrie.rs`）
 ```
 
-- `odin-vm` 不得导入任何语言的 AST、解析器或编译流水线。
+- `odin-vm`（独立仓 `nyar-vm/odin-vm`）不得导入任何语言的 AST、解析器或编译流水线；本仓只以 git `rev` 消费。
 - `legend-vm` 不得新增完整的语言 tree-walk；guest 的解析与解释留在 `rusty-<lang>` crate。
 - `nyar-types` 仅承载中性合同与身份。canonical 语言语义必须归还 Valkyrie；共享 executable 视图归目标侧 `nyar-emitter` 私有合同，不得回挂 `nyar-types`/Nyar，也不得改成可选共享 MIR。
 - Nyar 只提供统一工具、编排及中性合同，各语言拥有 IR/MIR、解释器与语义，各目标拥有计划/LIR 和 runtime wrapper。
@@ -123,7 +124,7 @@ gitignore），不要提交。
 - `languages/` 下只有 `rusty-{bash,c,lua,powershell,tcl}` 在 workspace `members` 中；其余 `rusty-*`
   目录不参与构建。
 - `legend-vm` 当前只有有限 native residual 接线，不能把现状限制写成永久禁止 OVM/CLR/JVM/Wasm 适配的架构规则。
-- `odin-vm` 只消费 `acorn-odin`，不解析源码，也不拥有 `.odin` 的磁盘格式合同。
+- `odin-vm` 已独立成仓（`nyar-vm/odin-vm`）：只消费 `acorn-odin`，不解析源码，也不拥有 `.odin` 的磁盘格式合同；改动在独立仓提交并抬 pin `rev`。
 - `projects/nyar.rs/.cargo/config.toml` 是本机文件，永远不要提交。
 - npm 平台包命名固定为 `@nyar/<包名>-<平台>`，不要加 `cli`、`gnu`、`musl` 等额外后缀。
 

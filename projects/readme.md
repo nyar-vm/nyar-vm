@@ -8,7 +8,7 @@
 |------|------|
 | `compilers/` | Nyar 编译栈：`nyar`、`nyar-types`、`nyar-analyzer`、`nyar-optimizer`、`nyar-emitter`、`nyar-runner`、`nyar-workspace`、包管理与注册表 |
 | `formats/` | 已迁出：`.odin` 磁盘字节码合同由上游 Acorn 的 `acorn-odin` crate 持有，本仓以 git `rev` 消费 |
-| `runtimes/` | `odin-vm`（VM）、`legend-vm`（guest execution and specialization）；托管堆与 JIT 底座已迁至 Boost `interpreter-gc` / `interpreter-jit` |
+| `runtimes/` | `legend-vm`（guest execution and specialization）；OdinVM 已独立成仓（`nyar-vm/odin-vm`），以 git `rev` 消费；托管堆与 JIT 底座在 Boost `interpreter-gc` / `interpreter-jit` |
 | `languages/` | 5 个 guest 前端 `rusty-{bash,c,lua,powershell,tcl}`；其余 `rusty-*` 目录不在 workspace |
 | `ffis/` | 宿主绑定：`nyar-napi`（通用宿主）、`nyar-wasm`（占位）；Valkyrie 产品绑定已迁至 `valkyrie.rs` |
 
@@ -39,4 +39,4 @@ cargo test -p nyar-emitter
 
 未设置时相关用例跳过，默认 CI 不受影响。
 
-Per-crate 文档在各 crate 的 `readme.md`（例如 [`odin-vm/readme.md`](./nyar.rs/runtimes/odin-vm/readme.md)）。
+Per-crate 文档在各 crate 的 `readme.md`（例如 [`legend-vm/readme.md`](./nyar.rs/runtimes/legend-vm/readme.md)）。

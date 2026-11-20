@@ -1,9 +1,0 @@
-{
-    "scenario_id": "hard-conflict-concurrent-heavy",
-    "source": "deployment",
-    "phase": "invalid",
-    "pause_budget_ms": 5,
-    "allow_heavy_collection": true,
-    "preferred_mode": "concurrent_mark_reserved",
-    "lifetime_hint": "unspecified"
-}

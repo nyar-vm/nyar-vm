@@ -12,7 +12,7 @@ description: >-
 
 | crate | 职责 |
 |-------|------|
-| `runtimes/odin-vm` | OVM 字节码加载、校验、解释执行、宿主导入、JIT 注入 |
+| OdinVM（独立仓 `nyar-vm/odin-vm`） | OVM 字节码加载、校验、解释执行、宿主导入、JIT 注入；本仓以 git `rev` 消费 |
 | `acorn-odin`（上游 Acorn） | `.odin` 磁盘格式的编解码合同；本仓以 git `rev` 消费 |
 | `runtimes/legend-vm` | 语言无关的 PE / Futamura 基底、guest 注册与分发 |
 | Boost `interpreter-gc`（git `rev` pin） | 托管堆、`Value`、分代标记-清除回收、写屏障 |
@@ -21,6 +21,8 @@ description: >-
 先读对应 crate 的 `readme.md` 与 `tests/`，再动代码。
 
 ## OdinVM 不变量
+
+OdinVM 已独立成仓（`nyar-vm/odin-vm`）：实现在独立仓提交并推送后，本仓只抬 workspace 的 pin `rev`；不在本仓恢复 `runtimes/odin-vm` 目录。
 
 - `odin-vm` 只消费 `acorn-odin`，不解析源码，不导入 `rusty-<lang>` 的 AST、parser 或编译流水线。
 - 模块加载必须校验结构、导出与常量池；损坏输入返回错误，不进入解释循环。
@@ -42,7 +44,7 @@ description: >-
 - `interpreter_gc::Value` 是带标签枚举；对象形状通过 `LayoutDescriptor` 注册，堆内按 `layout_id` 存槽位。
 - 堆与回收器不得依赖语言 crate；宿主根与写屏障属于 `interpreter-gc`。
 - `interpreter-jit` 只消费字节码级事实（函数规格、栈图、标量程序），不得依赖 `odin-vm` 或语言 crate；格式匹配经 `ScalarProgramMatcher` 由本仓注入。
-- 栈图、去优化值编解码是 `odin-vm` 与 `interpreter-jit` 的共享合同，改一侧必须同步另一侧与测试；底座先 push、本仓再升 `rev`。
+- 栈图、去优化值编解码是 `odin-vm` 与 `interpreter-jit` 的共享合同，改一侧必须同步另一侧与测试；底座先 push、独立仓再 push、本仓最后升 `rev`。
 
 ## 工作流
 
@@ -52,11 +54,10 @@ description: >-
 4. 跑目标 crate 的测试：
 
 ```powershell
-cargo test -p odin-vm
 cargo test -p legend-vm
-cargo test -p odin-vm --test scalar_matcher
-cargo test -p odin-vm --test architecture_guards
 ```
+
+OdinVM 的测试在独立仓 `nyar-vm/odin-vm` 内运行（`cargo test --workspace`），本仓只验证消费侧编译。
 
 5. 跑全工作区回归：
 

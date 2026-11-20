@@ -7,7 +7,6 @@ members = [
     "languages/rusty-powershell",
     "languages/rusty-tcl",
     "runtimes/legend-vm",
-    "runtimes/odin-vm",
     "ffis/nyar-napi",
     "ffis/nyar-wasm",
     "compilers/nyar",
@@ -21,7 +20,7 @@ members = [
     "compilers/nyar-workspace",
 ]
 default-members = [
-    "runtimes/odin-vm",
+    "runtimes/legend-vm",
 ]
 
 [workspace.package]
@@ -101,7 +100,8 @@ nyar-workspace = { path = "compilers/nyar-workspace" }
 nyar-emitter = { path = "compilers/nyar-emitter" }
 # Nyar Runtime 运行时组件
 legend-vm = { path = "runtimes/legend-vm" }
-odin-vm = { path = "runtimes/odin-vm" }
+# OdinVM 已独立成仓；本 workspace 以 git `rev` 消费。
+odin-vm = { git = "https://github.com/nyar-vm/odin-vm", rev = "ae43362ec6f80d3541f4d8859ce31550916f174f" }
 # Guest 语言前端（各自独立 crate）
 rusty-bash = { path = "languages/rusty-bash" }
 rusty-c = { path = "languages/rusty-c" }
